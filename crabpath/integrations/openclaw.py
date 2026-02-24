@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .graph import EdgeType, MemoryEdge, MemoryGraph, MemoryNode, NodeType
+from ..graph import EdgeType, MemoryEdge, MemoryGraph, MemoryNode, NodeType
 
 
 def import_workspace(

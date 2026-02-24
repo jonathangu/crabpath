@@ -130,7 +130,7 @@ def cmd_activate(args):
 
 
 def cmd_import_openclaw(args):
-    from .openclaw import import_workspace
+    from .integrations.openclaw import import_workspace
 
     db_path = Path(args.db)
     workspace = Path(args.workspace)

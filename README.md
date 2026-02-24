@@ -78,18 +78,17 @@ CrabPath grew out of running three persistent LLM agents for 20+ days ($13K+ in 
 
 ### What exists today
 - [Research paper](https://jonathangu.com/crabpath/) with full architecture spec
-- Empirical data from multi-agent operation (warm-start corpus)
-- Learning harness with 252 classified corrections (130 behavioral gates, 122 factual refs)
-- Eval suite with 16 golden tasks
+- Core graph + activation engine (`pip install crabpath`)
+- CLI for bootstrapping, querying, and learning
+- 21 passing tests
 
 ### What we're building
-- [ ] Core graph data structure (NetworkX + SQLite)
-- [ ] Activation propagation engine
-- [ ] Warm-start pipeline (bootstrap from existing agent logs)
-- [ ] Hebbian learning loop with credit assignment
+- [ ] Persistence (save/load graphs to SQLite)
+- [ ] Warm-start pipeline (bootstrap from agent logs — any format)
 - [ ] Myelination compiler (option extraction)
+- [ ] Embedding-based seed node selection
 - [ ] Offline replay evaluation framework
-- [ ] Integration with [OpenClaw](https://github.com/openclaw/openclaw)
+- [ ] Framework integrations (OpenClaw, LangChain, etc. — optional extras)
 
 ## Architecture
 
@@ -147,19 +146,6 @@ The paper covers:
 pip install crabpath
 ```
 
-### Bootstrap from an OpenClaw workspace
-
-```bash
-# Import your workspace files + learning harness into a CrabPath graph
-crabpath import-openclaw ~/.openclaw/workspace/
-
-# Check what you got
-crabpath stats
-
-# Query the graph
-crabpath activate "deployment failed after config change" --json
-```
-
 ### Use as a library
 
 ```python
@@ -167,9 +153,9 @@ from crabpath.graph import MemoryGraph, MemoryNode, MemoryEdge, NodeType, EdgeTy
 from crabpath.activation import ActivationEngine
 
 # Create a graph
-graph = MemoryGraph(db_path="my-agent.db")
+graph = MemoryGraph()
 
-# Add nodes
+# Add memories
 graph.add_node(MemoryNode(
     id="rule-1",
     node_type=NodeType.RULE,
@@ -179,20 +165,49 @@ graph.add_node(MemoryNode(
     prior=0.9,
 ))
 
-# Bootstrap from OpenClaw
-from crabpath.openclaw import import_workspace
-from pathlib import Path
-stats = import_workspace(graph, Path("~/.openclaw/workspace/").expanduser())
+graph.add_node(MemoryNode(
+    id="action-check-logs",
+    node_type=NodeType.ACTION,
+    content="tail -n 200 /var/log/service.log",
+    summary="check service logs",
+    tags=["deploy", "debug"],
+    prior=0.6,
+))
+
+# Connect them
+graph.add_edge(MemoryEdge(
+    source="rule-1",
+    target="action-check-logs",
+    edge_type=EdgeType.SEQUENCE,
+    weight=0.8,
+))
 
 # Activate the graph for a query
 engine = ActivationEngine(graph)
-result = engine.activate("deployment failed after config change")
+result = engine.activate("deployment failed")
 
 for node, score in result.activated_nodes:
     print(f"[{score:.3f}] {node.node_type.value}: {node.summary}")
 
 # Learn from outcome
 engine.learn(result, outcome="success")
+```
+
+### CLI
+
+```bash
+pip install crabpath
+
+crabpath init                                    # Create a new graph
+crabpath activate "deploy broken" --json         # Query the graph
+crabpath stats                                   # Show graph stats
+```
+
+### Optional: Bootstrap from OpenClaw
+
+```bash
+# If you use OpenClaw, import your workspace into CrabPath
+crabpath import-openclaw ~/.openclaw/workspace/
 ```
 
 ## Why "CrabPath"?

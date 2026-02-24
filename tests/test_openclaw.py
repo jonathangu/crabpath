@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from crabpath.graph import MemoryGraph, NodeType
-from crabpath.openclaw import import_workspace
+from crabpath.integrations.openclaw import import_workspace
 
 
 def _create_mock_workspace(tmp: Path):
