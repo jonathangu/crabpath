@@ -14,7 +14,14 @@ from typing import Any, Callable, Optional
 from .activation import Firing, activate as _activate, learn as _learn
 from .embeddings import EmbeddingIndex
 from .feedback import snapshot_path
-from .graph import Graph
+from .graph import Graph, Node
+from .neurogenesis import (
+    NeurogenesisConfig,
+    NoveltyResult,
+    assess_novelty,
+    connect_new_node,
+    deterministic_auto_id,
+)
 
 EmbeddingFn = Callable[[list[str]], list[list[float]]]
 
@@ -119,6 +126,103 @@ class OpenClawCrabPathAdapter:
             top_k=top_k,
             reset=False,
         )
+
+    def query(
+        self,
+        query_text: str,
+        memory_search_ids: Optional[list[str]] = None,
+        top_k: int = 8,
+        config: NeurogenesisConfig = NeurogenesisConfig(),
+    ) -> dict[str, Any]:
+        """Query + activation with automatic neurogenesis.
+
+        Always-on behavior:
+        - build seeds from semantic + memory search ids
+        - run raw novelty detection
+        - optionally create an auto node and re-seed graph/index
+        - activate
+        - lightly learn from co-firing nodes when auto node was involved
+        - persist graph and index
+        """
+        seeds = self.seed(query_text, memory_search_ids=memory_search_ids, top_k=top_k)
+
+        raw_scores: list[tuple[str, float]] = []
+        if self.embed_fn is not None and self.index.vectors:
+            raw_scores = self.index.raw_scores(query_text, self.embed_fn, top_k=top_k)
+
+        novelty = assess_novelty(
+            query_text=query_text,
+            raw_scores=raw_scores,
+            config=config,
+        )
+
+        auto_node_id: str | None = None
+        auto_created = False
+        if novelty.should_create and self.embed_fn is not None:
+            auto_node_id = deterministic_auto_id(query_text)
+            existing_node = self.graph.get_node(auto_node_id)
+            now = time.time()
+
+            if existing_node is None:
+                auto_created = True
+                existing_node = Node(
+                    id=auto_node_id,
+                    content=query_text.strip(),
+                    threshold=0.8,
+                    metadata={
+                        "source": "auto",
+                        "created_ts": now,
+                        "auto_probationary": True,
+                        "auto_seed_count": 1,
+                    },
+                )
+                self.graph.add_node(existing_node)
+            else:
+                existing_node.metadata["auto_probationary"] = True
+                existing_node.metadata["auto_seed_count"] = int(
+                    existing_node.metadata.get("auto_seed_count", 0)
+                ) + 1
+
+            existing_node.metadata["last_seen_ts"] = now
+
+            self.index.upsert(auto_node_id, existing_node.content, self.embed_fn)
+            connect_new_node(
+                graph=self.graph,
+                new_node_id=auto_node_id,
+                current_seed_ids=list(seeds.keys()),
+                weights=0.15,
+            )
+
+            # Ensure the new node is also seeded for this query.
+            seeds[auto_node_id] = max(seeds.get(auto_node_id, 0.0), 0.25)
+
+        firing = self.activate(seeds, max_steps=3, decay=0.1, top_k=top_k)
+
+        # Light auto-learning for the auto concept and co-firing concepts.
+        if auto_node_id is not None:
+            fired_ids = [node.id for node, _ in firing.fired]
+            if auto_node_id in fired_ids:
+                self.learn(firing, outcome=0.1)
+
+        self.save()
+        context = self.context(firing)
+        context["auto_node"] = {
+            "node_id": auto_node_id,
+            "created": auto_created,
+            "should_create": novelty.should_create,
+            "top_score": novelty.top_score,
+            "band": novelty.band,
+            "metadata": dict(self.graph.get_node(auto_node_id).metadata)
+            if auto_node_id and self.graph.get_node(auto_node_id)
+            else None,
+        }
+        context["novelty"] = {
+            "should_create": novelty.should_create,
+            "top_score": novelty.top_score,
+            "band": novelty.band,
+            "blocked": novelty.blocked,
+        }
+        return context
 
     # -- Context -----------------------------------------------------------
 

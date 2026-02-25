@@ -111,6 +111,40 @@ class EmbeddingIndex:
         max_sim = ranked[0][1] if ranked else 1.0
         return {nid: (sim / max_sim) * energy for nid, sim in ranked}
 
+    def upsert(
+        self,
+        node_id: str,
+        content: str,
+        embed_fn: Callable[[list[str]], list[list[float]]],
+    ) -> None:
+        """Add or replace one vector in the index."""
+        vector = embed_fn([content])[0]
+        self.vectors[node_id] = vector
+        if vector:
+            self.dim = len(vector)
+
+    def remove(self, node_id: str) -> None:
+        """Remove one vector from the index."""
+        self.vectors.pop(node_id, None)
+
+    def raw_scores(
+        self,
+        query: str,
+        embed_fn: Callable[[list[str]], list[list[float]]],
+        top_k: int = 10,
+    ) -> list[tuple[str, float]]:
+        """Return raw cosine scores for all nodes, sorted descending."""
+        if not self.vectors:
+            return []
+
+        q_vec = embed_fn([query])[0]
+        scores: list[tuple[str, float]] = []
+        for node_id, node_vec in self.vectors.items():
+            scores.append((node_id, _cosine(q_vec, node_vec)))
+
+        scores.sort(key=lambda item: item[1], reverse=True)
+        return scores[:top_k]
+
     def save(self, path: str) -> None:
         """Save index to JSON."""
         data = {"dim": self.dim, "vectors": self.vectors}
