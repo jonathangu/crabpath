@@ -1,23 +1,26 @@
 """
 CrabPath Activation — Neuron-style firing over a memory graph.
 
-The model (Leaky Integrate-and-Fire, simplified):
-  1. Seed nodes receive energy (potential increases)
-  2. Each step: nodes whose potential >= threshold FIRE
-  3. Firing sends energy along outgoing edges: weight × signal
+The model (Leaky Integrate-and-Fire):
+  1. Traces decay (time has passed since last activation)
+  2. Seed nodes receive energy (potential increases)
+  3. Each step: nodes whose potential >= threshold FIRE
+  4. Firing sends energy along outgoing edges: weight × signal
      - Positive weight → excitatory (adds energy to target)
      - Negative weight → inhibitory (removes energy from target)
-  4. After firing, potential resets to 0 (refractory)
-  5. Non-fired potentials decay each step (leak)
-  6. Return nodes that fired, ranked by energy at time of firing
+  5. Fired nodes: potential resets to 0 (refractory), trace refreshes
+  6. Non-fired potentials decay each step (leak)
+  7. Return fired nodes ranked by energy, with timing info
+
+Learning is STDP-aware: edges in the causal direction (source fired
+before target) get more credit than anti-causal edges.
 
 Zero dependencies. Pure Python.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
 
 from .graph import Graph, Node
 
@@ -29,6 +32,7 @@ class Firing:
     fired: list[tuple[Node, float]]  # (node, energy_at_firing), descending
     inhibited: list[str]  # node IDs driven below 0 by inhibition
     steps: int = 0
+    fired_at: dict[str, int] = field(default_factory=dict)  # node_id -> step when it fired
 
 
 def activate(
@@ -38,6 +42,8 @@ def activate(
     max_steps: int = 3,
     decay: float = 0.1,
     top_k: int = 10,
+    reset: bool = True,
+    trace_decay: float = 0.1,
 ) -> Firing:
     """
     Fire neurons in the graph.
@@ -48,12 +54,20 @@ def activate(
         max_steps: Maximum propagation rounds.
         decay: Fraction of potential that leaks each step (0 = no leak, 1 = full reset).
         top_k: Number of fired nodes to return.
+        reset: If True (default), zero all potentials before starting.
+            Set False to let energy linger across calls.
+        trace_decay: Fraction of trace that decays each call (models time passing).
 
     Returns:
-        Firing with ranked fired nodes and inhibited node IDs.
+        Firing with ranked fired nodes, inhibited IDs, and timing info.
     """
-    # Start clean
-    graph.reset_potentials()
+    # Decay traces (time has passed since last activation)
+    for node in graph.nodes():
+        node.trace *= 1.0 - trace_decay
+
+    # Optionally start clean
+    if reset:
+        graph.reset_potentials()
 
     # Inject seed energy
     for node_id, energy in seeds.items():
@@ -62,6 +76,7 @@ def activate(
             node.potential += energy
 
     fired_record: dict[str, float] = {}  # node_id -> energy at firing
+    fired_at: dict[str, int] = {}  # node_id -> step number
     inhibited: set[str] = set()
     steps_taken = 0
 
@@ -81,6 +96,10 @@ def activate(
         for node in to_fire:
             signal = node.potential
             fired_record[node.id] = signal
+            fired_at[node.id] = step
+
+            # Refresh trace on firing
+            node.trace = signal
 
             # Send energy along outgoing edges
             for target, edge in graph.outgoing(node.id):
@@ -99,6 +118,7 @@ def activate(
     # Remove inhibited nodes from fired results
     for nid in inhibited:
         fired_record.pop(nid, None)
+        fired_at.pop(nid, None)
 
     # Rank by energy at firing, take top_k
     ranked = sorted(fired_record.items(), key=lambda x: x[1], reverse=True)[:top_k]
@@ -108,7 +128,12 @@ def activate(
         if node:
             result.append((node, score))
 
-    return Firing(fired=result, inhibited=sorted(inhibited), steps=steps_taken)
+    return Firing(
+        fired=result,
+        inhibited=sorted(inhibited),
+        steps=steps_taken,
+        fired_at=fired_at,
+    )
 
 
 def learn(
@@ -118,25 +143,51 @@ def learn(
     rate: float = 0.1,
 ) -> None:
     """
-    Hebbian learning: adjust weights between co-fired nodes.
+    STDP-aware Hebbian learning: adjust weights between co-fired nodes.
 
-    Positive outcome → strengthen connections between fired nodes.
-    Negative outcome → weaken them.
+    Timing matters:
+    - Causal edges (source fired before target) get full credit.
+    - Anti-causal edges (target fired before source) get reverse, weaker effect.
+    - Simultaneous firing: partial credit.
+
+    Credit decays with temporal distance: closer in time = more credit.
+
+    Positive outcome → strengthen causal edges, weaken anti-causal.
+    Negative outcome → weaken causal edges, strengthen anti-causal.
     Weights clamped to [-10, 10].
 
     Args:
         graph: The memory graph.
-        result: A previous Firing result.
+        result: A previous Firing result (with timing info).
         outcome: Positive = good, negative = bad.
         rate: Learning rate.
     """
     fired_ids = [n.id for n, _ in result.fired]
+    fa = result.fired_at
 
     for src_id in fired_ids:
         for tgt_id in fired_ids:
             if src_id == tgt_id:
                 continue
             edge = graph.get_edge(src_id, tgt_id)
-            if edge:
-                edge.weight += rate * outcome
-                edge.weight = max(-10.0, min(10.0, edge.weight))
+            if not edge:
+                continue
+
+            # STDP timing factor
+            if fa and src_id in fa and tgt_id in fa:
+                dt = fa[tgt_id] - fa[src_id]
+                if dt > 0:
+                    # Causal: source fired before target
+                    timing = 1.0 / (1.0 + dt)
+                elif dt < 0:
+                    # Anti-causal: target fired before source (weaker, reversed)
+                    timing = -0.5 / (1.0 + abs(dt))
+                else:
+                    # Simultaneous: partial credit
+                    timing = 0.5
+            else:
+                # No timing info: fall back to symmetric
+                timing = 1.0
+
+            edge.weight += rate * outcome * timing
+            edge.weight = max(-10.0, min(10.0, edge.weight))

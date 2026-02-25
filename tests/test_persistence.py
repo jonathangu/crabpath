@@ -51,7 +51,7 @@ def test_save_load_preserves_learned_weights():
 
 
 def test_save_omits_defaults():
-    """Default threshold/potential/metadata should not bloat the JSON."""
+    """Default threshold/potential/trace/metadata should not bloat the JSON."""
     import json
 
     g = Graph()
@@ -68,6 +68,7 @@ def test_save_omits_defaults():
     node_data = data["nodes"][0]
     assert "threshold" not in node_data  # default 1.0 omitted
     assert "potential" not in node_data  # default 0.0 omitted
+    assert "trace" not in node_data       # default 0.0 omitted
     assert "metadata" not in node_data   # empty dict omitted
 
     Path(path).unlink()
@@ -86,5 +87,22 @@ def test_save_load_with_potential():
     g2 = Graph.load(path)
 
     assert g2.get_node("a").potential == 3.0
+
+    Path(path).unlink()
+
+
+def test_save_load_with_trace():
+    """Non-zero trace should persist."""
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    activate(g, seeds={"a": 2.0})  # sets trace to 2.0
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+
+    g.save(path)
+    g2 = Graph.load(path)
+
+    assert g2.get_node("a").trace == 2.0
 
     Path(path).unlink()

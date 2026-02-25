@@ -3,6 +3,7 @@ CrabPath — A neuron-inspired memory graph. Zero dependencies.
 
 A node is a neuron: it accumulates energy, fires when threshold is crossed,
 and sends weighted signals (positive or negative) to its connections.
+It leaves a trace when it fires — a decaying record of recent activity.
 
 Nodes hold content. Edges are weighted pointers. That's it.
 """
@@ -21,6 +22,7 @@ class Node:
     - content: what this neuron "knows" (a fact, rule, action, whatever)
     - threshold: fires when potential >= threshold
     - potential: current accumulated energy (transient state)
+    - trace: decaying record of recent firing (0 = cold, higher = recently active)
     - metadata: your bag of whatever — types, tags, timestamps, priors.
       CrabPath has no opinions about what goes in here.
     """
@@ -29,6 +31,7 @@ class Node:
     content: str
     threshold: float = 1.0
     potential: float = 0.0
+    trace: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -126,6 +129,23 @@ class Graph:
     def edge_count(self) -> int:
         return len(self._edges)
 
+    # -- State --
+
+    def reset_potentials(self) -> None:
+        """Set all node potentials to 0."""
+        for node in self._nodes.values():
+            node.potential = 0.0
+
+    def warm_nodes(self, min_trace: float = 0.01) -> list[tuple[Node, float]]:
+        """Nodes with non-trivial trace, sorted by trace descending.
+
+        Useful for checking "what's been active recently?" without
+        running a full activation pass.
+        """
+        warm = [(n, n.trace) for n in self._nodes.values() if n.trace >= min_trace]
+        warm.sort(key=lambda x: x[1], reverse=True)
+        return warm
+
     # -- Persistence --
 
     def save(self, path: str) -> None:
@@ -149,13 +169,6 @@ class Graph:
             g.add_edge(Edge(**ed))
         return g
 
-    # -- Reset --
-
-    def reset_potentials(self) -> None:
-        """Set all node potentials to 0."""
-        for node in self._nodes.values():
-            node.potential = 0.0
-
     def __repr__(self) -> str:
         return f"Graph(nodes={self.node_count}, edges={self.edge_count})"
 
@@ -166,6 +179,8 @@ def _node_to_dict(n: Node) -> dict:
         d["threshold"] = n.threshold
     if n.potential != 0.0:
         d["potential"] = n.potential
+    if n.trace != 0.0:
+        d["trace"] = n.trace
     if n.metadata:
         d["metadata"] = n.metadata
     return d
