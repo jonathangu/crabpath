@@ -90,7 +90,7 @@ def test_measure_health_uses_graph_state_and_query_stats():
 
     assert health.avg_nodes_fired_per_query == 3.5
     assert health.cross_file_edge_pct == (2 / 3) * 100
-    assert health.dormant_pct == (1 / 3) * 100
+    assert health.dormant_pct == 0.0
     assert health.reflex_pct == (1 / 3) * 100
     assert health.context_compression == ((40 + 60) / 2) / sum(len(n.content) for n in nodes) * 100
     assert health.proto_promotion_rate == 10.0
@@ -170,6 +170,7 @@ def test_autotune_high_reflex_and_promotion_rates():
     proto_low = _metric(adjustments, "proto_promotion_rate")
     assert reflex is not None
     assert reflex.suggested_change["decay_half_life"] == "decrease"
+    assert reflex.suggested_change["hebbian_increment"] == "decrease"
     assert proto_low is not None
     assert proto_low.suggested_change["promotion_threshold"] == "decrease"
 
@@ -199,8 +200,7 @@ def test_autotune_targets_constant_shape():
 def test_apply_adjustments_changes_expected_ranges_and_returns_deltas():
     syn_config = SynaptogenesisConfig(
         promotion_threshold=4,
-        reflex_threshold=0.9,
-        skip_factor=0.92,
+        hebbian_increment=0.06,
     )
     decay_config = DecayConfig(half_life_turns=80)
     mitosis_config = MitosisConfig(sibling_weight=0.65)
@@ -217,15 +217,8 @@ def test_apply_adjustments_changes_expected_ranges_and_returns_deltas():
             metric="reflex_pct",
             current=8.0,
             target_range=(0.5, 5.0),
-            suggested_change={"reflex_threshold": "increase"},
+            suggested_change={"hebbian_increment": "decrease"},
             reason="too many reflex edges",
-        ),
-        Adjustment(
-            metric="cross_file_edge_pct",
-            current=1.0,
-            target_range=(3.0, 25.0),
-            suggested_change={"skip_factor": "decrease"},
-            reason="skip factor adjustment",
         ),
     ]
 
@@ -233,15 +226,14 @@ def test_apply_adjustments_changes_expected_ranges_and_returns_deltas():
 
     assert decay_config.half_life_turns == 60
     assert syn_config.promotion_threshold == 5
-    assert syn_config.reflex_threshold == 0.95
+    assert abs(syn_config.hebbian_increment - 0.05) < 1e-12
     assert changes["decay_half_life"]["before"] == 80
     assert changes["decay_half_life"]["after"] == 60
     assert changes["decay_half_life"]["delta"] == -20
     assert changes["promotion_threshold"]["before"] == 4
     assert changes["promotion_threshold"]["after"] == 5
-    assert changes["reflex_threshold"]["before"] == 0.9
-    assert changes["reflex_threshold"]["after"] == 0.95
-    assert "skip_factor" not in changes
+    assert changes["hebbian_increment"]["before"] == 0.06
+    assert abs(changes["hebbian_increment"]["after"] - 0.05) < 1e-12
     assert mitosis_config.sibling_weight == 0.65
 
 
@@ -249,8 +241,6 @@ def test_apply_adjustments_enforces_bounds_and_limit():
     syn_config = SynaptogenesisConfig(
         promotion_threshold=2,
         hebbian_increment=0.12,
-        reflex_threshold=0.95,
-        skip_factor=0.80,
     )
     decay_config = DecayConfig(half_life_turns=30)
     mitosis_config = MitosisConfig(sibling_weight=0.65)
@@ -277,20 +267,6 @@ def test_apply_adjustments_enforces_bounds_and_limit():
             suggested_change={"hebbian_increment": "increase"},
             reason="already at maximum",
         ),
-        Adjustment(
-            metric="reflex_pct",
-            current=2.0,
-            target_range=(0.5, 5.0),
-            suggested_change={"reflex_threshold": "increase"},
-            reason="already at maximum",
-        ),
-        Adjustment(
-            metric="context_compression",
-            current=15.0,
-            target_range=(None, 25.0),
-            suggested_change={"skip_factor": "decrease"},
-            reason="already at minimum",
-        ),
     ]
 
     changes = apply_adjustments(
@@ -304,8 +280,6 @@ def test_apply_adjustments_enforces_bounds_and_limit():
     assert decay_config.half_life_turns == 30
     assert syn_config.promotion_threshold == 2
     assert syn_config.hebbian_increment == 0.12
-    assert "reflex_threshold" not in changes
-    assert "skip_factor" not in changes
     assert changes["decay_half_life"]["bounded"] is True
     assert changes["promotion_threshold"]["bounded"] is True
     assert changes["hebbian_increment"]["bounded"] is True
@@ -315,8 +289,6 @@ def test_validate_config_bounds():
     syn_config = SynaptogenesisConfig(
         promotion_threshold=2,
         hebbian_increment=0.02,
-        reflex_threshold=0.70,
-        skip_factor=0.80,
     )
     decay_config = DecayConfig(half_life_turns=30)
 
@@ -331,8 +303,7 @@ def test_self_tune_runs_apply_adjustments_cycle(monkeypatch):
     graph.add_node(Node(id="file::b", content="beta"))
     syn_config = SynaptogenesisConfig(
         promotion_threshold=4,
-        reflex_threshold=0.9,
-        skip_factor=0.9,
+        hebbian_increment=0.06,
     )
     decay_config = DecayConfig(half_life_turns=40)
     mitosis_config = MitosisConfig()
@@ -397,8 +368,6 @@ def test_self_tune_reverts_when_meta_learning_worsens(monkeypatch):
     graph.add_node(Node(id="file::b", content="beta"))
     syn_config = SynaptogenesisConfig(
         promotion_threshold=4,
-        reflex_threshold=0.9,
-        skip_factor=0.9,
         hebbian_increment=0.06,
     )
     decay_config = DecayConfig(half_life_turns=80)
@@ -567,7 +536,6 @@ def test_tune_memory_blocks_and_prefers_adjustments_in_self_tune(monkeypatch, tm
     graph.add_node(Node(id="file::b", content="beta"))
     syn_config = SynaptogenesisConfig(
         promotion_threshold=4,
-        reflex_threshold=0.9,
     )
     decay_config = DecayConfig(half_life_turns=80)
     mitosis_config = MitosisConfig()

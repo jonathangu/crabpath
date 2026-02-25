@@ -65,8 +65,8 @@ class SynaptogenesisConfig(ConfigBase):
     # Tiers
     helpfulness_gate: float = 0.1  # Minimum retrieval score needed for RL reward signal
     harmful_reward_threshold: float = -0.5  # Min node score treated as actively harmful
-    dormant_threshold: float = 0.3  # Below = dormant (invisible to router)
-    reflex_threshold: float = 0.8  # Above = reflex (auto-follow)
+    dormant_threshold: float = 0.1  # Fixed — decay controls visibility  # Below = dormant (invisible to router)
+    reflex_threshold: float = 0.9  # Fixed — hebbian controls compilation  # Above = reflex (auto-follow)
 
 
 # ---------------------------------------------------------------------------

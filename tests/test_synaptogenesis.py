@@ -224,16 +224,17 @@ def test_max_outgoing_enforced():
 
 def test_classify_tiers():
     config = SynaptogenesisConfig()
-    assert classify_tier(0.1, config) == "dormant"
+    assert classify_tier(0.09, config) == "dormant"
+    assert classify_tier(0.1, config) == "habitual"
     assert classify_tier(0.3, config) == "habitual"
     assert classify_tier(0.5, config) == "habitual"
-    assert classify_tier(0.8, config) == "reflex"
+    assert classify_tier(0.9, config) == "reflex"
     assert classify_tier(1.0, config) == "reflex"
 
 
 def test_edge_tier_stats():
     g = _graph_with_nodes("A", "B", "C", "D")
-    g.add_edge(Edge(source="A", target="B", weight=0.1))  # dormant
+    g.add_edge(Edge(source="A", target="B", weight=0.09))  # dormant
     g.add_edge(Edge(source="A", target="C", weight=0.5))  # habitual
     g.add_edge(Edge(source="A", target="D", weight=0.9))  # reflex
 
