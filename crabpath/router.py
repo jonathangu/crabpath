@@ -33,6 +33,7 @@ class RouterConfig:
     timeout_s: float = 8.0
     max_retries: int = 2
     fallback_behavior: str = "heuristic"
+    max_select: int = 5
 
 
 @dataclass
@@ -386,7 +387,10 @@ class Router:
                 if isinstance(selected, list):
                     # Filter to only valid candidate IDs
                     valid_ids = {nid for nid, _, _ in candidates}
-                    return [str(s) for s in selected if str(s) in valid_ids]
+                    selected_nodes = [str(s) for s in selected if str(s) in valid_ids]
+                    if self.config.max_select > 0:
+                        selected_nodes = selected_nodes[: self.config.max_select]
+                    return selected_nodes
                 return []
             except Exception:
                 continue
@@ -421,11 +425,24 @@ class Router:
 
         # Select all candidates above a reasonable threshold
         sorted_candidates = sorted(candidates, key=lambda c: c[1], reverse=True)
-        selected = [nid for nid, score, _ in sorted_candidates if score > 0.3]
+        if not sorted_candidates:
+            return []
+
+        best_score = sorted_candidates[0][1]
+        if best_score <= 0:
+            selected: list[str] = []
+        else:
+            threshold = best_score * 0.6
+            selected = [
+                nid for nid, score, _ in sorted_candidates if score >= threshold
+            ]
 
         # At minimum return the top one if anything scored decently
         if not selected and sorted_candidates and sorted_candidates[0][1] > 0.15:
             selected = [sorted_candidates[0][0]]
+
+        if self.config.max_select > 0:
+            selected = selected[: self.config.max_select]
 
         return selected
 

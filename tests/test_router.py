@@ -70,6 +70,7 @@ def test_router_config_defaults():
     assert cfg.timeout_s == 8.0
     assert cfg.max_retries == 2
     assert cfg.fallback_behavior == "heuristic"
+    assert cfg.max_select == 5
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,25 @@ def test_select_fallback_returns_top_candidates():
     assert "node-a" in selected
     assert "node-b" in selected
     assert "node-c" not in selected  # Below threshold
+
+
+def test_select_fallback_uses_relative_threshold():
+    router = Router()
+    candidates = [
+        ("node-a", 1.0, "best"),
+        ("node-b", 0.61, "strong"),
+        ("node-c", 0.60, "boundary"),
+        ("node-d", 0.59, "below boundary"),
+    ]
+    selected = router.select_nodes("topic", candidates)
+    assert selected == ["node-a", "node-b", "node-c"]
+
+
+def test_select_fallback_applies_max_select():
+    router = Router(config=RouterConfig(max_select=2, fallback_behavior="heuristic"))
+    candidates = [(f"node-{i}", 1.0 - (i * 0.05), "summary") for i in range(10)]
+    selected = router.select_nodes("topic", candidates)
+    assert selected == ["node-0", "node-1"]
 
 
 def test_select_fallback_returns_empty_for_trivial():
@@ -129,6 +149,28 @@ def test_select_with_llm_client():
     ]
     selected = router.select_nodes("identity and safety rules", candidates)
     assert selected == ["node-a", "node-c"]
+
+
+def test_select_with_llm_respects_max_select():
+    """LLM output should be capped by router max_select."""
+
+    def mock_client(messages):
+        return (
+            '{"selected": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f"],'
+            '"rationale": "too many"}'
+        )
+
+    router = Router(config=RouterConfig(fallback_behavior="llm", max_select=4), client=mock_client)
+    candidates = [
+        ("node-a", 0.9, "identity"),
+        ("node-b", 0.8, "tools"),
+        ("node-c", 0.7, "safety"),
+        ("node-d", 0.6, "notes"),
+        ("node-e", 0.5, "extra"),
+        ("node-f", 0.4, "more"),
+    ]
+    selected = router.select_nodes("identity and safety rules", candidates)
+    assert selected == ["node-a", "node-b", "node-c", "node-d"]
 
 
 def test_select_with_llm_returns_zero():
