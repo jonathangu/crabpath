@@ -21,7 +21,7 @@ DEFAULT_SNAPSHOT_PATH = "crabpath_events.db"
 
 
 RETRIEVAL_SCORING_MODEL = "gpt-5-mini"
-RETRIEVAL_HELPFULNESS_GATE = 0.3
+RETRIEVAL_HELPFULNESS_GATE = 0.1  # Aggressive: almost every scored query produces RL signal
 DEFAULT_OPENAI_TIMEOUT = 8.0
 
 _CORRECTION_START_PATTERNS = (
@@ -122,7 +122,7 @@ def score_retrieval(
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.0,
+            temperature=1,  # gpt-5-mini only supports temperature=1
             response_format={"type": "json_object"},
             timeout=DEFAULT_OPENAI_TIMEOUT,
         )
