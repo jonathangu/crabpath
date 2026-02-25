@@ -1,8 +1,10 @@
-# 🦀 CrabPath
+# 🦀 CrabPath: The Graph is the Prompt
 
-**Agent memory that learns what to load and what to skip.**
+**LLM-guided memory traversal with learned pointer weights and corrected policy gradients.**
 
-Your agent reloads the same files every session regardless of the task. CrabPath replaces that with a graph that learns from outcomes: nodes that fire during success get stronger connections, nodes that fire during failure get weaker ones. Over time, the right context loads automatically.
+📄 **[Read the paper →](https://jonathangu.com/crabpath/)**
+
+CrabPath is a memory architecture for AI agents where documents are nodes, weighted pointers are edges, and an LLM is the activation function. The graph learns which paths lead to good outcomes using trajectory-aware credit assignment (Gu, 2016), compiling expensive LLM reasoning into cheap reflexive routing over time.
 
 ## Install
 
