@@ -1,17 +1,19 @@
 """
-🦀 CrabPath Mitosis — Recursive Cell Division
+🦀 CrabPath Mitosis — LLM-Driven Graph Self-Organization
 
-Every file starts as one node. The cheap LLM splits it into 4 chunks.
-All chunks get sibling edges at weight 1.0 (behave as one unit).
-Over time, non-co-fired edges decay. When all sibling edges reconverge
-to 1.0 (always co-fire), the node is functionally monolithic again —
-re-split it with the LLM for finer granularity.
+One cheap LLM does everything:
+  1. Routing — "which node answers this query?"
+  2. Splitting — "where are the natural boundaries?"
+  3. Merging — "should these chunks be one node?"
+  4. Neurogenesis — "this is new. Create a node."
+
+No magic numbers. No cosine thresholds. No hardcoded chunk counts.
+The LLM is the judgment. Decay is the only mechanical process.
 
 Lifecycle:
-  file → 4 chunks (edges=1.0) → decay separates → some reconverge → re-split → repeat
-
-The graph finds its own resolution. No heatmaps. No thresholds.
-Just edges and decay.
+  file → coherent sections (LLM decides how many) → decay separates
+  → LLM merges what belongs together → LLM splits what grew too big
+  → LLM creates nodes for novel concepts → repeat forever
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ import json
 import time
 from dataclasses import dataclass, field
 from hashlib import sha256
-from pathlib import Path
 from typing import Any, Callable
 
 from .graph import Graph, Node, Edge
@@ -32,12 +33,9 @@ from .graph import Graph, Node, Edge
 
 @dataclass
 class MitosisConfig:
-    """Configuration for cell division."""
-    num_chunks: int = 4                    # Split each node into N chunks
+    """Configuration for graph self-organization."""
     sibling_weight: float = 1.0            # Initial edge weight between siblings
-    reconverge_threshold: float = 0.95     # Weight above which siblings are "merged"
     min_content_chars: int = 200           # Don't split nodes smaller than this
-    parent_type: str = "workspace_file"    # Node type for parent placeholders
     chunk_type: str = "chunk"              # Node type for chunk nodes
     decay_rate: float = 0.01              # Edge decay rate for sibling edges
 
@@ -48,17 +46,47 @@ class MitosisConfig:
 
 @dataclass
 class SplitResult:
-    """Result of splitting a node into chunks."""
+    """Result of splitting a node."""
     parent_id: str
     chunk_ids: list[str]
     chunk_contents: list[str]
     edges_created: int
-    generation: int  # How many times this content has been split
+    generation: int
+
+
+@dataclass
+class MergeResult:
+    """Result of merging nodes."""
+    merged_id: str
+    source_ids: list[str]
+    content: str
+
+
+@dataclass
+class NeurogenesisResult:
+    """Result of creating a new node."""
+    node_id: str
+    content: str
+    connected_to: list[str]
+
+
+@dataclass
+class MaintenanceAction:
+    """A single structural action proposed by the LLM."""
+    action: str  # "split" | "merge" | "create" | "none"
+    target_ids: list[str] = field(default_factory=list)
+    reason: str = ""
+    # For splits: the sections
+    sections: list[str] = field(default_factory=list)
+    # For creates: the new content
+    new_content: str = ""
+    # For merges: the merged content
+    merged_content: str = ""
 
 
 @dataclass
 class MitosisState:
-    """Tracks split history for reconvergence detection."""
+    """Tracks split history for the graph."""
     # parent_id -> list of chunk_ids
     families: dict[str, list[str]] = field(default_factory=dict)
     # parent_id -> generation count
@@ -89,24 +117,66 @@ class MitosisState:
 
 
 # ---------------------------------------------------------------------------
-# LLM Splitting
+# LLM Prompts — the LLM is the judgment for everything
 # ---------------------------------------------------------------------------
 
 SPLIT_SYSTEM_PROMPT = (
     "You split documents into coherent sections. "
-    "Given a document, divide it into exactly {n} sections. "
-    "Each section should be a self-contained, coherent unit of related content. "
+    "Given a document, divide it into natural, self-contained sections. "
+    "You decide how many sections — use as many as the content demands. "
+    "Each section should be a coherent unit of related content. "
     "Prefer splitting at natural boundaries (headings, topic changes). "
-    "Return JSON: {{\"sections\": [\"section1 content\", \"section2 content\", ...]}}"
+    "Return JSON: {\"sections\": [\"section1 content\", \"section2 content\", ...]}"
 )
 
 SPLIT_USER_PROMPT = (
-    "Split this document into exactly {n} coherent sections. "
-    "Preserve ALL content verbatim — do not summarize, omit, or rephrase anything. "
-    "Each section should be a self-contained topic group.\n\n"
+    "Split this document into coherent sections. "
+    "You decide how many — split where the natural boundaries are. "
+    "Preserve ALL content verbatim — do not summarize, omit, or rephrase anything.\n\n"
     "---\n{content}\n---"
 )
 
+MERGE_SYSTEM_PROMPT = (
+    "You are a memory graph organizer. Given a set of content chunks that "
+    "frequently co-activate (always needed together), decide if they should "
+    "be merged into one node. "
+    "Return JSON: {\"should_merge\": true/false, \"reason\": \"brief\", "
+    "\"merged_content\": \"combined content if merging\"}"
+)
+
+MERGE_USER_PROMPT = (
+    "These chunks always fire together — every query that needs one needs all of them. "
+    "Should they be one node? Or do they serve different purposes that happen to overlap?\n\n"
+    "{chunks}"
+)
+
+MAINTAIN_SYSTEM_PROMPT = (
+    "You are a memory graph maintainer. Given the current state of some nodes "
+    "and recent query patterns, decide what structural changes are needed. "
+    "Options: split a large node, merge co-firing nodes, create a new node "
+    "for an uncovered concept, or do nothing. "
+    "Return JSON: {\"actions\": [{\"action\": \"split|merge|create|none\", "
+    "\"target_ids\": [...], \"reason\": \"brief\"}]}"
+)
+
+NEUROGENESIS_SYSTEM_PROMPT = (
+    "You are a memory graph builder. A query came in that doesn't match "
+    "any existing node well. Decide if this represents a genuinely new concept "
+    "that deserves its own node, or if it's noise/greeting/trivial. "
+    "Return JSON: {\"should_create\": true/false, \"reason\": \"brief\", "
+    "\"content\": \"node content if creating\", \"summary\": \"one line summary\"}"
+)
+
+NEUROGENESIS_USER_PROMPT = (
+    "Query: {query}\n\n"
+    "Closest existing nodes (with similarity scores):\n{existing}\n\n"
+    "Should this be a new node? Or is it covered / too trivial?"
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _make_chunk_id(parent_id: str, index: int, content: str) -> str:
     """Deterministic chunk ID from parent + index + content hash."""
@@ -114,88 +184,153 @@ def _make_chunk_id(parent_id: str, index: int, content: str) -> str:
     return f"{parent_id}::chunk-{index}-{h}"
 
 
+def _parse_json_response(raw: str) -> dict:
+    """Parse JSON from potentially markdown-wrapped LLM output."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if len(lines) >= 2:
+            if lines[-1].strip().endswith("```"):
+                lines = lines[1:-1]
+            cleaned = "\n".join(lines).strip()
+    return json.loads(cleaned)
+
+
+def _fallback_split(content: str) -> list[str]:
+    """Split by markdown headers. No target count — use natural structure."""
+    import re
+
+    # Split by ## headers
+    parts = re.split(r'\n(?=## )', content)
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if len(parts) >= 2:
+        return parts
+
+    # Try # headers
+    parts = re.split(r'\n(?=# )', content)
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if len(parts) >= 2:
+        return parts
+
+    # Last resort: split by double newlines, merge small ones
+    parts = [p.strip() for p in content.split("\n\n") if p.strip()]
+    if len(parts) >= 2:
+        # Merge very small adjacent parts (< 100 chars)
+        merged = [parts[0]]
+        for p in parts[1:]:
+            if len(merged[-1]) < 100:
+                merged[-1] = merged[-1] + "\n\n" + p
+            else:
+                merged.append(p)
+        if len(merged) >= 2:
+            return merged
+
+    return [content]
+
+
+# ---------------------------------------------------------------------------
+# Core Operations — all LLM-driven
+# ---------------------------------------------------------------------------
+
 def split_with_llm(
     content: str,
-    num_chunks: int,
     llm_call: Callable[[str, str], str],
 ) -> list[str]:
-    """Ask the cheap LLM to split content into N coherent sections.
+    """Ask the cheap LLM to split content into coherent sections.
 
-    Args:
-        content: The full text to split.
-        num_chunks: Number of sections to produce.
-        llm_call: Callable(system_prompt, user_prompt) -> raw LLM output string.
-
-    Returns:
-        List of section strings. Falls back to character-based splitting if LLM fails.
+    The LLM decides how many sections. No magic number.
+    Falls back to structural splitting if LLM fails.
     """
-    system = SPLIT_SYSTEM_PROMPT.format(n=num_chunks)
-    user = SPLIT_USER_PROMPT.format(n=num_chunks, content=content)
-
     try:
-        raw = llm_call(system, user)
-        # Parse JSON from potentially markdown-wrapped output
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.splitlines()
-            if len(lines) >= 2:
-                if lines[-1].strip().endswith("```"):
-                    lines = lines[1:-1]
-                cleaned = "\n".join(lines).strip()
-
-        parsed = json.loads(cleaned)
+        raw = llm_call(SPLIT_SYSTEM_PROMPT, SPLIT_USER_PROMPT.format(content=content))
+        parsed = _parse_json_response(raw)
         sections = parsed.get("sections", [])
 
         if isinstance(sections, list) and len(sections) >= 2:
-            # Validate: all sections are non-empty strings
             sections = [str(s).strip() for s in sections if str(s).strip()]
             if len(sections) >= 2:
                 return sections
     except (json.JSONDecodeError, KeyError, TypeError, Exception):
         pass
 
-    # Fallback: split by markdown headers, then by size
-    return _fallback_split(content, num_chunks)
+    return _fallback_split(content)
 
 
-def _fallback_split(content: str, num_chunks: int) -> list[str]:
-    """Split by markdown headers. If not enough headers, split by character count."""
-    import re
+def should_merge(
+    chunks: list[tuple[str, str]],
+    llm_call: Callable[[str, str], str],
+) -> tuple[bool, str, str]:
+    """Ask the LLM if co-firing chunks should be merged.
 
-    # Try splitting by ## headers first
-    parts = re.split(r'\n(?=## )', content)
-    parts = [p.strip() for p in parts if p.strip()]
+    Args:
+        chunks: List of (chunk_id, chunk_content) pairs.
+        llm_call: The cheap LLM.
 
-    if len(parts) >= num_chunks:
-        # Merge smallest adjacent parts until we have num_chunks
-        while len(parts) > num_chunks:
-            # Find the two smallest adjacent parts
-            min_combined = float('inf')
-            min_idx = 0
-            for i in range(len(parts) - 1):
-                combined = len(parts[i]) + len(parts[i + 1])
-                if combined < min_combined:
-                    min_combined = combined
-                    min_idx = i
-            parts[min_idx] = parts[min_idx] + "\n\n" + parts[min_idx + 1]
-            parts.pop(min_idx + 1)
-        return parts
+    Returns:
+        (should_merge, reason, merged_content)
+    """
+    chunks_text = "\n\n".join(
+        f"--- {cid} ---\n{content[:500]}" for cid, content in chunks
+    )
 
-    # Not enough headers — split by character count
-    chunk_size = max(len(content) // num_chunks, 1)
-    chunks = []
-    for i in range(num_chunks):
-        start = i * chunk_size
-        end = start + chunk_size if i < num_chunks - 1 else len(content)
-        chunk = content[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
+    try:
+        raw = llm_call(MERGE_SYSTEM_PROMPT, MERGE_USER_PROMPT.format(chunks=chunks_text))
+        parsed = _parse_json_response(raw)
 
-    return chunks if chunks else [content]
+        do_merge = parsed.get("should_merge", False)
+        reason = parsed.get("reason", "")
+        merged = parsed.get("merged_content", "")
+
+        if do_merge and not merged:
+            # LLM said merge but didn't provide content — concatenate
+            merged = "\n\n".join(content for _, content in chunks)
+
+        return bool(do_merge), str(reason), str(merged)
+    except (json.JSONDecodeError, KeyError, TypeError, Exception):
+        return False, "llm_error", ""
+
+
+def should_create_node(
+    query: str,
+    existing_matches: list[tuple[str, float, str]],
+    llm_call: Callable[[str, str], str],
+) -> tuple[bool, str, str, str]:
+    """Ask the LLM if a query warrants a new node (neurogenesis).
+
+    Args:
+        query: The query that didn't match well.
+        existing_matches: List of (node_id, score, summary) of closest matches.
+        llm_call: The cheap LLM.
+
+    Returns:
+        (should_create, reason, content, summary)
+    """
+    existing_text = "\n".join(
+        f"  {nid} (score={score:.2f}): {summary[:80]}"
+        for nid, score, summary in existing_matches
+    )
+
+    try:
+        raw = llm_call(
+            NEUROGENESIS_SYSTEM_PROMPT,
+            NEUROGENESIS_USER_PROMPT.format(query=query, existing=existing_text),
+        )
+        parsed = _parse_json_response(raw)
+
+        do_create = parsed.get("should_create", False)
+        reason = parsed.get("reason", "")
+        content = parsed.get("content", query)
+        summary = parsed.get("summary", query[:80])
+
+        return bool(do_create), str(reason), str(content), str(summary)
+    except (json.JSONDecodeError, KeyError, TypeError, Exception):
+        return False, "llm_error", "", ""
 
 
 # ---------------------------------------------------------------------------
-# Core Mitosis Operations
+# Graph Operations
 # ---------------------------------------------------------------------------
 
 def split_node(
@@ -205,12 +340,9 @@ def split_node(
     state: MitosisState,
     config: MitosisConfig | None = None,
 ) -> SplitResult | None:
-    """Split a node into N chunks using the cheap LLM.
+    """Split a node into coherent sections using the cheap LLM.
 
-    Creates chunk nodes, connects them as siblings (all-to-all, weight=1.0),
-    and removes the original node (replacing with chunks).
-
-    Returns None if the node is too small to split.
+    The LLM decides how many sections. No hardcoded count.
     """
     config = config or MitosisConfig()
     node = graph.get_node(node_id)
@@ -220,12 +352,11 @@ def split_node(
     if len(node.content) < config.min_content_chars:
         return None
 
-    # Split content
-    sections = split_with_llm(node.content, config.num_chunks, llm_call)
+    # LLM decides the split
+    sections = split_with_llm(node.content, llm_call)
     if len(sections) < 2:
         return None
 
-    # Determine generation
     generation = state.generations.get(node_id, 0) + 1
 
     # Create chunk nodes
@@ -248,14 +379,13 @@ def split_node(
                 "last_fired_ts": 0.0,
             },
         )
-        # Carry over protection from parent
         if node.metadata.get("protected"):
             chunk_node.metadata["protected"] = True
 
         graph.add_node(chunk_node)
         chunk_ids.append(chunk_id)
 
-    # Create sibling edges (all-to-all between chunks)
+    # Sibling edges (all-to-all at weight 1.0)
     edges_created = 0
     for i, src_id in enumerate(chunk_ids):
         for j, tgt_id in enumerate(chunk_ids):
@@ -269,7 +399,7 @@ def split_node(
                 ))
                 edges_created += 1
 
-    # Transfer incoming/outgoing edges from parent to all chunks
+    # Transfer parent edges to all chunks
     for src_node, edge in graph.incoming(node_id):
         for chunk_id in chunk_ids:
             graph.add_edge(Edge(
@@ -290,7 +420,7 @@ def split_node(
                 created_by="auto",
             ))
 
-    # Remove the parent node
+    # Remove parent
     graph.remove_node(node_id)
 
     # Update state
@@ -308,75 +438,82 @@ def split_node(
     )
 
 
-def check_reconvergence(
+def find_co_firing_families(
     graph: Graph,
     state: MitosisState,
-    config: MitosisConfig | None = None,
-) -> list[str]:
-    """Find families where all sibling edges have reconverged (weight ≈ 1.0).
+) -> list[tuple[str, list[str]]]:
+    """Find families where all sibling edges are strong (co-firing).
 
-    These nodes always co-fire — they're functionally one unit again.
-    Returns list of parent_ids that should be re-split.
+    Returns list of (parent_id, chunk_ids) that may need merging.
     """
-    config = config or MitosisConfig()
-    reconverged = []
+    co_firing = []
 
     for parent_id, chunk_ids in state.families.items():
-        # Check all chunks still exist
         alive = [cid for cid in chunk_ids if graph.get_node(cid) is not None]
         if len(alive) < 2:
             continue
 
-        # Check all sibling edges are at or above threshold
-        all_converged = True
+        # Check if all sibling edges are strong
+        all_strong = True
         for i, src in enumerate(alive):
             for j, tgt in enumerate(alive):
                 if i == j:
                     continue
                 edge = graph.get_edge(src, tgt)
-                if edge is None or edge.weight < config.reconverge_threshold:
-                    all_converged = False
+                if edge is None or edge.weight < 0.90:
+                    all_strong = False
                     break
-            if not all_converged:
+            if not all_strong:
                 break
 
-        if all_converged:
-            reconverged.append(parent_id)
+        if all_strong:
+            co_firing.append((parent_id, alive))
 
-    return reconverged
+    return co_firing
 
 
-def merge_and_resplit(
+def merge_nodes(
     graph: Graph,
     parent_id: str,
+    chunk_ids: list[str],
     llm_call: Callable[[str, str], str],
     state: MitosisState,
     config: MitosisConfig | None = None,
-) -> SplitResult | None:
-    """Merge reconverged chunks back together, then re-split with LLM.
+) -> MergeResult | None:
+    """Ask the LLM if co-firing chunks should merge. If yes, merge them.
 
-    The LLM may split differently this time — that's the point.
-    The graph refines its granularity through repeated division.
+    After merging, the merged node may get split again if it's big enough —
+    but the LLM might split it differently this time.
     """
     config = config or MitosisConfig()
-    chunk_ids = state.families.get(parent_id, [])
 
-    # Gather content from all living chunks (in order)
-    chunks_with_index = []
+    chunks = []
     for cid in chunk_ids:
         node = graph.get_node(cid)
         if node is not None:
-            idx = node.metadata.get("chunk_index", 0)
-            chunks_with_index.append((idx, node.content, cid))
+            chunks.append((cid, node.content))
 
-    if not chunks_with_index:
+    if len(chunks) < 2:
         return None
 
-    # Reassemble in original order
-    chunks_with_index.sort(key=lambda x: x[0])
-    merged_content = "\n\n".join(content for _, content, _ in chunks_with_index)
+    # Ask the LLM
+    do_merge, reason, merged_content = should_merge(chunks, llm_call)
 
-    # Create a temporary merged node
+    if not do_merge:
+        return None
+
+    if not merged_content:
+        # Reassemble in order
+        ordered = []
+        for cid in chunk_ids:
+            node = graph.get_node(cid)
+            if node:
+                idx = node.metadata.get("chunk_index", 0)
+                ordered.append((idx, node.content))
+        ordered.sort(key=lambda x: x[0])
+        merged_content = "\n\n".join(c for _, c in ordered)
+
+    # Create merged node
     merged_node = Node(
         id=parent_id,
         content=merged_content,
@@ -392,13 +529,74 @@ def merge_and_resplit(
     )
 
     # Remove old chunks
-    for _, _, cid in chunks_with_index:
+    for cid in chunk_ids:
         graph.remove_node(cid)
         state.chunk_to_parent.pop(cid, None)
 
-    # Add merged node and re-split
     graph.add_node(merged_node)
-    return split_node(graph, parent_id, llm_call, state, config)
+    state.families.pop(parent_id, None)
+
+    return MergeResult(
+        merged_id=parent_id,
+        source_ids=chunk_ids,
+        content=merged_content,
+    )
+
+
+def create_node(
+    graph: Graph,
+    query: str,
+    existing_matches: list[tuple[str, float, str]],
+    llm_call: Callable[[str, str], str],
+    fired_node_ids: list[str] | None = None,
+) -> NeurogenesisResult | None:
+    """Ask the LLM if a query warrants a new node. If yes, create it.
+
+    No cosine thresholds. The LLM decides if the concept is novel.
+    """
+    do_create, reason, content, summary = should_create_node(
+        query, existing_matches, llm_call
+    )
+
+    if not do_create:
+        return None
+
+    h = sha256(content.encode("utf-8")).hexdigest()[:12]
+    node_id = f"auto:{h}"
+
+    if graph.get_node(node_id) is not None:
+        return None  # Already exists
+
+    node = Node(
+        id=node_id,
+        content=content,
+        summary=summary,
+        type="fact",
+        threshold=0.8,
+        metadata={
+            "source": "neurogenesis-llm",
+            "query": query,
+            "reason": reason,
+            "created_ts": time.time(),
+            "fired_count": 0,
+            "last_fired_ts": 0.0,
+        },
+    )
+    graph.add_node(node)
+
+    # Connect to whatever fired during this query
+    connected = []
+    for nid in (fired_node_ids or [])[:5]:
+        if nid != node_id and graph.get_node(nid) is not None:
+            graph.add_edge(Edge(source=nid, target=node_id, weight=0.15, created_by="auto"))
+            graph.add_edge(Edge(source=node_id, target=nid, weight=0.15, created_by="auto"))
+            connected.append(nid)
+
+    return NeurogenesisResult(
+        node_id=node_id,
+        content=content,
+        connected_to=connected,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -415,29 +613,18 @@ def bootstrap_workspace(
     """Bootstrap CrabPath from workspace files.
 
     1. Each file becomes a node (carbon copy, verbatim)
-    2. Each node is immediately split into N chunks by the cheap LLM
+    2. The cheap LLM splits each into coherent sections (it decides how many)
     3. Sibling chunks get all-to-all edges at weight 1.0
-
-    Args:
-        graph: The CrabPath graph to populate.
-        workspace_files: Dict of {file_id: file_content}.
-        llm_call: Callable(system_prompt, user_prompt) -> raw LLM output.
-        state: MitosisState to track families.
-        config: MitosisConfig.
-
-    Returns:
-        List of SplitResults, one per file.
     """
     config = config or MitosisConfig()
     results = []
 
     for file_id, content in workspace_files.items():
-        # Step 1: Add the file as a monolithic node
         file_node = Node(
             id=file_id,
             content=content,
             summary=f"Workspace file: {file_id}",
-            type=config.parent_type,
+            type="workspace_file",
             metadata={
                 "source": "workspace-bootstrap",
                 "original_file": file_id,
@@ -448,25 +635,15 @@ def bootstrap_workspace(
         )
         graph.add_node(file_node)
 
-        # Step 2: Immediately split into chunks
         result = split_node(graph, file_id, llm_call, state, config)
         if result:
             results.append(result)
-
-    # Step 3: Create cross-file edges between all chunks (low weight)
-    # These allow the router to jump between files
-    all_chunk_ids = []
-    for result in results:
-        all_chunk_ids.extend(result.chunk_ids)
-
-    # Don't do all-to-all for cross-file — too dense.
-    # Instead, rely on embedding seeding for cross-file routing.
 
     return results
 
 
 # ---------------------------------------------------------------------------
-# Maintenance: Run as part of the query loop
+# Maintenance: The Unified Loop
 # ---------------------------------------------------------------------------
 
 def mitosis_maintenance(
@@ -475,21 +652,54 @@ def mitosis_maintenance(
     state: MitosisState,
     config: MitosisConfig | None = None,
 ) -> dict[str, Any]:
-    """Check for reconvergence and re-split as needed.
+    """Run the full maintenance cycle. One cheap LLM does everything.
 
-    Call this periodically (e.g., every N queries alongside decay).
+    1. Find co-firing families → ask LLM if they should merge
+    2. Find big leaf nodes → ask LLM to split them
+    3. After merging, re-split if the merged node is big enough
+
+    Call periodically (every N queries, alongside decay).
     """
     config = config or MitosisConfig()
-    reconverged = check_reconvergence(graph, state, config)
 
-    resplit_results = []
-    for parent_id in reconverged:
-        result = merge_and_resplit(graph, parent_id, llm_call, state, config)
-        if result:
-            resplit_results.append(result)
+    merges = []
+    splits = []
+
+    # 1. Find co-firing families and ask LLM about merging
+    co_firing = find_co_firing_families(graph, state)
+    for parent_id, chunk_ids in co_firing:
+        merge_result = merge_nodes(graph, parent_id, chunk_ids, llm_call, state, config)
+        if merge_result:
+            merges.append(merge_result)
+
+            # After merging, re-split if big enough
+            merged_node = graph.get_node(merge_result.merged_id)
+            if merged_node and len(merged_node.content) >= config.min_content_chars:
+                split_result = split_node(
+                    graph, merge_result.merged_id, llm_call, state, config
+                )
+                if split_result:
+                    splits.append(split_result)
+
+    # 2. Find big leaf nodes (not in any family) that could be split
+    family_chunks = set()
+    for chunk_ids in state.families.values():
+        family_chunks.update(chunk_ids)
+
+    for node in graph.nodes():
+        if node.id in family_chunks:
+            continue  # Already part of a family
+        if node.id in state.families:
+            continue  # Is a tracked parent
+        if len(node.content) >= config.min_content_chars * 3:
+            # Big standalone node — ask LLM to split
+            split_result = split_node(graph, node.id, llm_call, state, config)
+            if split_result:
+                splits.append(split_result)
 
     return {
-        "reconverged_families": len(reconverged),
-        "resplit_count": len(resplit_results),
-        "resplit_results": resplit_results,
+        "merges": len(merges),
+        "splits": len(splits),
+        "merge_results": merges,
+        "split_results": splits,
     }

@@ -214,6 +214,122 @@ If A fires at step 0 and B fires at step 1 (A caused B), and the task succeeds:
 
 This encodes *sequences*, not just co-occurrence. Over many episodes, the graph learns which procedures work in which order.
 
+## Recursive Cell Division (Mitosis)
+
+**The graph finds its own resolution.**
+
+Every file starts as one monolithic node. A cheap LLM splits it into 4 coherent chunks. All chunks get sibling edges at weight 1.0 — they behave as one unit initially. Over time, as the graph activates and learns, edges between chunks that don't co-fire decay. When all sibling edges reconverge to 1.0 (always co-fire), the chunks are functionally monolithic again — the LLM re-splits them, potentially finding different boundaries this time.
+
+**Lifecycle:**
+```
+workspace file
+    ↓
+[LLM split] → 4 chunks (sibling edges = 1.0)
+    ↓
+[activation + decay] → edges diverge (0.3, 0.8, 1.0, 0.5...)
+    ↓
+[some edges reconverge to 1.0] → always co-fire
+    ↓
+[merge + re-split] → LLM splits differently
+    ↓
+repeat...
+```
+
+The graph refines its granularity through repeated division. No heatmaps, no thresholds — just edges and decay.
+
+### API
+
+#### Bootstrap from workspace files
+
+```python
+from crabpath import Graph
+from crabpath.mitosis import bootstrap_workspace, MitosisState, MitosisConfig
+
+def llm_call(system_prompt: str, user_prompt: str) -> str:
+    # Your cheap LLM call (e.g., GPT-4o-mini, Claude Haiku)
+    return your_llm_client.call(system_prompt, user_prompt)
+
+graph = Graph()
+state = MitosisState()
+workspace_files = {
+    "AGENTS.md": open("AGENTS.md").read(),
+    "TOOLS.md": open("TOOLS.md").read(),
+    # ... more files
+}
+
+results = bootstrap_workspace(
+    graph=graph,
+    workspace_files=workspace_files,
+    llm_call=llm_call,
+    state=state,
+    config=MitosisConfig(num_chunks=4, sibling_weight=1.0),
+)
+
+print(f"Split {len(results)} files into {sum(len(r.chunk_ids) for r in results)} chunks")
+graph.save("crabpath_graph.json")
+state.save("mitosis_state.json")
+```
+
+#### Maintenance (run periodically)
+
+```python
+from crabpath.mitosis import mitosis_maintenance
+
+# After every N queries (or every activate() call)
+maintenance_result = mitosis_maintenance(
+    graph=graph,
+    llm_call=llm_call,
+    state=state,
+)
+
+print(f"Reconverged families: {maintenance_result['reconverged_families']}")
+print(f"Re-split: {maintenance_result['resplit_count']}")
+```
+
+### Key Functions
+
+- **`bootstrap_workspace(graph, files, llm_call, state)`** — Initialize graph from workspace files. Each file becomes a node, immediately split into 4 chunks by the LLM.
+- **`split_node(graph, node_id, llm_call, state)`** — Split a single node into N chunks. Creates sibling edges at weight 1.0.
+- **`check_reconvergence(graph, state)`** — Find families where all sibling edges have reconverged (weight ≈ 1.0). Returns parent IDs ready for re-split.
+- **`merge_and_resplit(graph, parent_id, llm_call, state)`** — Merge reconverged chunks, then re-split with the LLM.
+- **`mitosis_maintenance(graph, llm_call, state)`** — Run reconvergence check + re-split. Call this every N activations.
+
+### Quick Example
+
+```python
+from crabpath import Graph, activate, learn
+from crabpath.mitosis import bootstrap_workspace, mitosis_maintenance, MitosisState
+
+def my_llm_call(sys, usr):
+    # Your cheap LLM
+    return llm_client.call(sys, usr)
+
+# Bootstrap
+g = Graph()
+state = MitosisState()
+workspace = {"notes.md": open("notes.md").read()}
+bootstrap_workspace(g, workspace, my_llm_call, state)
+
+# Query loop
+for query in queries:
+    seeds = {"notes.md::chunk-0-abc123": 1.0}  # seed from embedding search
+    result = activate(g, seeds, max_steps=3, decay=0.1)
+    
+    # Use fired nodes as context
+    context = [n.content for n, _ in result.fired]
+    
+    # Learn
+    outcome = 1.0 if task_succeeded else -1.0
+    learn(g, result, outcome)
+    
+    # Maintenance (every 10 queries)
+    if query_count % 10 == 0:
+        mitosis_maintenance(g, my_llm_call, state)
+
+g.save("graph.json")
+state.save("mitosis_state.json")
+```
+
 ## API
 
 ### Node
