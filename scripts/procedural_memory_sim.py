@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -377,6 +378,40 @@ def run_simulation() -> None:
             f"{edge['source']}->{edge['target']}:{edge['tier']}" for edge in cp.chain_edges
         )
         print(f"  {label}: {tier_line}")
+
+    output_path = ROOT / "scripts" / "procedural_memory_results.json"
+    output_path.write_text(
+        json.dumps(
+            {
+                "queries_executed": len(queries),
+                "docs_bootstrapped": len(all_documents),
+                "graph": {
+                    "nodes": graph.node_count,
+                    "edges": graph.edge_count,
+                },
+                "checkpoints": [
+                    {
+                        "query_num": checkpoint.num,
+                        "query": checkpoint.query,
+                        "selected": checkpoint.selected,
+                        "path": checkpoint.path,
+                        "hops": checkpoint.hops,
+                        "follows_expected": checkpoint.follows_expected,
+                        "proto_edges": checkpoint.proto_edges,
+                        "promotions": checkpoint.promotions,
+                        "reinforced": checkpoint.reinforced,
+                        "chain_edges": checkpoint.chain_edges,
+                        "distractor_edge_count": checkpoint.distractor_edge_count,
+                        "max_distractor_weight": checkpoint.max_distractor_weight,
+                    }
+                    for checkpoint in [q1, q25, q50]
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(f"\nDetailed results written to {output_path}")
 
 
 if __name__ == "__main__":

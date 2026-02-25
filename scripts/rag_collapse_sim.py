@@ -87,6 +87,7 @@ def _tokenize(text: str) -> set[str]:
 
 def _build_documents() -> OrderedDict[str, str]:
     return OrderedDict(
+        [
         (
             "deployment-runbook",
             (
@@ -276,7 +277,7 @@ def _build_documents() -> OrderedDict[str, str]:
                 "sign-off before and after rollback."
             ),
         ),
-    )
+    ])
 
 
 def _build_queries() -> list[QueryCase]:
