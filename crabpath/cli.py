@@ -8,10 +8,12 @@ All output is machine-readable JSON to keep agents simple:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -21,9 +23,11 @@ from .embeddings import EmbeddingIndex, openai_embed
 from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .graph import Graph
 from .lifecycle_sim import run_simulation, workspace_scenario, SimConfig
+from .autotune import HEALTH_TARGETS, measure_health
 from .migrate import MigrateConfig, migrate
 from .mitosis import MitosisConfig, MitosisState, split_node
 from .migrate import fallback_llm_split
+from .synaptogenesis import edge_tier_stats
 
 
 DEFAULT_GRAPH_PATH = "crabpath_graph.json"
@@ -79,6 +83,293 @@ def _split_csv(value: str) -> list[str]:
     return ids
 
 
+def _load_query_stats(path: str | None) -> tuple[dict[str, Any], bool]:
+    if path is None:
+        return {}, False
+
+    file_path = Path(path)
+    if not file_path.exists():
+        raise CLIError(f"query-stats file not found: {path}")
+
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        stats = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CLIError(f"failed to load query-stats: {path}: {exc}") from exc
+
+    if not isinstance(stats, dict):
+        raise CLIError(f"query-stats must be a JSON object: {path}")
+    return stats, True
+
+
+def _load_mitosis_state(path: str | None) -> MitosisState:
+    if path is None:
+        return MitosisState()
+
+    file_path = Path(path)
+    if not file_path.exists():
+        raise CLIError(f"mitosis-state file not found: {path}")
+
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        state_data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CLIError(f"failed to load mitosis-state: {path}: {exc}") from exc
+
+    if not isinstance(state_data, dict):
+        raise CLIError(f"mitosis-state must be a JSON object: {path}")
+
+    return MitosisState(
+        families=state_data.get("families", {}),
+        generations=state_data.get("generations", {}),
+        chunk_to_parent=state_data.get("chunk_to_parent", {}),
+    )
+
+
+def _node_file_id(node_id: str) -> str:
+    return str(node_id).split("::", 1)[0]
+
+
+def _cross_file_edges(graph: Graph) -> int:
+    if graph.node_count <= 1:
+        return 0
+
+    cross = 0
+    for edge in graph.edges():
+        if _node_file_id(edge.source) != _node_file_id(edge.target):
+            cross += 1
+    return cross
+
+
+def _format_health_target(target: tuple[float | None, float | None]) -> str:
+    min_v, max_v = target
+    if min_v is None and max_v is None:
+        return "*"
+    if min_v is None:
+        return f"<= {max_v}"
+    if max_v is None:
+        return f">= {min_v}"
+    return f"{min_v} - {max_v}"
+
+
+def _status_for_health_metric(
+    value: float | None,
+    target: tuple[float | None, float | None],
+    available: bool,
+) -> str:
+    if not available:
+        return "⚠️"
+
+    if value is None:
+        return "⚠️"
+
+    min_v, max_v = target
+    if min_v is not None and value < min_v:
+        return "❌"
+    if max_v is not None and value > max_v:
+        return "❌"
+    return "✅"
+
+
+def _format_metric_value(metric: str, value: float | None) -> str:
+    if value is None:
+        return "n/a"
+
+    if metric.endswith("_pct") or metric == "context_compression":
+        return f"{value:.2f}%"
+
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(value)
+
+
+def _health_metric_available(metric: str, has_query_stats: bool) -> bool:
+    if metric in {
+        "avg_nodes_fired_per_query",
+        "context_compression",
+        "proto_promotion_rate",
+        "reconvergence_rate",
+    }:
+        return has_query_stats
+    return True
+
+
+def _build_health_report_lines(
+    graph: Graph,
+    health: dict[str, Any],
+    has_query_stats: bool,
+    *,
+    with_status: bool = False,
+) -> list[str]:
+    lines: list[str] = [
+        f"Graph Health: {graph.node_count} nodes, {graph.edge_count} edges",
+        "-" * 46,
+    ]
+    for metric, target in HEALTH_TARGETS.items():
+        available = _health_metric_available(metric, has_query_stats)
+        raw_value = health.get(metric)
+        value = raw_value if available else None
+        status = _status_for_health_metric(value if available else None, target, available)
+        value_text = (
+            _format_metric_value(metric, float(value))
+            if value is not None
+            else "n/a (collect query stats)"
+        )
+        if with_status:
+            lines.append(
+                f"{metric:24} | {value_text:>20} | target { _format_health_target(target):15} | {status}"
+            )
+        else:
+            lines.append(f"{metric}: {value_text} (target {_format_health_target(target)}) {status}")
+    return lines
+
+
+def _build_health_payload(
+    args: argparse.Namespace,
+    graph: Graph,
+    health: Any,
+    has_query_stats: bool,
+) -> dict[str, Any]:
+    rows = []
+    for metric, target in HEALTH_TARGETS.items():
+        value = getattr(health, metric)
+        available = _health_metric_available(metric, has_query_stats)
+        status = _status_for_health_metric(value if available else None, target, available)
+        rows.append(
+            {
+                "metric": metric,
+                "value": value if available else None,
+                "target_range": target,
+                "status": status,
+            }
+        )
+
+    return {
+        "ok": True,
+        "graph": args.graph,
+        "query_stats_provided": has_query_stats,
+        "mitosis_state": args.mitosis_state,
+        "metrics": rows,
+    }
+
+
+def cmd_health(args: argparse.Namespace) -> dict[str, Any] | str:
+    graph = _load_graph(args.graph)
+    state = _load_mitosis_state(args.mitosis_state)
+    query_stats, has_query_stats = _load_query_stats(args.query_stats)
+    health = measure_health(graph, state, query_stats)
+    if args.json:
+        return _build_health_payload(args, graph, health, has_query_stats)
+
+    return "\n".join(
+        _build_health_report_lines(
+            graph,
+            dataclasses.asdict(health),
+            has_query_stats,
+            with_status=True,
+        )
+    )
+
+
+def _snapshot_path(path_value: str | None) -> Path:
+    if path_value is None:
+        raise CLIError("--snapshots is required for evolve")
+    return Path(path_value)
+
+
+def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CLIError(f"invalid JSON line in snapshots file: {path}: {exc}") from exc
+            if not isinstance(row, dict):
+                raise CLIError(f"invalid snapshot row in snapshots file: {path}")
+            rows.append(row)
+    return rows
+
+
+def _build_snapshot(graph: Graph) -> dict[str, Any]:
+    return {
+        "timestamp": time.time(),
+        "nodes": graph.node_count,
+        "edges": graph.edge_count,
+        "tier_counts": edge_tier_stats(graph),
+        "cross_file_edges": _cross_file_edges(graph),
+    }
+
+
+def _format_timeline(snapshots: list[dict[str, Any]]) -> str:
+    lines: list[str] = ["Evolution timeline"]
+    if not snapshots:
+        return "No snapshots yet."
+
+    previous: dict[str, Any] | None = None
+    for idx, snapshot in enumerate(snapshots, start=1):
+        timestamp = snapshot.get("timestamp")
+        try:
+            ts = float(timestamp) if timestamp is not None else 0.0
+            label = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds")
+        except (TypeError, ValueError, OSError, OverflowError):
+            label = "invalid-timestamp"
+
+        nodes = int(snapshot.get("nodes", 0))
+        edges = int(snapshot.get("edges", 0))
+        cross_file = int(snapshot.get("cross_file_edges", 0))
+        tiers = snapshot.get("tier_counts", {})
+        dormant = int((tiers or {}).get("dormant", 0))
+        habitual = int((tiers or {}).get("habitual", 0))
+        reflex = int((tiers or {}).get("reflex", 0))
+
+        if previous is None:
+            lines.append(
+                f"#{idx:>2} {label} | nodes {nodes} | edges {edges} | cross-file {cross_file} | tiers d={dormant} h={habitual} r={reflex}"
+            )
+        else:
+            delta_nodes = nodes - int(previous.get("nodes", 0))
+            delta_edges = edges - int(previous.get("edges", 0))
+            delta_cross = cross_file - int(previous.get("cross_file_edges", 0))
+            prev_tiers = previous.get("tier_counts", {})
+            prev_dormant = int((prev_tiers or {}).get("dormant", 0))
+            prev_habitual = int((prev_tiers or {}).get("habitual", 0))
+            prev_reflex = int((prev_tiers or {}).get("reflex", 0))
+
+            lines.append(
+                f"#{idx:>2} {label} | nodes {nodes} ({delta_nodes:+d}) | edges {edges} ({delta_edges:+d}) | cross-file {cross_file} ({delta_cross:+d}) | tiers d={dormant} ({delta_dormant:+d}) h={habitual} ({delta_habitual:+d}) r={reflex} ({delta_reflex:+d})"
+            )
+
+        previous = snapshot
+
+        if previous is None or previous.get("timestamp") is None:
+            continue
+    return "\n".join(lines)
+
+
+def cmd_evolve(args: argparse.Namespace) -> dict[str, Any] | str:
+    graph = _load_graph(args.graph)
+    path = _snapshot_path(args.snapshots)
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    snapshot = _build_snapshot(graph)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(snapshot) + "\n")
+
+    if not args.report:
+        return {"ok": True, "snapshot": snapshot, "snapshots": str(path)}
+
+    snapshots = _load_snapshot_rows(path)
+    return _format_timeline(snapshots)
+
+
 def _keyword_seed(graph: Graph, query_text: str) -> dict[str, float]:
     if not query_text:
         return {}
@@ -114,7 +405,7 @@ def cmd_query(args: argparse.Namespace) -> dict[str, Any]:
         embed_fn = _safe_openai_embed_fn()
         if embed_fn is not None and index.vectors:
             seeds = index.seed(
-                query_text=args.query,
+                args.query,
                 embed_fn=embed_fn,
                 top_k=args.top,
             )
@@ -466,6 +757,13 @@ def _build_parser() -> JSONArgumentParser:
     sim.add_argument("--output", default=None)
     sim.set_defaults(func=cmd_sim)
 
+    health = subparsers.add_parser("health", help="Measure graph health from graph state + optional stats")
+    health.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
+    health.add_argument("--mitosis-state", default=None)
+    health.add_argument("--query-stats", default=None)
+    health.add_argument("--json", action="store_true", default=False)
+    health.set_defaults(func=cmd_health)
+
     add = subparsers.add_parser("add", help="Add or update a node in the graph")
     add.add_argument("--id", required=True, help="Node ID")
     add.add_argument("--content", required=True, help="Node content text")
@@ -484,6 +782,12 @@ def _build_parser() -> JSONArgumentParser:
     cons.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
     cons.set_defaults(func=cmd_consolidate)
 
+    evolve = subparsers.add_parser("evolve", help="Append graph snapshot stats to a JSONL timeline")
+    evolve.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
+    evolve.add_argument("--snapshots", required=True)
+    evolve.add_argument("--report", action="store_true", default=False)
+    evolve.set_defaults(func=cmd_evolve)
+
     return parser
 
 
@@ -492,6 +796,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         args = parser.parse_args(argv)
         result = args.func(args)
+        if args.command == "health" and not args.json:
+            if not isinstance(result, str):
+                _emit_json(result)
+            else:
+                print(result)
+            return 0
+        if args.command == "evolve" and getattr(args, "report", False):
+            if not isinstance(result, str):
+                _emit_json(result)
+            else:
+                print(result)
+            return 0
         _emit_json(result)
         return 0
     except CLIError as exc:

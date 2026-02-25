@@ -54,9 +54,11 @@ def deterministic_auto_id(query_text: str) -> str:
 def assess_novelty(
     query_text: str,
     raw_scores: list[tuple[str, float]],
-    config: NeurogenesisConfig = NeurogenesisConfig(),
+    config: NeurogenesisConfig | None = None,
 ) -> NoveltyResult:
     """Assess novelty from raw cosine hits and simple quality gates."""
+    config = config or NeurogenesisConfig()
+
     normalized = _normalize(query_text)
     token_count = len(normalized.split()) if normalized else 0
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from .graph import Edge, Graph, Node
+from .graph import Graph, Edge, Node
 
 
 @dataclass

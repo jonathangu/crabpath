@@ -99,7 +99,7 @@ def mcp_query(arguments: dict[str, Any]) -> dict[str, Any]:
         embed_fn = _safe_openai_embed_fn()
         if embed_fn is not None and index.vectors:
             seeds = index.seed(
-                query_text=arguments["query"],
+                arguments["query"],
                 embed_fn=embed_fn,
                 top_k=arguments.get("top", 12),
             )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import exp, log
-from typing import Any
+from typing import Any, Sequence
 
 from .graph import Edge, Graph
 
@@ -45,12 +45,17 @@ class LearningResult:
 _BASELINE_STATE: dict[str, float] = {}
 
 
-def _as_float(value: float | int) -> float:
-    return float(value)
+def _as_float(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _step_get(step: object, key: str) -> Any:
     if isinstance(step, dict):
+        if key not in step:
+            raise KeyError(key)
         return step[key]
     return getattr(step, key)
 
@@ -94,7 +99,13 @@ def _softmax(values: list[float]) -> list[float]:
     return [v / total for v in exps]
 
 
-def gu_corrected_advantage(trajectory_steps, reward, baseline, discount) -> list[float]:
+def gu_corrected_advantage(
+    trajectory_steps: Sequence[Any],
+    reward: RewardSignal | float | int,
+    baseline: float,
+    discount: float | int,
+) -> list[float]:
+    """Compute undiscounted baseline-shifted advantages for one trajectory."""
     reward_value = _extract_reward(reward)
     reward_baselined = reward_value - _as_float(baseline)
     return [
@@ -103,7 +114,13 @@ def gu_corrected_advantage(trajectory_steps, reward, baseline, discount) -> list
     ]
 
 
-def policy_gradient_update(trajectory_steps, reward, config, baseline: float = 0.0) -> tuple[float, list[float]]:
+def policy_gradient_update(
+    trajectory_steps: Sequence[Any],
+    reward: RewardSignal | float | int,
+    config: LearningConfig,
+    baseline: float = 0.0,
+) -> tuple[float, list[float]]:
+    """Compute REINFORCE-style policy-loss proxy and per-step advantages."""
     advantages = gu_corrected_advantage(
         trajectory_steps,
         reward,
@@ -122,14 +139,19 @@ def policy_gradient_update(trajectory_steps, reward, config, baseline: float = 0
         candidate_targets = [target for target, _ in candidates]
         if chosen not in candidate_targets:
             continue
-        chosen_prob = probs[candidate_targets.index(chosen)]
-        if chosen_prob > 0.0:
-            total_loss -= advantages[index] * log(chosen_prob)
+            chosen_prob = probs[candidate_targets.index(chosen)]
+            if chosen_prob > 0.0:
+                total_loss -= advantages[index] * log(chosen_prob)
 
     return total_loss, advantages
 
 
-def weight_delta(trajectory_steps, advantages, config) -> list[tuple[str, str, float]]:
+def weight_delta(
+    trajectory_steps: Sequence[Any],
+    advantages: Sequence[float],
+    config: LearningConfig,
+) -> list[tuple[str, str, float]]:
+    """Turn trajectory advantage values into edge-weight deltas."""
     deltas: dict[tuple[str, str], float] = {}
     for index, step in enumerate(trajectory_steps):
         candidates = _as_candidates(_step_get(step, "candidates"))
@@ -161,7 +183,8 @@ def _set_count(edge: Edge, field: str, delta: int) -> None:
     setattr(edge, field, int(current) + delta)
 
 
-def apply_weight_updates(graph: Graph, deltas, config) -> list[EdgeUpdate]:
+def apply_weight_updates(graph: Graph, deltas: Sequence[tuple[object, object, object]], config: LearningConfig) -> list[EdgeUpdate]:
+    """Apply policy gradients to graph edges and score skipped candidates."""
     updates: list[EdgeUpdate] = []
     deltas_by_source: dict[str, set[str]] = {}
     raw_by_source: dict[tuple[str, str], float] = {}
@@ -203,7 +226,13 @@ def apply_weight_updates(graph: Graph, deltas, config) -> list[EdgeUpdate]:
     return updates
 
 
-def make_learning_step(graph: Graph, trajectory_steps, reward: RewardSignal, config: LearningConfig) -> LearningResult:
+def make_learning_step(
+    graph: Graph,
+    trajectory_steps: Sequence[Any],
+    reward: RewardSignal,
+    config: LearningConfig,
+) -> LearningResult:
+    """Run a learning step end-to-end and return all weight updates."""
     prev_baseline = _BASELINE_STATE.get(reward.episode_id, 0.0)
     loss, advantages = policy_gradient_update(
         trajectory_steps,

@@ -11,7 +11,7 @@ CLI:
 Paper: https://jonathangu.com/crabpath/
 """
 
-__version__ = "0.4.0"
+__version__ = "1.0.0"
 
 from .graph import Graph, Node, Edge
 from .activation import activate, learn, Firing

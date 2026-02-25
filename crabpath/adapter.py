@@ -19,11 +19,10 @@ from .activation import Firing, activate as _activate, learn as _learn
 from .decay import DecayConfig, apply_decay
 from .embeddings import EmbeddingIndex
 from .feedback import snapshot_path
-from .graph import Edge, Graph, Node
+from .graph import Graph, Node
 from .learning import LearningConfig, LearningResult, RewardSignal, make_learning_step
 from .neurogenesis import (
     NeurogenesisConfig,
-    NoveltyResult,
     assess_novelty,
     connect_new_node,
     deterministic_auto_id,
@@ -62,7 +61,7 @@ class QueryResult:
     novel_node: str | None
     band: str
     best_cosine: float
-    trajectory_steps: list
+    trajectory_steps: list[Any]
     candidate_node: str | None = None
     created_novel_node: bool = False
 
@@ -204,7 +203,7 @@ class CrabPathAgent:
                 except Exception:
                     pass
 
-        if not seeds and (self.embed_fn is None and self.graph.node_count):
+        if not seeds:
             raw_scores = self._keyword_raw_scores(query_text, top_k=top_k)
             for node_id, score in raw_scores:
                 seeds[node_id] = score * 2.0

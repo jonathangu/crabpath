@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .graph import Edge, Graph
+from .graph import Graph
 from .router import Router
 
 
@@ -156,12 +156,6 @@ def traverse(
         # Candidate list includes all outgoing options for learning.
         all_candidates: list[tuple[str, float]] = [(target.id, float(edge.weight)) for target, edge in outgoing]
         all_candidates.sort(key=lambda item: item[1], reverse=True)
-        candidates_by_tier = {
-            "reflex": [c for c in all_candidates if _classify_tier(c[1]) == "reflex"],
-            "habitual": [c for c in all_candidates if _classify_tier(c[1]) == "habitual"],
-            "dormant": [c for c in all_candidates if _classify_tier(c[1]) == "dormant"],
-        }
-
         unvisited_candidates = [c for c in all_candidates if c[0] not in visited]
         if not unvisited_candidates:
             break
