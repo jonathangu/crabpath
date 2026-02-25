@@ -21,7 +21,6 @@ DEFAULT_SNAPSHOT_PATH = "crabpath_events.db"
 
 
 RETRIEVAL_SCORING_MODEL = "gpt-5-mini"
-RETRIEVAL_HELPFULNESS_GATE = 0.1  # Aggressive: almost every scored query produces RL signal
 DEFAULT_OPENAI_TIMEOUT = 8.0
 
 _CORRECTION_START_PATTERNS = (
@@ -244,7 +243,9 @@ def no_reward_on_missing_signal(
     correction: float,
     retrieval_helpfulness: float | dict[str, float] | None = None,
     *,
-    min_helpfulness: float = RETRIEVAL_HELPFULNESS_GATE,
+    config: SynaptogenesisConfig | None = None,
+    min_helpfulness: float | None = None,
+    harmful_score_threshold: float | None = None,
 ) -> float | None:
     """Return a reward only when there is real feedback signal.
 
@@ -255,6 +256,12 @@ def no_reward_on_missing_signal(
         return correction
     if retrieval_helpfulness is None:
         return None
+
+    config = config or SynaptogenesisConfig()
+    if min_helpfulness is None:
+        min_helpfulness = config.helpfulness_gate
+    if harmful_score_threshold is None:
+        harmful_score_threshold = config.harmful_reward_threshold
 
     if isinstance(retrieval_helpfulness, dict):
         node_scores = list(retrieval_helpfulness.values())
@@ -268,7 +275,7 @@ def no_reward_on_missing_signal(
     min_score = min(coerced)
 
     # If any node is actively harmful, return negative so RL punishes the path
-    if min_score <= -0.5:
+    if min_score <= harmful_score_threshold:
         return min_score
 
     # If best node is useful, return positive
@@ -316,7 +323,7 @@ def auto_feedback(
         state=syn_state,
         config=config,
     )
-    reward = no_reward_on_missing_signal(correction)
+    reward = no_reward_on_missing_signal(correction, config=config)
     return {
         "query": query,
         "user_followup": user_followup,

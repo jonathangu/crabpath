@@ -288,6 +288,16 @@ class SafetyBounds:
     min_skip_factor: float = 0.80
     max_skip_factor: float = 0.98
 
+    # Dormancy visibility: avoid flipping tiers too aggressively from small updates
+    min_dormant_threshold: float = 0.15
+    max_dormant_threshold: float = 0.45
+
+    # Retrieval scoring: filter weak/helpful and harmful signals in RL
+    min_helpfulness_gate: float = 0.05
+    max_helpfulness_gate: float = 0.50
+    min_harmful_reward_threshold: float = -1.0
+    max_harmful_reward_threshold: float = -0.2
+
     # Reflex threshold: too low = everything auto-follows, too high = never compiles
     min_reflex_threshold: float = 0.70
     max_reflex_threshold: float = 0.95
@@ -303,8 +313,11 @@ ADJUSTMENT_PRIORITIES = {
     "decay_half_life": 0,
     "promotion_threshold": 1,
     "hebbian_increment": 2,
-    "reflex_threshold": 3,
-    "skip_factor": 4,
+    "dormant_threshold": 3,
+    "reflex_threshold": 4,
+    "skip_factor": 5,
+    "helpfulness_gate": 6,
+    "harmful_reward_threshold": 7,
 }
 
 
@@ -335,6 +348,21 @@ def validate_config(
         ),
         (syn_config.skip_factor, safety_bounds.min_skip_factor, safety_bounds.max_skip_factor),
         (
+            syn_config.dormant_threshold,
+            safety_bounds.min_dormant_threshold,
+            safety_bounds.max_dormant_threshold,
+        ),
+        (
+            syn_config.helpfulness_gate,
+            safety_bounds.min_helpfulness_gate,
+            safety_bounds.max_helpfulness_gate,
+        ),
+        (
+            syn_config.harmful_reward_threshold,
+            safety_bounds.min_harmful_reward_threshold,
+            safety_bounds.max_harmful_reward_threshold,
+        ),
+        (
             syn_config.reflex_threshold,
             safety_bounds.min_reflex_threshold,
             safety_bounds.max_reflex_threshold,
@@ -361,6 +389,9 @@ def _snapshot_tune_config(
         "hebbian_increment": syn_config.hebbian_increment,
         "skip_factor": syn_config.skip_factor,
         "reflex_threshold": syn_config.reflex_threshold,
+        "dormant_threshold": syn_config.dormant_threshold,
+        "helpfulness_gate": syn_config.helpfulness_gate,
+        "harmful_reward_threshold": syn_config.harmful_reward_threshold,
     }
 
 
@@ -374,6 +405,9 @@ def _restore_tune_config(
     syn_config.hebbian_increment = float(snapshot["hebbian_increment"])
     syn_config.skip_factor = float(snapshot["skip_factor"])
     syn_config.reflex_threshold = float(snapshot["reflex_threshold"])
+    syn_config.dormant_threshold = float(snapshot["dormant_threshold"])
+    syn_config.helpfulness_gate = float(snapshot["helpfulness_gate"])
+    syn_config.harmful_reward_threshold = float(snapshot["harmful_reward_threshold"])
 
 
 def _should_revert(
@@ -671,10 +705,11 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 metric="avg_nodes_fired_per_query",
                 current=health.avg_nodes_fired_per_query,
                 target_range=(min_fired or 0.0, max_fired or 0.0),
-                suggested_change={"decay_half_life": "decrease"},
+                suggested_change={"decay_half_life": "decrease", "dormant_threshold": "increase"},
                 reason=(
                     "Too many nodes fired per query; stronger decay "
-                    "(lower half_life) should narrow spread."
+                    "(lower half_life) and higher dormancy threshold should "
+                    "narrow spread."
                 ),
             )
         )
@@ -687,6 +722,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 suggested_change={
                     "decay_half_life": "increase",
                     "promotion_threshold": "decrease",
+                    "dormant_threshold": "decrease",
                 },
                 reason=(
                     "Too few nodes fired per query; slower decay and lower "
@@ -810,10 +846,13 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 metric="proto_promotion_rate",
                 current=health.proto_promotion_rate,
                 target_range=(min_promo or 0.0, max_promo or 0.0),
-                suggested_change={"promotion_threshold": "decrease"},
+                suggested_change={
+                    "promotion_threshold": "decrease",
+                    "helpfulness_gate": "decrease",
+                },
                 reason=(
-                    "Promotion is too slow; lowering threshold should convert "
-                    "proto-links sooner."
+                    "Promotion is too slow; lowering threshold and helpfulness "
+                    "gate should increase RL throughput."
                 ),
             )
         )
@@ -823,10 +862,14 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 metric="proto_promotion_rate",
                 current=health.proto_promotion_rate,
                 target_range=(min_promo or 0.0, max_promo or 0.0),
-                suggested_change={"promotion_threshold": "increase"},
+                suggested_change={
+                    "promotion_threshold": "increase",
+                    "helpfulness_gate": "increase",
+                    "harmful_reward_threshold": "decrease",
+                },
                 reason=(
                     "Promotion is too aggressive; raising threshold can "
-                    "reduce weak proto-link conversion."
+                    "reduce weak proto-link conversion and tighten RL filtering."
                 ),
             )
         )
@@ -968,6 +1011,25 @@ def apply_adjustments(
             _record_change(changes, "reflex_threshold", before, clamped, bounded=bounded)
             last_adjusted[key] = cycle_number
 
+        elif key == "dormant_threshold":
+            before = float(syn_config.dormant_threshold)
+            if direction == "increase":
+                candidate = before + 0.05
+            elif direction == "decrease":
+                candidate = before - 0.05
+            else:
+                continue
+            clamped = float(
+                max(
+                    safety_bounds.min_dormant_threshold,
+                    min(safety_bounds.max_dormant_threshold, candidate),
+                )
+            )
+            bounded = candidate != clamped
+            syn_config.dormant_threshold = clamped
+            _record_change(changes, "dormant_threshold", before, clamped, bounded=bounded)
+            last_adjusted[key] = cycle_number
+
         elif key == "skip_factor":
             before = float(syn_config.skip_factor)
             if direction == "increase":
@@ -985,6 +1047,50 @@ def apply_adjustments(
             bounded = candidate != clamped
             syn_config.skip_factor = clamped
             _record_change(changes, "skip_factor", before, clamped, bounded=bounded)
+            last_adjusted[key] = cycle_number
+
+        elif key == "helpfulness_gate":
+            before = float(syn_config.helpfulness_gate)
+            if direction == "increase":
+                candidate = before + 0.05
+            elif direction == "decrease":
+                candidate = before - 0.05
+            else:
+                continue
+            clamped = float(
+                max(
+                    safety_bounds.min_helpfulness_gate,
+                    min(safety_bounds.max_helpfulness_gate, candidate),
+                )
+            )
+            bounded = candidate != clamped
+            syn_config.helpfulness_gate = clamped
+            _record_change(changes, "helpfulness_gate", before, clamped, bounded=bounded)
+            last_adjusted[key] = cycle_number
+
+        elif key == "harmful_reward_threshold":
+            before = float(syn_config.harmful_reward_threshold)
+            if direction == "increase":
+                candidate = before + 0.05
+            elif direction == "decrease":
+                candidate = before - 0.05
+            else:
+                continue
+            clamped = float(
+                max(
+                    safety_bounds.min_harmful_reward_threshold,
+                    min(safety_bounds.max_harmful_reward_threshold, candidate),
+                )
+            )
+            bounded = candidate != clamped
+            syn_config.harmful_reward_threshold = clamped
+            _record_change(
+                changes,
+                "harmful_reward_threshold",
+                before,
+                clamped,
+                bounded=bounded,
+            )
             last_adjusted[key] = cycle_number
 
         elif key == "hebbian_increment":

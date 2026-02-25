@@ -63,6 +63,8 @@ class SynaptogenesisConfig(ConfigBase):
     correction_decay: float = 0.5  # How much to halve positive edges on correction
 
     # Tiers
+    helpfulness_gate: float = 0.1  # Minimum retrieval score needed for RL reward signal
+    harmful_reward_threshold: float = -0.5  # Min node score treated as actively harmful
     dormant_threshold: float = 0.3  # Below = dormant (invisible to router)
     reflex_threshold: float = 0.8  # Above = reflex (auto-follow)
 
