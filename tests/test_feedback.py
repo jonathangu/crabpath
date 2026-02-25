@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from crabpath import Edge, Graph, Node, SynaptogenesisConfig, SynaptogenesisState
-from crabpath.feedback import auto_feedback, detect_correction, score_retrieval
+from crabpath.feedback import (
+    auto_feedback,
+    detect_correction,
+    no_reward_on_missing_signal,
+    score_retrieval,
+)
 
 
 def test_detect_correction_strong_and_mild_patterns() -> None:
@@ -17,26 +22,32 @@ def test_score_retrieval_parses_llm_json() -> None:
     ]
 
     def llm(prompt: str, system: str) -> str:
-        return '[{"node_id": "node-a", "score": 1.0}, {"node_id": "node-b", "score": -0.5}]'
+        return (
+            '{"scores": {"node-a": 1.0, "node-b": -0.5}, "overall": 0.75}'
+        )
 
-    assert score_retrieval(
+    result = score_retrieval(
         "What is alpha?",
         nodes,
         "Here is the answer.",
         llm,
-    ) == [("node-a", 1.0), ("node-b", -0.5)]
+    )
+    assert result["scores"] == {"node-a": 1.0, "node-b": -0.5}
+    assert result["overall"] == 0.75
 
 
 def test_score_retrieval_default_on_invalid_response() -> None:
     def llm(prompt: str, system: str) -> str:
         return "not json"
 
-    assert score_retrieval(
+    result = score_retrieval(
         "query",
         [("x", "x"), ("y", "y")],
         "answer",
         llm,
-    ) == [("x", 0.0), ("y", 0.0)]
+    )
+    assert result["scores"] == {"x": 0.0, "y": 0.0}
+    assert result["overall"] == 0.0
 
 
 def test_auto_feedback_applies_negative_correction() -> None:
@@ -73,4 +84,16 @@ def test_auto_feedback_applies_implicit_positive() -> None:
     )
 
     assert result["action"] == "record_cofiring"
+    assert result["implicit_reward"] is None
     assert graph.get_edge("a", "b").weight > 1.0
+
+
+def test_no_reward_on_missing_signal() -> None:
+    assert no_reward_on_missing_signal(correction=0.0, retrieval_helpfulness=None) is None
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness=0.29, min_helpfulness=0.3
+    ) is None
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness=0.3, min_helpfulness=0.3
+    ) == 0.3
+    assert no_reward_on_missing_signal(correction=-1.0, retrieval_helpfulness=0.9) == -1.0

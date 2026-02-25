@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from openai import OpenAI
 import os
 from pathlib import Path
 import re
@@ -19,6 +20,10 @@ from .synaptogenesis import (
 
 DEFAULT_SNAPSHOT_PATH = "crabpath_events.db"
 
+
+RETRIEVAL_SCORING_MODEL = "gpt-4o-mini"
+RETRIEVAL_HELPFULNESS_GATE = 0.3
+DEFAULT_OPENAI_TIMEOUT = 8.0
 
 _CORRECTION_START_PATTERNS = (
     "no",
@@ -97,33 +102,62 @@ def score_retrieval(
     query: str,
     retrieved_nodes: list[tuple[str, str]],
     actual_response: str,
-    llm_call: Callable[[str, str], str],
-) -> list[tuple[str, float]]:
+    llm_call: Optional[Callable[[str, str], str]] = None,
+) -> dict[str, Any]:
     """Ask the LLM to score retrieved node relevance for a given response."""
     if not retrieved_nodes:
-        return []
+        return {"scores": {}, "overall": 0.0}
 
+    def default_scoring_call(prompt: str, system: str) -> str:
+        client = OpenAI()
+        response = client.chat.completions.create(
+            model=RETRIEVAL_SCORING_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            timeout=DEFAULT_OPENAI_TIMEOUT,
+        )
+        if not response.choices:
+            return ""
+        message = response.choices[0].message
+        return str(message.content or "")
+
+    scorer = llm_call or default_scoring_call
     node_lines: list[str] = []
     for node_id, content in retrieved_nodes:
-        snippet = (content or "").replace("\n", " ")[:240]
-        node_lines.append(f'- "{node_id}": "{snippet}"')
+        snippet = (content or "").replace("\n", " ")[:220]
+        node_lines.append(f"- {node_id}: {snippet}")
 
+    system = "Score each node 1 to -1. Output JSON only."
     prompt = (
-        "Score each node for how useful its snippet was for generating the response.\n"
-        "Use one of these scores only: 1.0, 0.5, 0.0, -0.5, -1.0.\n"
-        "Return strict JSON list of objects: [{\"node_id\": \"...\", \"score\": ...}].\n\n"
-        f"query: {query}\nresponse: {actual_response}\n\n"
-        f"nodes:\n{chr(10).join(node_lines)}"
+        f"Query: {query}\n"
+        "Nodes:\n"
+        f"{chr(10).join(node_lines)}\n"
+        "Rate helpfulness of each node for answering this query.\n"
+        "Return JSON with keys scores and overall."
     )
-    system = "Return only JSON."
+
+    default_scores = {node_id: 0.0 for node_id, _ in retrieved_nodes}
 
     try:
-        raw = llm_call(prompt, system)
+        raw = scorer(prompt, system)
     except Exception:
-        return [(node_id, 0.0) for node_id, _ in retrieved_nodes]
+        return {"scores": default_scores, "overall": 0.0}
 
     parsed = _parse_retrieval_scores(raw)
-    return [(node_id, parsed.get(node_id, 0.0)) for node_id, _ in retrieved_nodes]
+    node_scores = parsed.get("scores", {})
+    normalized_scores: dict[str, float] = {}
+    for node_id in [node_id for node_id, _ in retrieved_nodes]:
+        normalized_scores[node_id] = _coerce_score(node_scores.get(node_id, 0.0))
+
+    overall = parsed.get("overall", 0.0)
+    return {
+        "scores": normalized_scores,
+        "overall": _coerce_score(overall),
+    }
 
 
 def _coerce_score(value: object) -> float:
@@ -144,38 +178,66 @@ def _parse_retrieval_scores(raw: str) -> dict[str, float]:
     if text.startswith("```") and text.endswith("```"):
         text = "\n".join(text.splitlines()[1:-1]).strip()
     if not text:
-        return {}
+        return {"scores": {}, "overall": 0.0}
 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        return {}
+        return {"scores": {}, "overall": 0.0}
 
-    parsed: dict[str, float] = {}
-    if isinstance(payload, dict):
-        for key, value in payload.items():
+    if not isinstance(payload, dict):
+        if isinstance(payload, list):
+            parsed: dict[str, float] = {}
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                node_id = str(
+                    entry.get("node_id")
+                    or entry.get("node")
+                    or entry.get("id")
+                    or entry.get("target")
+                )
+                if not node_id:
+                    continue
+                score = entry.get("score")
+                parsed[node_id] = _coerce_score(score)
+            return {"scores": parsed, "overall": 0.0}
+        return {"scores": {}, "overall": 0.0}
+
+    parsed_scores: dict[str, float] = {}
+    payload_scores = payload.get("scores", {})
+    if isinstance(payload_scores, dict):
+        for key, value in payload_scores.items():
             if not isinstance(key, str):
                 continue
-            parsed[key] = _coerce_score(value)
-        return parsed
+            parsed_scores[key] = _coerce_score(value)
 
-    if isinstance(payload, list):
-        for entry in payload:
-            if not isinstance(entry, dict):
-                continue
-            node_id = str(
-                entry.get("node_id")
-                or entry.get("node")
-                or entry.get("id")
-                or entry.get("target")
-            )
-            if not node_id:
-                continue
-            score = entry.get("score")
-            parsed[node_id] = _coerce_score(score)
-        return parsed
+    overall = _coerce_score(payload.get("overall", 0.0))
 
-    return {}
+    if isinstance(payload, dict):
+        return {"scores": parsed_scores, "overall": overall}
+
+    return {"scores": {}, "overall": overall}
+
+
+def no_reward_on_missing_signal(
+    correction: float,
+    retrieval_helpfulness: float | None = None,
+    *,
+    min_helpfulness: float = RETRIEVAL_HELPFULNESS_GATE,
+) -> float | None:
+    """Return a reward only when there is real feedback signal.
+
+    If correction is negative, return that correction reward.
+    If scoring exists, require it to clear a minimum helpfulness floor.
+    """
+    if correction < 0.0:
+        return correction
+    if retrieval_helpfulness is None:
+        return None
+    if retrieval_helpfulness < min_helpfulness:
+        return None
+    return retrieval_helpfulness
 
 
 def auto_feedback(
@@ -213,13 +275,14 @@ def auto_feedback(
         state=syn_state,
         config=config,
     )
+    reward = no_reward_on_missing_signal(correction)
     return {
         "query": query,
         "user_followup": user_followup,
         "trajectory": trajectory,
         "correction": 0.0,
         "action": "record_cofiring",
-        "implicit_reward": 0.1,
+        "implicit_reward": reward,
         "results": cofire_result,
     }
 
