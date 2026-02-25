@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CrabPath: The Graph is the Prompt</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CrabPath replaces similarity search with learned routing over a document graph, trained by corrected policy gradients from Gu (2016).">
+  <meta property="og:title" content="CrabPath: The Graph is the Prompt">
+  <meta property="og:description" content="A memory architecture where an LLM traverses weighted document graphs and pointer weights learn from trajectory-level feedback.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://jonathangu.com/crabpath/">
+  <meta name="twitter:card" content="summary">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="canonical" href="https://jonathangu.com/crabpath/">
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <script type="application/ld+json">
+  { "@context": "https://schema.org", "@type": "ScholarlyArticle",
+    "headline": "CrabPath: The Graph is the Prompt",
+    "author": [{"@type": "Person", "name": "Jonathan Gu", "email": "jonathangu@gmail.com", "url": "https://jonathangu.com"}],
+    "datePublished": "2026-02-25", "url": "https://jonathangu.com/crabpath/" }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a; --bg-card: #111111; --bg-code: #161616;
+      --text: #d4d4d4; --text-bright: #f0f0f0; --text-muted: #777;
+      --accent: #4a9eff; --accent-dim: rgba(74, 158, 255, 0.15);
+      --green: #3fb950; --orange: #e3955c; --red: #f85149;
+      --border: #1e1e1e; --crab: #e85d3a; --crab-dim: rgba(232, 93, 58, 0.15);
+      --serif: 'Crimson Pro', Georgia, serif;
+      --sans: 'Inter', -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', 'Menlo', monospace;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--serif); background: var(--bg); color: var(--text); font-size: 18px; line-height: 1.75; -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+    .paper { max-width: 740px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+    .paper-header { text-align: center; margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border); }
+    .back-link { display: inline-block; font-family: var(--sans); font-size: 13px; color: var(--text-muted); margin-bottom: 2rem; }
+    .paper-title { font-family: var(--sans); font-size: 2rem; font-weight: 700; color: var(--text-bright); line-height: 1.3; margin-bottom: 0.75rem; }
+    .paper-subtitle { font-size: 1.05rem; color: var(--text-muted); font-style: italic; margin-bottom: 1.5rem; }
+    .authors { font-family: var(--sans); font-size: 0.95rem; color: var(--text); margin-bottom: 0.25rem; }
+    .authors .name { font-weight: 600; color: var(--text-bright); }
+    .paper-meta { font-family: var(--sans); font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem; }
+    .badge { display: inline-block; font-family: var(--sans); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; }
+    .badge-draft { background: rgba(227, 149, 92, 0.2); color: var(--orange); }
+    .badge-repo { background: var(--accent-dim); color: var(--accent); }
+    h2 { font-family: var(--sans); font-size: 1.35rem; font-weight: 700; color: var(--text-bright); margin-top: 3rem; margin-bottom: 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+    h3 { font-family: var(--sans); font-size: 1.1rem; font-weight: 600; color: var(--text-bright); margin-top: 2rem; margin-bottom: 0.75rem; }
+    p { margin-bottom: 1rem; } ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; } li { margin-bottom: 0.4rem; }
+    .table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+    table { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 0.82rem; }
+    th { text-align: left; padding: 0.6rem 0.8rem; background: var(--bg-card); color: var(--text-bright); font-weight: 600; border-bottom: 2px solid var(--border); }
+    td { padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+    code { font-family: var(--mono); font-size: 0.85em; background: var(--bg-code); padding: 0.15em 0.4em; border-radius: 4px; color: var(--orange); }
+    pre { background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; overflow-x: auto; font-family: var(--mono); font-size: 0.82rem; line-height: 1.6; color: var(--text); margin: 1.5rem 0; }
+    pre code { background: none; padding: 0; }
+    blockquote { border-left: 3px solid var(--accent); margin: 1.5rem 0; padding: 0.75rem 1.25rem; background: var(--accent-dim); border-radius: 0 8px 8px 0; font-size: 0.95rem; }
+    blockquote p { margin-bottom: 0; }
+    .references { font-family: var(--sans); font-size: 0.82rem; line-height: 1.6; color: var(--text-muted); }
+    .references li { margin-bottom: 0.75rem; }
+    .references .ref-title { color: var(--text); font-weight: 500; }
+    .toc { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2.5rem; }
+    .toc-label { font-family: var(--sans); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .toc ol { list-style: decimal; padding-left: 1.5rem; font-family: var(--sans); font-size: 0.88rem; }
+    .toc li { padding: 0.25rem 0; } .toc a { color: var(--text); } .toc a:hover { color: var(--accent); }
+    .paper-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border); font-family: var(--sans); font-size: 0.8rem; color: var(--text-muted); text-align: center; }
+    .math-block { overflow-x: auto; margin: 1.5rem 0; padding: 0.5rem 0; }
+    .figure { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin: 2rem 0; text-align: center; }
+    .insight { margin: 1.5rem 0; padding: 0.9rem 1.1rem; background: rgba(63, 185, 80, 0.08); border: 1px solid rgba(63, 185, 80, 0.25); border-radius: 7px; color: var(--text-bright); }
+    @media (max-width: 600px) { .paper { padding: 2rem 1rem 4rem; } .paper-title { font-size: 1.5rem; } body { font-size: 16px; } }
+  </style>
+</head>
+<body>
+<article class="paper">
+
+  <header class="paper-header">
+    <a href="/" class="back-link">← jonathangu.com</a>
+    <h1 class="paper-title">CrabPath: The Graph is the Prompt</h1>
+    <p class="paper-subtitle">Learned document routing with corrected policy gradients</p>
+    <p class="authors"><span class="name">Jonathan Gu</span> · <a href="mailto:jonathangu@gmail.com" style="color: var(--text-muted); font-size: 0.85rem;">jonathangu@gmail.com</a></p>
+    <div class="paper-meta">
+      <span class="badge badge-repo"><a href="https://github.com/jonathangu/crabpath" style="color: inherit; text-decoration: none;">GitHub</a></span>
+      <span class="badge badge-repo"><a href="/crabpath/crabpath.pdf" style="color: inherit; text-decoration: none;">📄 PDF</a></span>
+      <span class="badge badge-repo"><a href="/crabpath/crabpath.tex" style="color: inherit; text-decoration: none;">📝 LaTeX</a></span>
+      <span class="badge badge-draft">v3.0</span>
+      <br><br>February 2026
+    </div>
+  </header>
+
+  <div class="figure" style="padding: 0; overflow: hidden; margin-bottom: 2.5rem;">
+    <img src="hero-v3.jpg" onerror="this.src='hero-v2.png'" alt="A brain-shaped neural network of document nodes and weighted edges — green reflex paths, blue habitual, gray dormant" style="width: 100%; display: block; border-radius: 8px;">
+  </div>
+
+  <h2>Abstract</h2>
+  <p>This paper describes CrabPath, a memory system for LLM agents that replaces similarity search with learned document routing. Nodes are document chunks. Edges are weighted pointers. The weights update by the corrected policy-gradient estimator from <a href="/papers/rl-corrected-update-2016.pdf" style="color: var(--accent);">Gu (2016)</a>, which credits the full traversal path rather than only the terminal action. Under simulation, the system reduces per-turn context cost from $0.091 to $0.004 — a 23× reduction — while producing five emergent properties: procedural memory, selective forgetting, domain separation, self-regulation after brain death, and individuation across agents sharing the same source files.</p>
+
+  <nav class="toc">
+    <div class="toc-label">Table of Contents</div>
+    <ol>
+      <li><a href="#the-problem">The Problem</a></li>
+      <li><a href="#the-graph">The Graph</a></li>
+      <li><a href="#how-it-learns">How It Learns</a></li>
+      <li><a href="#how-it-grows">How It Grows</a></li>
+      <li><a href="#how-it-stays-healthy">How It Stays Healthy</a></li>
+      <li><a href="#does-it-work">Does It Work</a></li>
+      <li><a href="#limitations-and-conclusion">Limitations and Conclusion</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1: THE PROBLEM                                        -->
+  <!-- ============================================================ -->
+
+  <h2 id="the-problem">1. The Problem</h2>
+
+  <p>I ran three autonomous agents on overlapping tasks for twenty days. The bill was $13,000. Most of the cost came from one behavior: the agents reloaded the same workspace files every turn, whether they needed them or not.</p>
+
+  <p>This is the default pattern for LLM agents. You have 31 files and 283,098 characters of workspace context. Every time the user asks a question — any question — the system loads all of it. It is the equivalent of pulling your entire filing cabinet onto your desk every time you open a drawer.</p>
+
+  <p>RAG is the standard fix. Embed the documents, embed the query, return the top-<em>k</em> nearest neighbors. This works when documents are dissimilar. It fails when they are not.</p>
+
+  <p>Consider a deployment pipeline with four steps: check CI, inspect manifest, rollback, verify. RAG embeds all four as "deployment-related." It cannot distinguish the first step from the last. It ranks by resemblance, not by usefulness, and has no concept of sequence.</p>
+
+  <p>The same failure appears in negation. If your workspace says "run tests before deploy" and also has a deprecated note saying "skip tests for hotfix," RAG returns both as relevant. It has no mechanism to suppress the wrong one.</p>
+
+  <div class='figure' style='padding:0;overflow:hidden'>
+    <img src='the-problem.jpg' alt='Left: drowning in documents. Right: calmly following a learned path.' style='width:100%;display:block;border-radius:8px'>
+    <figcaption style='padding:1rem'>The problem and the solution. Left: every query loads everything. Right: a learned route to exactly what you need.</figcaption>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Case</th><th>Static Context</th><th>RAG</th><th>CrabPath</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Deploy pipeline</td><td>Loads everything</td><td>Loads similar subset</td><td>Loads learned sequence</td></tr>
+        <tr><td>Negation</td><td>Ambiguous candidates</td><td>Ambiguous candidates</td><td>Suppresses invalid path</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The question this paper asks: can a memory system learn which documents actually help, from experience? Not by measuring text similarity, but by tracking which retrieval paths lead to good outcomes and which do not.</p>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 2: THE GRAPH                                          -->
+  <!-- ============================================================ -->
+
+  <h2 id="the-graph">2. The Graph</h2>
+
+  <p>CrabPath is a directed graph. Nodes are document chunks. Edges are weighted pointers with values in \([-1, 1]\). That is the entire data structure.</p>
+
+  <pre><code>from dataclasses import dataclass, field
+from typing import Literal, List
+
+@dataclass
+class Node:
+    id: str
+    content: str
+    summary: str
+    type: Literal["fact", "procedure", "action", "tool_call"]
+    pointers: List["Edge"] = field(default_factory=list)
+
+@dataclass
+class Edge:
+    target: str
+    weight: float      # in [-1, 1]
+    kind: Literal["support", "inhibit", "follows", "tool"]
+    summary: str</code></pre>
+
+  <p>When a query arrives, an embedding search finds the entry node. From there, a cheap LLM reads the current node's outgoing edges and decides which to follow. It repeats for 2–3 hops. The expensive LLM only reads the nodes that fire.</p>
+
+  <div class="figure">
+    <img src='architecture-vertical.jpg' alt='Vertical flowchart: Query → Embedding Search → Cheap Router → Graph Traversal → Context Assembly → Expensive LLM' style='width:100%;max-width:500px;display:block;margin:0 auto;border-radius:8px'>
+    <figcaption>Figure 1. Inference architecture: query seeding, cheap routing, tiered graph traversal, and expensive-context read.</figcaption>
+  </div>
+
+  <p>Edge weights determine what happens at each hop. Three tiers:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Tier</th><th>Weight Range</th><th>What Happens</th><th>Cost</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Reflex</strong></td><td>&gt; 0.8</td><td>Auto-follow. No deliberation.</td><td>Near zero</td></tr>
+        <tr><td><strong>Habitual</strong></td><td>0.3 – 0.8</td><td>Cheap LLM decides whether to follow.</td><td>Low</td></tr>
+        <tr><td><strong>Dormant</strong></td><td>&lt; 0.3</td><td>Skipped unless re-entered by seed search.</td><td>Zero</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="figure" style="padding: 0; overflow: hidden;">
+    <img src="edge-tiers.jpg" alt="Three edge tiers: dormant gray, habitual blue, reflex green" style="width:100%;display:block;border-radius:8px">
+    <figcaption style="padding:1rem;">Figure 2. Edge tiers: weight determines visibility and behavior.</figcaption>
+  </div>
+
+  <p>Think of edge weights like paths in a forest. A path nobody walks becomes overgrown and invisible — that is dormant. A path people sometimes take stays clear but you still have to decide whether to take it — that is habitual. A path so well-worn it has become a paved road, where you turn without thinking — that is reflex. CrabPath starts with all paths in the habitual range. Usage paves the important ones. Neglect lets the rest overgrow. After 100 queries, 95% of edges are overgrown, and the 5% that remain are the paths this particular agent actually needs.</p>
+
+  <pre><code>def choose_next(current_node, graph, router, query, visited):
+    edges = graph.outgoing(current_node)
+    next_nodes = []
+
+    # Reflex: zero deliberation
+    for edge in edges:
+        if edge.weight > 0.8 and edge.target not in visited:
+            next_nodes.append(edge.target)
+
+    # Habitual: LLM decides
+    candidates = [e for e in edges
+                  if 0.3 <= edge.weight <= 0.8
+                  and e.target not in visited]
+    if candidates:
+        prompt = format_routing_prompt(query, current_node, candidates)
+        selected = router.decide(prompt)
+        next_nodes.extend(selected)
+
+    # Dormant: ignored during live traversal
+    return next_nodes</code></pre>
+
+  <p>The forward pass is a controlled traversal, not wave propagation. At each hop, the LLM reasons about relevance, negation, and weight evidence before choosing candidates.</p>
+
+  <p>Negation is explicit. An edge with weight –0.4 does not vanish — it stays visible as negative evidence. The routing LLM sees <code>skip_tests (–0.4)</code> and knows to suppress that path, rather than simply not finding it.</p>
+
+  <div class="insight">Instead of the expensive model reading everything, a cheap model figures out what is worth reading. Estimated turn cost drops from $0.091 to $0.004 — a 23× reduction.</div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 3: HOW IT LEARNS                                      -->
+  <!-- ============================================================ -->
+
+  <h2 id="how-it-learns">3. How It Learns</h2>
+
+  <p>The first time you drive to work, you think about every turn. After a year, you do not think at all. CrabPath does the same thing with document routes.</p>
+
+  <h3>3.1 Policy Gradients over Document Routes</h3>
+
+  <p>Each query produces an episode: a sequence of nodes visited and a terminal signal. The formulation is a standard MDP.</p>
+
+  <ul>
+    <li><strong>State</strong> \(s_t\): current node, accumulated context, query.</li>
+    <li><strong>Action</strong> \(a_t\): follow a pointer, or stop.</li>
+    <li><strong>Reward</strong> \(z\): +1 for silent success, –1 for explicit correction.</li>
+    <li><strong>Policy</strong>: softmax over outgoing relevance scores and edge weights.</li>
+  </ul>
+
+  <p class="math-block">\[\pi_W(a\mid s=i)=\frac{\exp\bigl((r_{ia}+w_{ia})/\tau\bigr)}{\sum_{j\in\mathcal{N}(i)\cup\{\texttt{STOP}\}}\exp\bigl((r_{ij}+w_{ij})/\tau\bigr)}\]</p>
+
+  <p>Good outcome: strengthen the edges in the path. Bad outcome: weaken them. This is the standard policy-gradient update.</p>
+
+  <h3>3.2 Why the Myopic Update Fails</h3>
+
+  <p>The naive rule updates only the last action before the terminal signal.</p>
+
+  <p class="math-block">\[\Delta W\propto z\nabla_W\log\pi_W(a_t\mid s_t)\]</p>
+
+  <p>This is wrong. If a three-hop route fails, the mistake might have been at hop one, not hop three. The myopic update credits (or blames) only the final edge.</p>
+
+  <p>The corrected estimator from <a href="/papers/rl-corrected-update-2016.pdf" style="color: var(--accent);">Gu (2016)</a> sums over the full trajectory:</p>
+
+  <p class="math-block">\[\Delta W=\eta z\sum_{\ell=0}^{T}\nabla_W\log\pi_W(a_\ell\mid s_\ell)\]</p>
+
+  <p>With baseline and discount:</p>
+
+  <p class="math-block">\[\Delta W=\eta(z-b)\sum_{\ell=0}^{T}\gamma^\ell\nabla_W\log\pi_W(a_\ell\mid s_\ell)\]</p>
+
+  <h3>3.3 Why Not Just Use a Value Network?</h3>
+
+  <p>AlphaGo solves the long-range credit problem differently: train a separate value network on millions of games, then use it to evaluate any position immediately. Monte Carlo Tree Search simulates thousands of futures from each move. Both approaches sidestep trajectory credit assignment through brute force.</p>
+
+  <p>CrabPath cannot afford either. We have no millions of training games — each "game" is one user query. We cannot simulate forward — each "move" is an LLM call. We have only the trajectory and the terminal signal.</p>
+
+  <p>The corrected update is the right tool when data is sparse and simulation is expensive. AlphaGo needs a value network because it has one. CrabPath needs the trajectory sum because it has nothing else. Both get long-range credit assignment right. Ours is cheaper.</p>
+
+  <p>The mapping from <a href="/papers/rl-corrected-update-2016.pdf" style="color: var(--accent);">Gu (2016)</a> to CrabPath is direct — only the state space changes.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Gu (2016)</th><th>CrabPath</th></tr></thead>
+      <tbody>
+        <tr><td>Board states and moves</td><td>Document nodes and edge transitions</td></tr>
+        <tr><td>Weights \(\rho\)</td><td>Edge weights \(W\)</td></tr>
+        <tr><td>Terminal reward</td><td>Query feedback (+1 silent, –1 correction)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>3.3 What Emerges</h3>
+
+  <p><strong>Structural learning is always on.</strong> Hebbian co-firing reinforcement is free and runs by default on every co-activation; it does not call a scorer. It builds and maintains routing structure from co-occurrence alone.</p>
+
+  <p>Apply this learning rule to a document graph over hundreds of queries. Five things happen without being explicitly programmed.</p>
+
+  <p><strong>Procedural memory.</strong> Repeated multi-step tasks create chains. A four-step deployment procedure — check CI → inspect manifest → rollback → verify — starts as disconnected nodes. By query 25, the edges connecting them reach the habitual tier (weight 0.46). By query 50, all three edges are reflex (0.88 → 0.82 → 0.82). The agent no longer deliberates about this sequence. It fires automatically.</p>
+
+  <div class="figure">
+    <img src='procedural-vertical.jpg' alt='Three stages: Q1 no path, Q25 habitual chain, Q50 reflex chain' style='width:100%;max-width:500px;display:block;margin:0 auto;border-radius:8px'>
+    <figcaption>Figure 3. A four-step deployment procedure compiles from missing → habitual → reflex over 50 queries.</figcaption>
+  </div>
+  <div class="figure" style="padding: 0; overflow: hidden;">
+    <img src="procedural-memory.jpg" alt="Three-panel visualization showing graph evolution: Q1 isolated nodes, Q25 habitual connections, Q50 reflex chain" style="width: 100%; display: block; border-radius: 8px;">
+    <figcaption style="padding: 1rem;">Figure 4. The same compilation visualized: scattered nodes → tentative connections → compiled reflex path.</figcaption>
+  </div>
+
+  <p><strong>Selective forgetting.</strong> In a healthy graph, 87–95% of edges are dormant. This is not a failure. It is the graph learning that most possible connections are not useful. A brain that remembers everything is not intelligent — it is cluttered.</p>
+
+  <div class="figure" style="padding: 0; overflow: hidden;">
+    <img src="selective-forgetting.jpg" alt="Before: tangled web of connections. After: clean structure with only important paths remaining" style="width:100%;display:block;border-radius:8px">
+    <figcaption style="padding: 1rem;">Figure 5. Day 1: everything connected. Day 100: the brain learned what matters.</figcaption>
+  </div>
+
+  <p>A brain that remembers everything is as useless as one that remembers nothing. The left panel shows bootstrap day: every chunk of every file is connected to its siblings. The graph loads everything because it has no evidence about what matters. The right panel shows the same graph after 100 queries. Ninety-five percent of those connections have faded to dormant. The surviving paths — the ones glowing green — are exactly the connections this agent uses. The graph did not delete anything. The unused edges are still there, dormant, waiting. If a query pattern changes, dormant edges can be reinforced back to life. Forgetting in CrabPath is reversible.</p>
+
+  <p><strong>Domain separation with bridges.</strong> Nodes from the same file form clusters. A small number of cross-file edges connect them: 2–8 in simulation, depending on workload. The graph self-organizes into specialized domains with sparse bridging, not a homogeneous mesh.</p>
+
+  <p><strong>Self-regulation.</strong> When external perturbation kills the graph (Section 5 shows the full demo), the autotuner detects the failure state and recovers. This is closed-loop: the system does not need a human to notice the problem.</p>
+
+  <p><strong>Individuation.</strong> Two agents initialized from the same files, given different query workloads, produce structurally distinct graphs. Same genome, different phenotype. Brain A (coding-heavy queries) develops 8 cross-file edges and 5.3% reflex. Brain B (safety-heavy queries) develops 2 cross-file edges and 6.25% reflex concentrated in safety-related clusters.</p>
+
+  <p><strong>Scoring matters.</strong> Correctness learning is the optional RL layer. It costs $0.001 per query and updates ranking/weights toward truthful retrieval rather than mere co-occurrence. In the A/B sim, this reduces wrong-path retrievals from 24% to 16%, a 33% reduction.</p>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 4: HOW IT GROWS                                       -->
+  <!-- ============================================================ -->
+
+  <h2 id="how-it-grows">4. How It Grows</h2>
+
+  <p>A new CrabPath graph starts empty. It needs to become a working memory. Four mechanisms handle this.</p>
+
+  <h3>4.1 Bootstrap (Cell Division)</h3>
+
+  <p>Read the workspace files. A cheap LLM splits each file into chunks by heading or semantic boundary. Each chunk becomes a node. Sibling edges connect chunks from the same file. On the GUCLAW workspace (31 files, 283,098 chars), this produces 278 nodes and 3,822 initial edges.</p>
+
+  <div class='figure' style='padding:0;overflow:hidden'>
+    <img src='cell-division.jpg' alt='Document node splitting into smaller specialized chunks over time' style='width:100%;display:block;border-radius:8px'>
+    <figcaption style='padding:1rem'>Recursive cell division. A file splits into coherent chunks. Over time, some connections fade while others strengthen. Chunks that outgrow their role split again.</figcaption>
+  </div>
+
+  <p>This is how the graph finds its resolution. A file like TOOLS.md starts as one node. The cheap LLM splits it into coherent sections — coding rules, browser config, cost tracking, git hygiene. Initially, all sections are connected: loading one loads them all. But as queries arrive, the coding rules and git hygiene sections co-fire while the browser config and cost tracking do not. The unused connections fade. The co-firing sections grow stronger. Eventually, the graph has learned that "codex" and "worktree" belong together, without anyone telling it so.</p>
+
+  <p>All edges start at weight 0.27 — solidly in the habitual tier. Everything requires deliberation. Nothing is free yet.</p>
+
+  <p>Nodes that grow too broad are split recursively: the router generates sub-node candidates, and stable small nodes merge when evidence suggests redundancy. This is LLM-driven and metadata-aware, not random.</p>
+
+  <h3>4.2 New Edges (Synaptogenesis)</h3>
+
+  <p>Bootstrap creates only within-file edges. Cross-file structure must emerge from use.</p>
+
+  <p>When two nodes are selected in the same query but have no edge between them, a proto-edge forms. If the co-selection repeats above a promotion threshold (minimum 2), the proto-edge promotes to a real edge. Its initial weight is set by the Hebbian increment parameter.</p>
+
+  <p>This is how the graph discovers connections that no one explicitly authored. A safety rule and a tool usage guide, selected together repeatedly, eventually form a direct link.</p>
+
+  <h3>4.3 New Nodes (Neurogenesis)</h3>
+
+  <p>When a query finds no matching entry node, the system can create a new node from the query content itself. This is rare but necessary — it handles topics that do not exist in the original workspace files.</p>
+
+  <h3>4.4 Decay (Death)</h3>
+
+  <p>Edges decay geometrically unless reinforced by traversal. The decay half-life controls the rate: at half-life 80, an edge loses half its weight every 80 queries of disuse.</p>
+
+  <p>Without forgetting, the graph bloats. Every proto-edge that ever formed would persist. Every temporary correlation would become permanent structure. Decay is the mechanism that makes the graph converge to a sparse, useful representation instead of a dense, noisy one.</p>
+
+  <div class="insight">The graph starts as a flat copy of your files and self-organizes into something uniquely shaped by your usage. No manual curation. No taxonomy. Just feedback.</div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 5: HOW IT STAYS HEALTHY                               -->
+  <!-- ============================================================ -->
+
+  <h2 id="how-it-stays-healthy">5. How It Stays Healthy</h2>
+
+  <p>A learning system without guardrails will destroy itself. The autotuner is the immune system.</p>
+
+  <h3>5.1 Health Metrics</h3>
+
+  <p>Eight metrics define what a healthy graph looks like. These targets come from observed operating points in simulation, not from theory.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Metric</th><th>Target Range</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>avg_nodes_fired_per_query</code></td><td>1.0 – 2.0</td><td>Too few hurts coverage. Too many hurts cost.</td></tr>
+        <tr><td><code>cross_file_edge_pct</code></td><td>0% – 15%</td><td>Specialization with occasional bridges.</td></tr>
+        <tr><td><code>dormant_pct</code></td><td>70% – 95%</td><td>Suppresses noise. Keeps an active spine.</td></tr>
+        <tr><td><code>reflex_pct</code></td><td>0% – 10%</td><td>Only stable, high-confidence links auto-fire.</td></tr>
+        <tr><td><code>context_compression</code></td><td>≤ 20%</td><td>Per-query token read stays bounded.</td></tr>
+        <tr><td><code>proto_promotion_rate</code></td><td>0% – 50%</td><td>Controls discovery without churn.</td></tr>
+        <tr><td><code>reconvergence_rate</code></td><td>0%</td><td>Sibling splits should diversify, not collapse.</td></tr>
+        <tr><td><code>orphan_nodes</code></td><td>0</td><td>Every node must be reachable.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>5.2 The Autotuner</h3>
+
+  <p>The autotuner runs after every query. It measures health, diagnoses out-of-range metrics, and applies bounded adjustments to four knobs: decay half-life, promotion threshold, Hebbian increment, and reflex threshold.</p>
+
+  <pre><code>health = measure_health(graph, state, query_stats)
+adjustments = autotune(health)
+changes = filter_with_guardrails(adjustments)
+apply_adjustments(graph, changes)</code></pre>
+
+  <p>Every candidate change hits a safety filter before application:</p>
+  <ul>
+    <li>Decay half-life: bounded to <code>[20, 200]</code>.</li>
+    <li>Promotion threshold: integer, never below 2.</li>
+    <li>Hebbian increment: capped at 0.12.</li>
+    <li>Reflex threshold: bounded to <code>[0.8, 0.95]</code>.</li>
+  </ul>
+
+  <h3>5.3 Meta-Learning</h3>
+
+  <p>The autotuner keeps a history of every (metric, knob, direction) triple and whether it improved health. Successful triples are preferred in future cycles. Repeated failures are down-ranked.</p>
+
+  <p>This is a simple form of meta-learning: the controller learns which fixes work for this particular graph and workload.</p>
+
+  <h3>5.4 Brain Death and Recovery</h3>
+
+  <p>Set decay half-life to 20 — far too aggressive. Here is what happens.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Checkpoint</th><th>Dormant</th><th>Healthy Metrics</th><th>Status</th><th>Config</th></tr></thead>
+      <tbody>
+        <tr><td>Q25</td><td>86.7%</td><td>4 / 8 in range</td><td>Stable</td><td>τ<sub>d</sub>=20, h=0.06</td></tr>
+        <tr><td>Q50</td><td style="color: var(--red);">100%</td><td>3 / 8 in range</td><td style="color: var(--red);">Brain dead</td><td>τ<sub>d</sub>=20, h=0.06</td></tr>
+        <tr><td>Q75</td><td>93.3%</td><td>4 / 8 in range</td><td style="color: var(--orange);">Recovery underway</td><td>τ<sub>d</sub>=162, h=0.12</td></tr>
+        <tr><td>Q100</td><td>86.7%</td><td>4 / 8 in range</td><td style="color: var(--green);">Stabilized</td><td>τ<sub>d</sub>=200, h=0.12</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>At Q50, every edge is dormant. The graph is dead — it cannot route anything. No human intervenes.</p>
+
+  <div class='figure' style='padding:0;overflow:hidden'>
+    <img src='autotuner-loop.jpg' alt='Circular feedback loop: measure, diagnose, apply, evaluate' style='width:100%;display:block;border-radius:8px'>
+    <figcaption style='padding:1rem'>The self-tuning loop. The autotuner is the immune system of the memory graph.</figcaption>
+  </div>
+
+  <p>Every 25 queries, the autotuner runs a health check. It measures eight metrics — how many nodes fire per query, what percentage of edges are dormant, whether cross-file connections are forming. If any metric falls outside its empirically calibrated range, the autotuner adjusts: increase decay, lower promotion threshold, strengthen Hebbian reinforcement. It tracks which adjustments worked and which made things worse. Over time, it learns to tune THIS particular graph for THIS particular usage pattern. If something goes badly wrong — say, decay is so aggressive that the brain is dying — the emergency brake reverts all changes to the last known good configuration.</p>
+
+  <div class="figure">
+    <img src='braindeath-vertical.jpg' alt='Brain death at Q0-Q50 then recovery Q50-Q100 as autotuner ramps decay' style='width:100%;max-width:500px;display:block;margin:0 auto;border-radius:8px'>
+    <figcaption>Figure 6. Decay half-life over queries with brain death until Q50 and recovery after autotuning begins.</figcaption>
+  </div>
+
+  <p>The autotuner detects the failure: dormant percentage exceeds range, nodes fired too low, reflex at zero. It begins increasing decay half-life (20 → 30 → 40 → 53 → ...) and Hebbian increment (0.06 → 0.07 → 0.08 → ...) at every tuning cycle. From Q50 to Q100 (50 queries), decay half-life rises to 200; edges recover by Q75 and stabilize by Q100 at τ<sub>d</sub>=200 with dormant percentage back in range.</p>
+
+  <h3>5.5 Migration</h3>
+
+  <p>When an agent migrates to a new machine or upgrades its workspace files, the bootstrap runs fresh: read files, split into chunks, create sibling edges. If historical session logs exist, they replay through the graph to warm up edge weights before the system goes live.</p>
+
+  <p>Replay is memory distillation. It accelerates early structure formation and creates cross-file links before real feedback arrives.</p>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 6: DOES IT WORK                                       -->
+  <!-- ============================================================ -->
+
+  <h2 id="does-it-work">6. Does It Work</h2>
+
+  <h3>6.1 Procedural Memory Compilation</h3>
+
+  <p>A simulated agent receives 50 queries about deployment, interleaved with unrelated queries. The deployment procedure has four steps: check CI → inspect manifest → rollback → verify.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Query</th><th>Chain State</th><th>Edge Weights</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Q1</td><td>No path</td><td>All edges missing</td><td>No stable pointer evidence yet.</td></tr>
+        <tr><td>Q25</td><td>Habitual chain</td><td>0.46 → 0.46 → 0.46</td><td>Three habitual edges form a route.</td></tr>
+        <tr><td>Q50</td><td style="color: var(--green);">Reflex chain</td><td style="color: var(--green);">0.88 → 0.82 → 0.82</td><td>Full route auto-fires. Zero deliberation.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>No distractors appear on this chain. The sequence self-organizes from repeated successful completions under sparse corrective signals. Zero distractor weight at all checkpoints.</p>
+
+  <h3>6.2 Twin Brains</h3>
+
+  <p>Two graphs initialized from the same 3 files (11 nodes, 30 edges). Brain A receives 100 coding-heavy queries. Brain B receives 100 safety-heavy queries.</p>
+
+  <div class="figure">
+    <img src='twins-vertical.jpg' alt='Coding brain vs safety brain stacked vertically' style='width:100%;max-width:500px;display:block;margin:0 auto;border-radius:8px'>
+    <figcaption>Figure 7. Same workspace files. Different query patterns. Different brains.</figcaption>
+  </div>
+  <div class="figure" style="padding: 0; overflow: hidden;">
+    <img src="twin-brains.jpg" alt="Two brains side by side - coding brain with dense tool connections, safety brain with dense safety connections" style="width: 100%; display: block; border-radius: 8px;">
+    <figcaption style="padding: 1rem;">Figure 8. Individuation: same starting structure, different cognitive specialization from different experiences.</figcaption>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Brain</th><th>Dormant</th><th>Cross-file Edges</th><th>Reflex</th><th>Phenotype</th></tr></thead>
+      <tbody>
+        <tr><td>Brain A (coding)</td><td>73.7%</td><td>8 (21.1%)</td><td>5.3%</td><td>Tooling-heavy reflexes, broad cross-domain links</td></tr>
+        <tr><td>Brain B (safety)</td><td>87.5%</td><td>2 (6.25%)</td><td>6.25%</td><td>Safety-oriented clusters, sparse bridging</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Same source files. Different structure. Brain A has 4× more cross-file connections because coding queries require jumping between tools, identity, and safety context. Brain B concentrates its reflex paths in the safety domain, where credentials and destructive action rules co-fire repeatedly.</p>
+
+  <p>Every agent that runs CrabPath develops a unique cognitive structure.</p>
+
+  <h3>6.X Hebbian Alone vs Hebbian + RL Scoring</h3>
+
+  <p>Does outcome-based learning matter, or is structural co-firing sufficient? We ran the same 50 queries on the same ambiguous deployment corpus twice: once with Hebbian reinforcement only, once with Hebbian plus cheap-LLM scoring at $0.001 per query.</p>
+
+  <p>The corpus was deliberately adversarial: 5 correct deployment procedure nodes, 5 wrong/outdated procedure nodes, and 5 hotfix nodes — all using similar vocabulary. A keyword-based router with 30% error rate simulated real routing confusion.</p>
+
+  <div class="figure">
+    <img src="ab-comparison.jpg" alt="Hebbian-only versus Hebbian plus RL scoring graph comparison" style="width:100%;max-width:500px;display:block;margin:0 auto;border-radius:8px">
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Metric</th><th>Hebbian Only</th><th>Hebbian + RL</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Wrong-path hit rate</td><td>24%</td><td>16% (-33%)</td></tr>
+        <tr><td>Reflex edges</td><td>0</td><td>4</td></tr>
+        <tr><td>Inhibitory edges</td><td>0</td><td>21</td></tr>
+        <tr><td>Health score</td><td>3/8</td><td>5/8</td></tr>
+        <tr><td>All edges dormant</td><td>100%</td><td>83%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Hebbian alone produces a graph where everything is dormant — it learned what fires together but has no mechanism to distinguish correct from incorrect. With RL scoring, the graph compiled 4 correct procedures into reflex paths AND created 21 inhibitory edges suppressing the wrong procedures. The cheap LLM scorer costs $0.001 per query. For that price, the graph learns not just structure, but truth.</p>
+
+  <h3>6.X Shadow Mode in Production</h3>
+
+  <p>CrabPath runs in shadow mode on a live agent (GUCLAW) processing real conversations. After 40 queries with GPT-5-mini scoring at $0.001 per query, we observe:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Signal</th><th>Fires</th><th>Edge Changes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Hebbian co-fire</td><td>39/40 (98%)</td><td>672 reinforcements</td></tr>
+        <tr><td>Proto-edge promotion</td><td>—</td><td>122 new edges</td></tr>
+        <tr><td>Proto-edge creation</td><td>—</td><td>1,550 exploring</td></tr>
+        <tr><td>RL scoring (GOOD)</td><td>8/40 (20%)</td><td>~40 updates</td></tr>
+        <tr><td>RL scoring (SKIP)</td><td>32/40 (80%)</td><td>0 (below gate)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Hebbian learning dominates early graph life — 16× more edge changes than RL scoring. This is expected. The graph must first build structure (what fires together) before it can judge quality (what is actually correct). RL scoring fires on 20% of queries where retrieval relevance exceeds the 0.3 helpfulness gate. The remaining 80% receive no RL update — the graph learns from co-firing alone, and that is sufficient for structural formation.</p>
+
+  <p>We are honest about this tradeoff: the RL signal is sparse in a young graph. The A/B comparison (Section 6.X above) proves that when RL does fire, it matters — wrong-path retrieval drops 33%. As the graph matures and retrieval improves, we expect the scoring rate to increase. The Hebbian base layer ensures the graph never stops learning, even when RL is silent.</p>
+
+  <h3>6.3 Scenario Comparison</h3>
+
+  <p>Four routing configurations evaluated on the full GUCLAW simulation (278 nodes, 3,822 edges):</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Scenario</th><th>Queries</th><th>Edges</th><th>Cross-file</th><th>Proto</th><th>Ref / Hab / Dorm</th><th>Decay τ</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Baseline</td><td>153</td><td>3,822</td><td>82</td><td>100</td><td>13 / 51 / 3,758</td><td>80</td></tr>
+        <tr><td>Aggressive Decay</td><td>160</td><td>3,790</td><td>54</td><td>77</td><td>1 / 29 / 3,760</td><td>40</td></tr>
+        <tr><td>Conservative Decay</td><td>160</td><td>3,853</td><td>111</td><td>152</td><td>24 / 3,775 / 54</td><td>200</td></tr>
+        <tr><td>High Traffic</td><td>500</td><td>3,861</td><td>146</td><td>76</td><td>16 / 66 / 3,779</td><td>80</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 760 340" role="img" aria-label="Edge weight histogram after 100 queries">
+      <line x1="80" y1="260" x2="680" y2="260" stroke="var(--text)" stroke-width="1.5" />
+      <line x1="80" y1="260" x2="80" y2="40" stroke="var(--text)" stroke-width="1.5" />
+
+      <line x1="80" y1="220" x2="680" y2="220" stroke="var(--border)" stroke-width="0.8" />
+      <line x1="80" y1="180" x2="680" y2="180" stroke="var(--border)" stroke-width="0.8" />
+      <line x1="80" y1="140" x2="680" y2="140" stroke="var(--border)" stroke-width="0.8" />
+      <line x1="80" y1="100" x2="680" y2="100" stroke="var(--border)" stroke-width="0.8" />
+
+      <text x="80" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.0</text>
+      <text x="170" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.2</text>
+      <text x="260" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.4</text>
+      <text x="350" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.6</text>
+      <text x="440" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.8</text>
+      <text x="530" y="273" text-anchor="middle" fill="var(--text)" font-size="10">0.9</text>
+      <text x="620" y="273" text-anchor="middle" fill="var(--text)" font-size="10">1.0</text>
+
+      <text x="70" y="260" text-anchor="end" fill="var(--text-muted)" font-size="9">0</text>
+      <text x="70" y="220" text-anchor="end" fill="var(--text-muted)" font-size="9">1000</text>
+      <text x="70" y="180" text-anchor="end" fill="var(--text-muted)" font-size="9">2000</text>
+      <text x="70" y="140" text-anchor="end" fill="var(--text-muted)" font-size="9">3000</text>
+      <text x="70" y="100" text-anchor="end" fill="var(--text-muted)" font-size="9">4000</text>
+
+      <rect x="125" y="60" width="140" height="200" fill="var(--text-muted)" rx="4" />
+      <rect x="250" y="251" width="150" height="9" fill="var(--accent)" rx="2" />
+      <rect x="430" y="258" width="180" height="2" fill="var(--green)" rx="1" />
+
+      <text x="195" y="50" fill="var(--text-muted)" font-size="10" text-anchor="middle">Dormant</text>
+      <text x="325" y="246" fill="var(--accent)" font-size="10" text-anchor="middle">Habitual</text>
+      <text x="520" y="252" fill="var(--green)" font-size="10" text-anchor="middle">Reflex</text>
+
+      <text x="380" y="298" fill="var(--text)" font-size="11" text-anchor="middle">Edge Weight</text>
+      <text x="20" y="160" fill="var(--text)" font-size="11" text-anchor="middle" transform="rotate(-90 20 160)">Count</text>
+    </svg>
+    <figcaption>Figure 9. Edge weight distribution after 100 queries. The spike near zero is selective forgetting in action.</figcaption>
+  </div>
+
+  <p>This histogram tells the whole story in one image. The massive spike near zero is 3,800 sibling edges that decayed because the agent never needed them together. The small bump in the habitual range is 170 actively useful connections. The tiny green spike at the right is 25 reflex edges — procedures so well-learned that the router skips them automatically. This is what a healthy brain looks like: mostly quiet, selectively active, with a few compiled reflexes.</p>
+
+  <p>Aggressive decay (τ=40) collapses structure: reflex edges drop to 1 and cross-file links fall 34%. Conservative decay (τ=200) shifts 98% of edges into the habitual tier — everything requires deliberation, nothing is free. High traffic improves cross-file linking through co-firing frequency: 146 cross-file edges vs 82 at baseline.</p>
+
+  <h3>6.4 Cost Reduction</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Experiment</th><th>Static (tokens)</th><th>RAG</th><th>CrabPath</th><th>Reduction</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Context Bloat</td><td>6,066</td><td>744</td><td>297</td><td>95%</td></tr>
+        <tr><td>Gate Bloat</td><td>8,163</td><td>407</td><td>89</td><td>99%</td></tr>
+        <tr><td>Stale Context</td><td>895</td><td>507</td><td>88</td><td>90%</td></tr>
+        <tr><td>Procedure</td><td>548</td><td>467</td><td>205</td><td>63%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="insight">Estimated turn cost: $0.091 (static) → $0.004 (CrabPath). At 500 queries/day, that is the difference between $45.50 and $2.00.</div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 7: LIMITATIONS AND CONCLUSION                         -->
+  <!-- ============================================================ -->
+
+  <h2 id="limitations-and-conclusion">7. Limitations and Conclusion</h2>
+
+  <h3>Limitations</h3>
+
+  <p>CrabPath has not been deployed in production. The results here come from simulation. Long-horizon stability under real workloads is still an open question.</p>
+
+  <p>Fresh graphs are expensive: 100% habitual at bootstrap means every edge requires deliberation until the system has enough feedback to learn. The cold-start window depends on workload diversity and query volume.</p>
+
+  <p>Credit assignment remains hard. The corrected estimator from <a href="/papers/rl-corrected-update-2016.pdf" style="color: var(--accent);">Gu (2016)</a> is better than myopic, but discount factor selection and baseline estimation are still sensitive. The cheap routing model's convergence needs caveats — it is not a general-purpose optimizer, and pathological workloads could produce degenerate policies.</p>
+
+  <p>Health metric target ranges were calibrated on one workspace. They will shift with corpus size and workload distribution. Multi-user credit isolation does not exist yet.</p>
+
+  <h3>Conclusion</h3>
+
+  <p>We have five main findings:</p>
+
+  <ol>
+    <li>Context load falls 63–99% versus static retrieval, with estimated per-turn cost dropping from $0.091 to $0.004.</li>
+    <li>Corrected policy gradients propagate signal to every routing decision in the trajectory, not just the terminal one.</li>
+    <li>Procedural memory self-compiles from repeated behavior: a four-step deployment chain reaches reflex tier within 50 queries.</li>
+    <li>The autotuner keeps the graph bounded and recovers from brain death without human intervention.</li>
+    <li>Agents sharing the same source files develop structurally distinct graphs under different workloads.</li>
+  </ol>
+
+  <p>Code: <a href="https://github.com/jonathangu/crabpath">github.com/jonathangu/crabpath</a>.</p>
+
+  <!-- ============================================================ -->
+  <!-- REFERENCES                                                     -->
+  <!-- ============================================================ -->
+
+  <h2 id="references">References</h2>
+  <ol class="references">
+    <li>Gu, J. (2016). <span class="ref-title">Corrected policy-gradient update for recurrent action sequences.</span> UCLA Econometrics Field Paper. <a href="/papers/rl-corrected-update-2016.pdf">[PDF]</a></li>
+    <li>Williams, R. J. (1992). <span class="ref-title">Simple statistical gradient-following algorithms for connectionist reinforcement learning.</span> Machine Learning, 8(3–4), 229–256.</li>
+    <li>Collins, A. M. &amp; Loftus, E. F. (1975). <span class="ref-title">A spreading-activation theory of semantic processing.</span> Psychological Review, 82(6), 407–428.</li>
+    <li>Graves, A., Wayne, G. &amp; Danihelka, I. (2014). <span class="ref-title">Neural Turing Machines.</span> arXiv:1410.5401.</li>
+    <li>Graves, A. et al. (2016). <span class="ref-title">Hybrid computing using a neural network with dynamic external memory.</span> Nature, 538, 471–476.</li>
+    <li>Weston, J., Chopra, S. &amp; Bordes, A. (2015). <span class="ref-title">Memory Networks.</span> ICLR 2015.</li>
+    <li>Park, J. S. et al. (2023). <span class="ref-title">Generative agents: Interactive simulacra of human behavior.</span> UIST 2023.</li>
+    <li>Wang, G. et al. (2023). <span class="ref-title">Voyager: An open-ended embodied agent with large language models.</span> arXiv:2305.16291.</li>
+    <li>Packer, C. et al. (2023). <span class="ref-title">MemGPT: Towards LLMs as operating systems.</span> arXiv:2310.08560.</li>
+    <li>Shinn, N. et al. (2023). <span class="ref-title">Reflexion: Language agents with verbal reinforcement learning.</span> NeurIPS 2023.</li>
+    <li>Yao, S. et al. (2023). <span class="ref-title">ReAct: Synergizing reasoning and acting in language models.</span> ICLR 2023.</li>
+    <li>Asai, A. et al. (2024). <span class="ref-title">Self-RAG: Learning to retrieve, generate, and critique through self-reflection.</span> ICLR 2024.</li>
+    <li>Edge, D. et al. (2024). <span class="ref-title">From local to global: A graph RAG approach to query-focused summarization.</span> arXiv:2404.16130.</li>
+    <li>Sun, J. et al. (2024). <span class="ref-title">Think-on-Graph: Deep and responsible reasoning of large language model on knowledge graph.</span> ICLR 2024.</li>
+    <li>Schulman, J. et al. (2017). <span class="ref-title">Proximal policy optimization algorithms.</span> arXiv:1707.06347.</li>
+    <li>Rafailov, R. et al. (2023). <span class="ref-title">Direct preference optimization: Your language model is secretly a reward model.</span> NeurIPS 2023.</li>
+  </ol>
+
+  <footer class="paper-footer">
+    Open source page for CrabPath.
+  </footer>
+
+</article>
+</body>
+</html>

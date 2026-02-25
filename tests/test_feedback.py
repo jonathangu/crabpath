@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import builtins
+
+import pytest
 from crabpath import Edge, Graph, Node, SynaptogenesisConfig, SynaptogenesisState
 from crabpath.feedback import (
     auto_feedback,
@@ -50,6 +53,22 @@ def test_score_retrieval_default_on_invalid_response() -> None:
     assert result["overall"] == 0.0
 
 
+def test_score_retrieval_requires_openai_when_scoring(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name: str, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
+        if name == "openai":
+            raise ImportError("no module named 'openai'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(
+        ImportError,
+        match="pip install openai required for LLM scoring. Use --no-score to skip\\.",
+    ):
+        score_retrieval("query", [("n", "n content")], "answer")
+
+
 def test_auto_feedback_applies_negative_correction() -> None:
     graph = Graph()
     graph.add_node(Node(id="a", content="a"))
@@ -91,9 +110,18 @@ def test_auto_feedback_applies_implicit_positive() -> None:
 def test_no_reward_on_missing_signal() -> None:
     assert no_reward_on_missing_signal(correction=0.0, retrieval_helpfulness=None) is None
     assert no_reward_on_missing_signal(
-        correction=0.0, retrieval_helpfulness=0.29, min_helpfulness=0.3
+        correction=0.0, retrieval_helpfulness={"a": 0.29}, min_helpfulness=0.3
     ) is None
     assert no_reward_on_missing_signal(
-        correction=0.0, retrieval_helpfulness=0.3, min_helpfulness=0.3
-    ) == 0.3
+        correction=0.0, retrieval_helpfulness={"a": 0.3}, min_helpfulness=0.3
+    ) == 0.3  # marginal positive
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness={"a": 0.6}, min_helpfulness=0.3
+    ) == 0.6  # max helpful node
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness={"a": 0.6, "b": 0.2}, min_helpfulness=0.3
+    ) == 0.6  # max score gate on best chunk
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness=0.4, min_helpfulness=0.3
+    ) == 0.3  # legacy scalar input still treated as max score
     assert no_reward_on_missing_signal(correction=-1.0, retrieval_helpfulness=0.9) == -1.0

@@ -17,7 +17,6 @@ from .traversal import TraversalConfig, traverse
 class SimulatorConfig:
     max_hops: int = 3
     decay_interval: int = 5
-    consolidation_interval: int = 20
 
 
 @dataclass

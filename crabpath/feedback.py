@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from openai import OpenAI
 import os
 from pathlib import Path
 import re
@@ -109,6 +108,13 @@ def score_retrieval(
         return {"scores": {}, "overall": 0.0}
 
     def default_scoring_call(prompt: str, system: str) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "pip install openai required for LLM scoring. Use --no-score to skip."
+            ) from exc
+
         client = OpenAI()
         response = client.chat.completions.create(
             model=RETRIEVAL_SCORING_MODEL,
@@ -131,19 +137,27 @@ def score_retrieval(
         snippet = (content or "").replace("\n", " ")[:220]
         node_lines.append(f"- {node_id}: {snippet}")
 
-    system = "Score each node 1 to -1. Output JSON only."
+    system = (
+        "You score whether document chunks were useful for answering a query. For each chunk: "
+        "1.0 = essential (query cannot be answered without it), 0.5 = helpful "
+        "(provides useful context), 0.0 = irrelevant, -0.5 = misleading, -1.0 = actively "
+        "wrong. Be generous — if a chunk is partially relevant, score 0.5. Output JSON: "
+        '{"scores": {"node_id": float}, "overall": float}'
+    )
     prompt = (
         f"Query: {query}\n"
-        "Nodes:\n"
+        "\n"
+        "Chunks retrieved:\n"
         f"{chr(10).join(node_lines)}\n"
-        "Rate helpfulness of each node for answering this query.\n"
-        "Return JSON with keys scores and overall."
+        "Which chunks would help answer this query? Score each."
     )
 
     default_scores = {node_id: 0.0 for node_id, _ in retrieved_nodes}
 
     try:
         raw = scorer(prompt, system)
+    except ImportError:
+        raise
     except Exception:
         return {"scores": default_scores, "overall": 0.0}
 
@@ -222,7 +236,7 @@ def _parse_retrieval_scores(raw: str) -> dict[str, float]:
 
 def no_reward_on_missing_signal(
     correction: float,
-    retrieval_helpfulness: float | None = None,
+    retrieval_helpfulness: float | dict[str, float] | None = None,
     *,
     min_helpfulness: float = RETRIEVAL_HELPFULNESS_GATE,
 ) -> float | None:
@@ -235,9 +249,22 @@ def no_reward_on_missing_signal(
         return correction
     if retrieval_helpfulness is None:
         return None
-    if retrieval_helpfulness < min_helpfulness:
+
+    if isinstance(retrieval_helpfulness, dict):
+        node_scores = list(retrieval_helpfulness.values())
+    else:
+        node_scores = [retrieval_helpfulness]
+
+    if not node_scores:
         return None
-    return retrieval_helpfulness
+    max_score = max(_coerce_score(score) for score in node_scores)
+    if max_score > 0.5:
+        return max_score
+    if max_score >= min_helpfulness:
+        return 0.3
+    if max_score < min_helpfulness:
+        return None
+    return None
 
 
 def auto_feedback(

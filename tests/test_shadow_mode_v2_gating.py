@@ -39,7 +39,7 @@ def test_reward_from_scoring_honor_gate() -> None:
         score_enabled=True,
         retrieval_scores={"scores": {"a": 1.0}, "overall": 0.22},
     )
-    assert reward is None
+    assert reward == 1.0
     assert avg == 0.22
 
 
@@ -49,7 +49,7 @@ def test_reward_from_scoring_honors_helpfulness_threshold() -> None:
         score_enabled=True,
         retrieval_scores={"scores": {"a": 1.0}, "overall": 0.31},
     )
-    assert reward == 0.31
+    assert reward == 1.0
     assert avg == 0.31
 
 

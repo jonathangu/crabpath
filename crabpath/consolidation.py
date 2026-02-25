@@ -190,8 +190,27 @@ def consolidate(
     if config is None:
         config = ConsolidationConfig()
 
-    edges_pruned = prune_weak_edges(graph, config.min_edge_weight)
-    nodes_pruned = prune_orphan_nodes(graph, protected_ids=protected_ids)
+    protected_ids = set(protected_ids or [])
+    prior_protection = {}
+    for node_id in protected_ids:
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        prior_protection[node_id] = bool(node.metadata.get("protected"))
+        node.metadata["protected"] = True
+
+    stats = graph.consolidate(min_weight=config.min_edge_weight)
+    for node_id, was_protected in prior_protection.items():
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        if was_protected:
+            node.metadata["protected"] = True
+        else:
+            node.metadata.pop("protected", None)
+
+    edges_pruned = int(stats.get("pruned_edges", 0))
+    nodes_pruned = int(stats.get("pruned_nodes", 0))
     nodes_pruned += prune_probationary(graph, config.probation_max_turns)
 
     return ConsolidationResult(

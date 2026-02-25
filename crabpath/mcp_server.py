@@ -255,13 +255,20 @@ def mcp_migrate(arguments: dict[str, Any]) -> dict[str, Any]:
     graph.save(graph_path)
 
     embeddings_path = arguments.get("output_embeddings")
+    embeddings_output = None
     if embeddings_path:
-        EmbeddingIndex().save(embeddings_path)
+        embed_fn = _safe_openai_embed_fn()
+        if embed_fn is not None:
+            index = EmbeddingIndex()
+            index.build(graph, embed_fn=embed_fn)
+            if index.vectors:
+                index.save(embeddings_path)
+                embeddings_output = str(embeddings_path)
 
     return {
         "ok": True,
         "graph_path": str(graph_path),
-        "embeddings_path": str(embeddings_path) if embeddings_path else None,
+        "embeddings_path": embeddings_output,
         "info": info,
     }
 

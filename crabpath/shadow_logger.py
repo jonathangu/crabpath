@@ -76,7 +76,7 @@ def _coerce_trajectory_edges(trajectory: Any) -> list[tuple[str, str]]:
 
 def _coerce_tier_snapshot(tiers: Any) -> dict[str, int]:
     if not isinstance(tiers, dict):
-            return {"reflex": 0, "habitual": 0, "dormant": 0, "inhibitory": 0}
+        return {"reflex": 0, "habitual": 0, "dormant": 0, "inhibitory": 0}
     return {
         "reflex": _safe_int(tiers.get("reflex"), 0),
         "habitual": _safe_int(tiers.get("habitual"), 0),
