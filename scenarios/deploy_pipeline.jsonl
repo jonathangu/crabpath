@@ -1,0 +1,15 @@
+{"query":"Deploy the latest changes to production","feedback":{"reward":1},"expected_answer_fragments":["check_tests","deploy"]}
+{"query":"Ship the new feature","feedback":{"reward":1},"expected_answer_fragments":["check_tests","deploy"]}
+{"query":"Deploy quickly, we need this out now","feedback":{"reward":-1},"expected_answer_fragments":["skip"]}
+{"query":"Deploy the latest changes","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"We need to deploy ASAP","feedback":{"reward":-1},"expected_answer_fragments":["skip"]}
+{"query":"Deploy the latest changes","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Deploy this fix","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Ship it","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Production is down, rollback now","feedback":{"reward":1},"expected_answer_fragments":["rollback"]}
+{"query":"Deploy the new version","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Quick deploy needed","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Deploy to prod","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Urgent hotfix for the login bug","feedback":{"reward":1},"expected_answer_fragments":["hotfix"]}
+{"query":"Deploy the latest","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
+{"query":"Ship it fast","feedback":{"reward":1},"expected_answer_fragments":["check_tests"]}
