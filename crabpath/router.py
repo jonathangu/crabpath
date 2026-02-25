@@ -29,7 +29,7 @@ class RouterError(RuntimeError):
 @dataclass
 class RouterConfig:
     model: str = "gpt-5-mini"
-    temperature: float = 0.2
+    temperature: float | None = None  # Use model default
     timeout_s: float = 8.0
     max_retries: int = 2
     fallback_behavior: str = "heuristic"
@@ -271,12 +271,14 @@ class Router:
 
         # Primary path for OpenAI-style client.
         if hasattr(self.client, "chat"):
-            response = self.client.chat.completions.create(
-                model=self.config.model,
-                messages=list(messages),
-                temperature=self.config.temperature,
-                timeout=self.config.timeout_s,
-            )
+            kwargs: dict = {
+                "model": self.config.model,
+                "messages": list(messages),
+                "timeout": self.config.timeout_s,
+            }
+            if self.config.temperature is not None:
+                kwargs["temperature"] = self.config.temperature
+            response = self.client.chat.completions.create(**kwargs)
 
             if not response.choices:
                 raise RouterError("LLM response missing choices")

@@ -11,7 +11,7 @@ from .router import Router
 @dataclass
 class TraversalConfig:
     max_hops: int = 3
-    temperature: float = 0.2
+    temperature: float | None = None  # Use model default
     branch_beam: int = 3
 
 
