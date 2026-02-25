@@ -66,3 +66,110 @@ def test_router_config_defaults():
     assert cfg.timeout_s == 8.0
     assert cfg.max_retries == 2
     assert cfg.fallback_behavior == "heuristic"
+
+
+# ---------------------------------------------------------------------------
+# Tests: select_nodes (0, 1, or N)
+# ---------------------------------------------------------------------------
+
+def test_select_fallback_returns_top_candidates():
+    router = Router()
+    candidates = [
+        ("node-a", 0.9, "identity rules"),
+        ("node-b", 0.7, "tool config"),
+        ("node-c", 0.1, "unrelated"),
+    ]
+    selected = router.select_nodes("what are the identity rules?", candidates)
+    assert "node-a" in selected
+    assert "node-b" in selected
+    assert "node-c" not in selected  # Below threshold
+
+
+def test_select_fallback_returns_empty_for_trivial():
+    router = Router()
+    candidates = [
+        ("node-a", 0.5, "something"),
+    ]
+    selected = router.select_nodes("hello", candidates)
+    assert selected == []
+
+
+def test_select_fallback_returns_empty_for_no_candidates():
+    router = Router()
+    selected = router.select_nodes("anything", [])
+    assert selected == []
+
+
+def test_select_fallback_returns_top_one_if_marginal():
+    router = Router()
+    candidates = [
+        ("node-a", 0.25, "somewhat relevant"),
+        ("node-b", 0.10, "barely relevant"),
+    ]
+    selected = router.select_nodes("obscure topic", candidates)
+    assert selected == ["node-a"]
+
+
+def test_select_with_llm_client():
+    """Test select_nodes with a mock LLM client that returns JSON."""
+    def mock_client(messages):
+        return '{"selected": ["node-a", "node-c"], "rationale": "both needed"}'
+
+    router = Router(config=RouterConfig(fallback_behavior="llm"), client=mock_client)
+    candidates = [
+        ("node-a", 0.9, "identity"),
+        ("node-b", 0.7, "tools"),
+        ("node-c", 0.5, "safety"),
+    ]
+    selected = router.select_nodes("identity and safety rules", candidates)
+    assert selected == ["node-a", "node-c"]
+
+
+def test_select_with_llm_returns_zero():
+    """LLM can return empty selection."""
+    def mock_client(messages):
+        return '{"selected": [], "rationale": "trivial greeting"}'
+
+    router = Router(config=RouterConfig(fallback_behavior="llm"), client=mock_client)
+    candidates = [("node-a", 0.5, "stuff")]
+    selected = router.select_nodes("hi", candidates)
+    assert selected == []
+
+
+def test_select_with_llm_filters_invalid_ids():
+    """LLM returns an ID that's not in candidates — filter it out."""
+    def mock_client(messages):
+        return '{"selected": ["node-a", "node-FAKE"], "rationale": "test"}'
+
+    router = Router(config=RouterConfig(fallback_behavior="llm"), client=mock_client)
+    candidates = [("node-a", 0.9, "real node")]
+    selected = router.select_nodes("test", candidates)
+    assert selected == ["node-a"]
+
+
+def test_select_falls_back_on_error():
+    """If LLM errors, falls back to heuristic."""
+    def bad_client(messages):
+        raise RuntimeError("API down")
+
+    router = Router(
+        config=RouterConfig(fallback_behavior="heuristic", max_retries=0),
+        client=bad_client,
+    )
+    candidates = [("node-a", 0.9, "relevant")]
+    selected = router.select_nodes("query", candidates)
+    assert "node-a" in selected  # Fallback should still return it
+
+
+def test_parse_select_json():
+    router = Router()
+    raw = '{"selected": ["a", "b"], "rationale": "both needed"}'
+    payload = router.parse_select_json(raw)
+    assert payload["selected"] == ["a", "b"]
+
+
+def test_parse_select_json_markdown_wrapped():
+    router = Router()
+    raw = '```json\n{"selected": ["a"], "rationale": "ok"}\n```'
+    payload = router.parse_select_json(raw)
+    assert payload["selected"] == ["a"]

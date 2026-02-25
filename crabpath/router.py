@@ -10,6 +10,14 @@ _SYSTEM_PROMPT = (
     "choose which to follow. Output JSON: {\"target\": \"node_id\", \"confidence\": 0.0-1.0, \"rationale\": \"brief\"}"
 )
 
+_SELECT_SYSTEM_PROMPT = (
+    "You are a memory router. Given a query and candidate nodes with summaries, "
+    "select which nodes are needed to answer this query. You may select 0, 1, or multiple. "
+    "Select 0 if the query is trivial (greeting, thanks, yes/no) or none are relevant. "
+    "Select multiple if the query needs context from several nodes together. "
+    "Output JSON: {\"selected\": [\"node_id1\", \"node_id2\"], \"rationale\": \"brief\"}"
+)
+
 
 class RouterError(RuntimeError):
     """Raised when routing fails due to parsing issues or unavailable model output."""
@@ -328,6 +336,101 @@ class Router:
         if isinstance(last_error, RouterError):
             raise
         raise RouterError("Routing failed") from last_error
+
+    def select_nodes(
+        self,
+        query: str,
+        candidates: list[tuple[str, float, str]],
+    ) -> list[str]:
+        """Select 0, 1, or N nodes relevant to a query. LLM decides.
+
+        Args:
+            query: The user query.
+            candidates: List of (node_id, score, summary) tuples.
+
+        Returns:
+            List of selected node_ids (may be empty).
+        """
+        if not candidates:
+            return []
+
+        if not self.client or self.config.fallback_behavior == "heuristic":
+            return self._select_fallback(query, candidates)
+
+        candidate_lines = "\n".join(
+            f"→ {nid} ({score:.2f}): {summary[:100]}"
+            for nid, score, summary in candidates
+        )
+        user_msg = f"Query: {query}\n\nCandidates:\n{candidate_lines}"
+
+        messages = [
+            {"role": "system", "content": _SELECT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+
+        last_error: Exception | None = None
+        for _attempt in range(max(self.config.max_retries, 0) + 1):
+            try:
+                raw_output = self._extract_model_output(messages)
+                payload = self.parse_select_json(raw_output)
+                selected = payload.get("selected", [])
+                if isinstance(selected, list):
+                    # Filter to only valid candidate IDs
+                    valid_ids = {nid for nid, _, _ in candidates}
+                    return [str(s) for s in selected if str(s) in valid_ids]
+                return []
+            except Exception as exc:
+                last_error = exc
+
+        return self._select_fallback(query, candidates)
+
+    def _select_fallback(
+        self,
+        query: str,
+        candidates: list[tuple[str, float, str]],
+    ) -> list[str]:
+        """Heuristic fallback: select top candidates by score."""
+        if not candidates:
+            return []
+
+        # Trivial query detection
+        trivial = {"hello", "hi", "thanks", "yes", "no", "ok", "sure", "yeah", "bye"}
+        words = set(query.lower().split())
+        if words and words.issubset(trivial | {""}):
+            return []
+
+        # Select all candidates above a reasonable threshold
+        sorted_candidates = sorted(candidates, key=lambda c: c[1], reverse=True)
+        selected = [nid for nid, score, _ in sorted_candidates if score > 0.3]
+
+        # At minimum return the top one if anything scored decently
+        if not selected and sorted_candidates and sorted_candidates[0][1] > 0.15:
+            selected = [sorted_candidates[0][0]]
+
+        return selected
+
+    def parse_select_json(self, raw: str) -> dict[str, Any]:
+        """Parse the selection response JSON."""
+        if not isinstance(raw, str):
+            raise RouterError("Select parse input must be a string")
+
+        normalized = raw.strip()
+        if normalized.startswith("```"):
+            lines = normalized.splitlines()
+            if len(lines) >= 2 and lines[0].startswith("```"):
+                if lines[-1].strip().endswith("```"):
+                    lines = lines[1:-1]
+                normalized = "\n".join(lines).strip()
+
+        try:
+            payload = json.loads(normalized)
+        except json.JSONDecodeError as exc:
+            raise RouterError("Select output is not valid JSON") from exc
+
+        if not isinstance(payload, dict):
+            raise RouterError("Select payload must be a JSON object")
+
+        return payload
 
     def fallback(self, candidates: list[tuple[str, float]], tier: str) -> RouterDecision:
         normalized = self._coerce_candidates(candidates)
