@@ -72,10 +72,12 @@ def test_measure_health_uses_graph_state_and_query_stats():
     graph.add_edge(Edge(source="file_a::b", target="file_b::c", weight=0.5))
     graph.add_edge(Edge(source="file_b::c", target="file_a::a", weight=0.95))
 
-    state = MitosisState(families={
-        "parent::x": ["file_a::a", "file_a::b"],
-        "parent::y": ["file_a::a", "file_b::c"],
-    })
+    state = MitosisState(
+        families={
+            "parent::x": ["file_a::a", "file_a::b"],
+            "parent::y": ["file_a::a", "file_b::c"],
+        }
+    )
     query_stats = {
         "fired_counts": [[1, 2, 3, 4], [1, 2, 3]],
         "chars": [40, 60],
@@ -443,6 +445,7 @@ def test_self_tune_reverts_when_meta_learning_worsens(monkeypatch):
 
     autotune_module = importlib.import_module("crabpath.autotune")
     monkeypatch.setattr(autotune_module, "measure_health", lambda *_, **__: next(health_reads))
+
     def fake_autotune(*_args, **_kwargs):
         return next(autotune_calls)(*_args, **_kwargs)
 

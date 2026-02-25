@@ -27,14 +27,16 @@ def _emit(payload: dict[str, Any]) -> None:
 
 
 def _error(req_id: Any, code: int, message: str) -> None:
-    _emit({
-        "jsonrpc": "2.0",
-        "id": req_id,
-        "error": {
-            "code": code,
-            "message": message,
-        },
-    })
+    _emit(
+        {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {
+                "code": code,
+                "message": message,
+            },
+        }
+    )
 
 
 def _result(req_id: Any, result: dict[str, Any]) -> None:
@@ -288,7 +290,9 @@ def mcp_learn(arguments: dict[str, Any]) -> dict[str, Any]:
     _learn(graph, firing, outcome=outcome)
 
     after = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
-    edges_updated = sum(1 for key, weight in after.items() if key not in before or before[key] != weight)
+    edges_updated = sum(
+        1 for key, weight in after.items() if key not in before or before[key] != weight
+    )
     graph.save(arguments["graph"])
 
     return {"ok": True, "edges_updated": edges_updated}
@@ -464,7 +468,7 @@ def mcp_sim(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
+    _load_graph(arguments["graph"])
     fired_ids = _split_csv(arguments["fired_ids"])
 
     record = {

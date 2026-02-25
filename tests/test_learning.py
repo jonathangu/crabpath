@@ -7,10 +7,8 @@ import pytest
 from crabpath import Edge, Graph, Node
 from crabpath.learning import (
     LearningConfig,
-    LearningResult,
     RewardSignal,
     apply_weight_updates,
-    gu_corrected_advantage,
     make_learning_step,
     policy_gradient_update,
     weight_delta,
@@ -66,7 +64,6 @@ def test_gu_corrected_credits_all_hops():
     delta_map = _to_delta_map(deltas)
 
     p_gc = math.exp(1.0) / (math.exp(1.0) + math.exp(0.0))
-    p_ce = 1.0 / (math.exp(1.0) + math.exp(0.0))
     assert delta_map["giraffe-codeword->codewords"] == pytest.approx((1 - p_gc) * 0.1)
     assert delta_map["giraffe-codeword->elephant-codeword"] == pytest.approx(-(1 - p_gc) * 0.1)
     assert delta_map["codewords->elephant-codeword"] == pytest.approx((1 - 0.5) * 0.1)

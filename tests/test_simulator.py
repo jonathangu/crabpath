@@ -5,7 +5,14 @@ from pathlib import Path
 from crabpath.graph import Edge, Graph, Node
 from crabpath.learning import LearningConfig
 from crabpath.router import Router
-from crabpath.simulator import EpisodeMetrics, ScenarioStep, load_scenarios, render_dashboard, run_batch, run_episode
+from crabpath.simulator import (
+    EpisodeMetrics,
+    ScenarioStep,
+    load_scenarios,
+    render_dashboard,
+    run_batch,
+    run_episode,
+)
 from crabpath.traversal import TraversalConfig
 
 
@@ -67,7 +74,9 @@ def test_dashboard_output() -> None:
     metrics = run_batch(
         [
             ScenarioStep(query="go", feedback={"reward": 1.0}, expected_answer_fragments=["left"]),
-            ScenarioStep(query="stay", feedback={"reward": 0.5}, expected_answer_fragments=["right"]),
+            ScenarioStep(
+                query="stay", feedback={"reward": 0.5}, expected_answer_fragments=["right"]
+            ),
         ],
         graph=graph,
         router=router,

@@ -24,7 +24,10 @@ def test_fallback_picks_highest_weight():
 
 def test_parse_json_valid():
     router = Router()
-    raw = '{"target":"node-1","confidence":0.81,"rationale":"best match","alternatives":[["node-2",0.2]]}'
+    raw = (
+        '{"target":"node-1","confidence":0.81,"rationale":"best match",'
+        '"alternatives":[["node-2",0.2]]}'
+    )
     payload = router.parse_json(raw)
 
     assert payload["target"] == "node-1"
@@ -44,11 +47,11 @@ def test_parse_json_invalid_raises():
 
 def test_build_prompt_under_budget():
     router = Router()
-    query = "How do I deploy a hotfix for memory pressure in production under high latency conditions?"
+    query = (
+        "How do I deploy a hotfix for memory pressure in production under high latency conditions?"
+    )
     candidates = [(f"node-{i}", float(i) / 10.0) for i in range(30)]
-    context = {
-        "node_summary": "Production incident runbook notes with multiple rollout steps."
-    }
+    context = {"node_summary": "Production incident runbook notes with multiple rollout steps."}
 
     prompt = router.build_prompt(query, candidates, context, budget=140)
 
@@ -71,6 +74,7 @@ def test_router_config_defaults():
 # ---------------------------------------------------------------------------
 # Tests: select_nodes (0, 1, or N)
 # ---------------------------------------------------------------------------
+
 
 def test_select_fallback_returns_top_candidates():
     router = Router()
@@ -112,6 +116,7 @@ def test_select_fallback_returns_top_one_if_marginal():
 
 def test_select_with_llm_client():
     """Test select_nodes with a mock LLM client that returns JSON."""
+
     def mock_client(messages):
         return '{"selected": ["node-a", "node-c"], "rationale": "both needed"}'
 
@@ -127,6 +132,7 @@ def test_select_with_llm_client():
 
 def test_select_with_llm_returns_zero():
     """LLM can return empty selection."""
+
     def mock_client(messages):
         return '{"selected": [], "rationale": "trivial greeting"}'
 
@@ -138,6 +144,7 @@ def test_select_with_llm_returns_zero():
 
 def test_select_with_llm_filters_invalid_ids():
     """LLM returns an ID that's not in candidates — filter it out."""
+
     def mock_client(messages):
         return '{"selected": ["node-a", "node-FAKE"], "rationale": "test"}'
 
@@ -149,6 +156,7 @@ def test_select_with_llm_filters_invalid_ids():
 
 def test_select_falls_back_on_error():
     """If LLM errors, falls back to heuristic."""
+
     def bad_client(messages):
         raise RuntimeError("API down")
 

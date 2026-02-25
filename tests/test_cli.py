@@ -10,7 +10,9 @@ from crabpath import Edge, EmbeddingIndex, Graph, Node
 from crabpath.mitosis import MitosisState
 
 
-def _run_cli(args: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    args: list[str], env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     proc_env = os.environ.copy()
     proc_env["PYTHONPATH"] = os.getcwd()
     if env:
@@ -206,7 +208,9 @@ def test_health_cli_json_with_query_stats_and_state(tmp_path: Path) -> None:
         "reconverged_families": 1,
     }
     query_stats_path.write_text(json.dumps(query_stats), encoding="utf-8")
-    MitosisState(families={"x": ["file_a::a"], "y": ["file_a::b", "file_b::c"]}).save(str(state_path))
+    MitosisState(families={"x": ["file_a::a"], "y": ["file_a::b", "file_b::c"]}).save(
+        str(state_path)
+    )
 
     result = _run_cli(
         [
@@ -263,6 +267,8 @@ def test_evolve_cli_appends_snapshot_and_report(tmp_path: Path) -> None:
     assert report.stdout.count("Evolution timeline") == 1
     assert "nodes 3 (+1)" in report.stdout
     assert "# 2" in report.stdout
+
+
 def test_consolidate_outputs_prune_counts(tmp_path: Path) -> None:
     graph_path = tmp_path / "graph.json"
 
@@ -335,11 +341,10 @@ def test_migrate_cli_outputs_graph_and_info(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "AGENTS.md").write_text(
-        "## Rules\nUse concise, safe, and direct instructions.\n\n## Tools\nUse CLI and browser for debugging."
+        "## Rules\nUse concise, safe, and direct instructions.\n\n"
+        "## Tools\nUse CLI and browser for debugging."
     )
-    (workspace / "SOUL.md").write_text(
-        "## Identity\nI am a memory graph test harness."
-    )
+    (workspace / "SOUL.md").write_text("## Identity\nI am a memory graph test harness.")
 
     graph_path = tmp_path / "migrated_graph.json"
     embeddings_path = tmp_path / "migrated_embeddings.json"
@@ -379,13 +384,16 @@ def test_split_cli_saves_chunks(tmp_path: Path) -> None:
         Node(
             id="soul",
             content=(
-                "## Identity\nI am the main identity file. This file captures the core persona and operating guidelines for this agent.\n\n"
+                "## Identity\nI am the main identity file. This file captures the "
+                "core persona and operating guidelines for this agent.\n\n"
                 "## Tools\nUse codex for coding and browser for web tasks.\n\n"
                 "## Safety\nNever expose credentials.\n\n"
-                "## Memory\nKeep daily notes and migration logs. This text should be sufficiently long and realistic "
+                "## Memory\nKeep daily notes and migration logs. This text should "
+                "be sufficiently long and realistic "
                 "so that CLI split operations can test chunking behavior across markdown sections, "
                 "ensuring output contains multiple coherent chunks from the source content.\n\n"
-                "## Notes\nContinue extending these notes with project decisions and rationale so downstream systems "
+                "## Notes\nContinue extending these notes with project decisions and "
+                "rationale so downstream systems "
                 "can find useful overlap signals and stable retrieval anchors."
             ),
         )

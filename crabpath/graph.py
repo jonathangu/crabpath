@@ -109,8 +109,12 @@ class Graph:
         if not isinstance(node.metadata, dict):
             node.metadata = {}
 
-        node.metadata.setdefault("fired_count", self._coerce_int(node.metadata.get("fired_count"), 0))
-        node.metadata.setdefault("last_fired_ts", self._coerce_float(node.metadata.get("last_fired_ts"), 0.0))
+        node.metadata.setdefault(
+            "fired_count", self._coerce_int(node.metadata.get("fired_count"), 0)
+        )
+        node.metadata.setdefault(
+            "last_fired_ts", self._coerce_float(node.metadata.get("last_fired_ts"), 0.0)
+        )
         if "created_ts" not in node.metadata:
             node.metadata["created_ts"] = time.time()
 

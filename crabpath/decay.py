@@ -7,7 +7,7 @@ from .graph import Graph
 
 @dataclass
 class DecayConfig:
-    half_life_turns: int = 80    # 80 turns to halve (sim-validated baseline)
+    half_life_turns: int = 80  # 80 turns to halve (sim-validated baseline)
     min_weight: float = -5.0
     max_weight: float = 5.0
 
@@ -38,7 +38,9 @@ def _as_float(value: object) -> float:
         return 0.0
 
 
-def apply_decay(graph: Graph, turns_elapsed: int | float, config: DecayConfig | None = None) -> dict[str, float]:
+def apply_decay(
+    graph: Graph, turns_elapsed: int | float, config: DecayConfig | None = None
+) -> dict[str, float]:
     """Apply exponential decay to all non-protected edges.
 
     Args:

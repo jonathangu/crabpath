@@ -13,10 +13,9 @@ import json
 import math
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .graph import Graph, Node
+from .graph import Graph
 
 
 @dataclass
@@ -185,6 +184,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 # ---- OpenAI adapter ----
 
+
 def openai_embed(
     model: str = "text-embedding-3-small",
 ) -> Callable[[list[str]], list[list[float]]]:
@@ -214,9 +214,7 @@ def gemini_embed(
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            "Gemini API key missing. Set GEMINI_API_KEY or GOOGLE_API_KEY."
-        )
+        raise RuntimeError("Gemini API key missing. Set GEMINI_API_KEY or GOOGLE_API_KEY.")
 
     genai.configure(api_key=api_key)
 
@@ -320,6 +318,5 @@ def auto_embed(
     raise RuntimeError(
         "No embedding provider available. "
         "Set OPENAI_API_KEY or GEMINI_API_KEY (or GOOGLE_API_KEY), "
-        "or run Ollama locally at http://localhost:11434 with an embed model. "
-        + " | ".join(errors)
+        "or run Ollama locally at http://localhost:11434 with an embed model. " + " | ".join(errors)
     )

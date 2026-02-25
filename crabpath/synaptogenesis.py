@@ -36,50 +36,55 @@ from .graph import Graph, Edge
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SynaptogenesisConfig:
     """All the knobs for edge formation."""
+
     # Proto-edge promotion
-    promotion_threshold: int = 2          # Co-fires needed to promote (2 = responsive)
-    proto_decay_rate: float = 0.85        # Proto-credit multiplier per maintenance cycle
-    proto_min_credit: float = 0.4         # Below this, proto-edge dies
+    promotion_threshold: int = 2  # Co-fires needed to promote (2 = responsive)
+    proto_decay_rate: float = 0.85  # Proto-credit multiplier per maintenance cycle
+    proto_min_credit: float = 0.4  # Below this, proto-edge dies
 
     # New edge weights
-    cofire_initial_weight: float = 0.18   # Symmetric co-fire edge (just above dormant floor)
-    causal_initial_weight: float = 0.28   # Directed A→B (A fired before B)
+    cofire_initial_weight: float = 0.18  # Symmetric co-fire edge (just above dormant floor)
+    causal_initial_weight: float = 0.28  # Directed A→B (A fired before B)
 
     # Reinforcement
-    hebbian_increment: float = 0.06       # Per co-fire reinforcement
-    skip_factor: float = 0.9             # Multiply weight when skipped as candidate
+    hebbian_increment: float = 0.06  # Per co-fire reinforcement
+    skip_factor: float = 0.9  # Multiply weight when skipped as candidate
 
     # Limits
-    max_outgoing: int = 20               # Max outgoing edges per node
-    min_edge_weight: float = 0.05        # Below this, edge dies
+    max_outgoing: int = 20  # Max outgoing edges per node
+    min_edge_weight: float = 0.05  # Below this, edge dies
 
     # Tiers
-    dormant_threshold: float = 0.3       # Below = dormant (invisible to router)
-    reflex_threshold: float = 0.8        # Above = reflex (auto-follow)
+    dormant_threshold: float = 0.3  # Below = dormant (invisible to router)
+    reflex_threshold: float = 0.8  # Above = reflex (auto-follow)
 
 
 # ---------------------------------------------------------------------------
 # Proto-edge state
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ProtoEdge:
     """A tentative connection. Not yet a real graph edge."""
+
     source: str
     target: str
     credit: float = 1.0
     first_seen: float = 0.0
     last_seen: float = 0.0
-    causal_count: int = 0     # Times source fired before target
-    reverse_count: int = 0    # Times target fired before source
+    causal_count: int = 0  # Times source fired before target
+    reverse_count: int = 0  # Times target fired before source
 
 
 @dataclass
 class SynaptogenesisState:
     """Tracks proto-edges and co-firing history."""
+
     # (source, target) -> ProtoEdge
     proto_edges: dict[tuple[str, str], ProtoEdge] = field(default_factory=dict)
 
@@ -107,7 +112,8 @@ class SynaptogenesisState:
             for key, val in data.items():
                 s, t = val["source"], val["target"]
                 state.proto_edges[(s, t)] = ProtoEdge(
-                    source=s, target=t,
+                    source=s,
+                    target=t,
                     credit=val.get("credit", 1.0),
                     first_seen=val.get("first_seen", 0.0),
                     last_seen=val.get("last_seen", 0.0),
@@ -122,6 +128,7 @@ class SynaptogenesisState:
 # ---------------------------------------------------------------------------
 # Core operations
 # ---------------------------------------------------------------------------
+
 
 def record_cofiring(
     graph: Graph,
@@ -156,7 +163,6 @@ def record_cofiring(
 
             if edge is not None:
                 # Real edge exists — reinforce
-                old = edge.weight
                 edge.weight = min(edge.weight + config.hebbian_increment, 5.0)
                 edge.last_followed_ts = now
                 edge.follow_count = (edge.follow_count or 0) + 1
@@ -169,9 +175,11 @@ def record_cofiring(
                 if proto is None:
                     # First time seeing this pair
                     proto = ProtoEdge(
-                        source=node_a, target=node_b,
+                        source=node_a,
+                        target=node_b,
                         credit=1.0,
-                        first_seen=now, last_seen=now,
+                        first_seen=now,
+                        last_seen=now,
                         causal_count=1 if i < j else 0,
                         reverse_count=1 if i > j else 0,
                     )
@@ -196,7 +204,8 @@ def record_cofiring(
                         weight = config.cofire_initial_weight
 
                     new_edge = Edge(
-                        source=node_a, target=node_b,
+                        source=node_a,
+                        target=node_b,
                         weight=weight,
                         created_by="auto",
                     )
@@ -271,7 +280,7 @@ def _add_edge_with_competition(
     if len(outgoing) >= config.max_outgoing:
         # Find weakest non-protected outgoing edge
         weakest = None
-        weakest_weight = float('inf')
+        weakest_weight = float("inf")
         for target_node, edge in outgoing:
             if graph.is_node_protected(edge.target):
                 continue
@@ -302,6 +311,7 @@ def classify_tier(weight: float, config: SynaptogenesisConfig | None = None) -> 
 # ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
+
 
 def edge_tier_stats(graph: Graph, config: SynaptogenesisConfig | None = None) -> dict[str, int]:
     """Count edges in each tier."""

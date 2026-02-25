@@ -68,8 +68,8 @@ def test_save_omits_defaults():
     node_data = data["nodes"][0]
     assert "threshold" not in node_data  # default 1.0 omitted
     assert "potential" not in node_data  # default 0.0 omitted
-    assert "trace" not in node_data       # default 0.0 omitted
-    assert "metadata" not in node_data   # empty dict omitted
+    assert "trace" not in node_data  # default 0.0 omitted
+    assert "metadata" not in node_data  # empty dict omitted
 
     Path(path).unlink()
 

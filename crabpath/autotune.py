@@ -320,11 +320,27 @@ def validate_config(
         safety_bounds = SafetyBounds()
 
     checks: list[tuple[float | int, float | int, float | int]] = [
-        (decay_config.half_life_turns, safety_bounds.min_decay_half_life, safety_bounds.max_decay_half_life),
-        (syn_config.promotion_threshold, safety_bounds.min_promotion_threshold, safety_bounds.max_promotion_threshold),
-        (syn_config.hebbian_increment, safety_bounds.min_hebbian_increment, safety_bounds.max_hebbian_increment),
+        (
+            decay_config.half_life_turns,
+            safety_bounds.min_decay_half_life,
+            safety_bounds.max_decay_half_life,
+        ),
+        (
+            syn_config.promotion_threshold,
+            safety_bounds.min_promotion_threshold,
+            safety_bounds.max_promotion_threshold,
+        ),
+        (
+            syn_config.hebbian_increment,
+            safety_bounds.min_hebbian_increment,
+            safety_bounds.max_hebbian_increment,
+        ),
         (syn_config.skip_factor, safety_bounds.min_skip_factor, safety_bounds.max_skip_factor),
-        (syn_config.reflex_threshold, safety_bounds.min_reflex_threshold, safety_bounds.max_reflex_threshold),
+        (
+            syn_config.reflex_threshold,
+            safety_bounds.min_reflex_threshold,
+            safety_bounds.max_reflex_threshold,
+        ),
     ]
 
     for value, min_value, max_value in checks:
@@ -454,7 +470,9 @@ def _metric_from_query_stats(
     return default
 
 
-def _avg_query_value(query_stats: dict[str, Any], keys: list[str], *, default: float = 0.0) -> float:
+def _avg_query_value(
+    query_stats: dict[str, Any], keys: list[str], *, default: float = 0.0
+) -> float:
     value = _metric_from_query_stats(query_stats, keys, default=None)
     if value is None:
         return default
@@ -642,11 +660,7 @@ def measure_health(graph: Graph, state: MitosisState, query_stats: dict[str, Any
         default=0.0,
     )
     total_families = len(getattr(state, "families", {}) or {})
-    reconvergence_rate = (
-        reconvergence_count / total_families * 100.0
-        if total_families > 0
-        else 0.0
-    )
+    reconvergence_rate = reconvergence_count / total_families * 100.0 if total_families > 0 else 0.0
 
     return GraphHealth(
         avg_nodes_fired_per_query=_coerce_float(avg_nodes_fired_per_query, default=0.0),
@@ -675,7 +689,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.avg_nodes_fired_per_query,
                 target_range=(min_fired or 0.0, max_fired or 0.0),
                 suggested_change={"decay_half_life": "decrease"},
-                reason="Too many nodes fired per query; stronger decay (lower half_life) should narrow spread.",
+                reason=(
+                    "Too many nodes fired per query; stronger decay "
+                    "(lower half_life) should narrow spread."
+                ),
             )
         )
     elif health.avg_nodes_fired_per_query < (min_fired or 0.0):
@@ -688,7 +705,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                     "decay_half_life": "increase",
                     "promotion_threshold": "decrease",
                 },
-                reason="Too few nodes fired per query; slower decay and lower promotion threshold should increase spread.",
+                reason=(
+                    "Too few nodes fired per query; slower decay and lower "
+                    "promotion threshold should increase spread."
+                ),
             )
         )
 
@@ -702,7 +722,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.cross_file_edge_pct,
                 target_range=(min_cross or 0.0, max_cross or 0.0),
                 suggested_change={"promotion_threshold": "decrease"},
-                reason="Cross-file evidence is sparse; lowering promotion threshold can speed cross-domain edge discovery.",
+                reason=(
+                    "Cross-file evidence is sparse; lowering promotion "
+                    "threshold can speed cross-domain edge discovery."
+                ),
             )
         )
     elif max_cross is not None and health.cross_file_edge_pct > max_cross:
@@ -712,7 +735,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.cross_file_edge_pct,
                 target_range=(min_cross or 0.0, max_cross or 0.0),
                 suggested_change={"promotion_threshold": "increase"},
-                reason="Cross-file edges are over-represented; raising promotion threshold can curb noisy shortcuts.",
+                reason=(
+                    "Cross-file edges are over-represented; raising promotion "
+                    "threshold can curb noisy shortcuts."
+                ),
             )
         )
 
@@ -725,7 +751,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.dormant_pct,
                 target_range=(min_dormant or 0.0, max_dormant or 0.0),
                 suggested_change={"decay_half_life": "decrease"},
-                reason="Too few dormant links; increasing decay helps remove weakly reinforced candidates faster.",
+                reason=(
+                    "Too few dormant links; increasing decay helps remove "
+                    "weakly reinforced candidates faster."
+                ),
             )
         )
     elif max_dormant is not None and health.dormant_pct > max_dormant:
@@ -735,7 +764,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.dormant_pct,
                 target_range=(min_dormant or 0.0, max_dormant or 0.0),
                 suggested_change={"decay_half_life": "increase"},
-                reason="Dormant links are over-abundant; relaxing decay may help useful links stabilize.",
+                reason=(
+                    "Dormant links are over-abundant; relaxing decay may help "
+                    "useful links stabilize."
+                ),
             )
         )
 
@@ -748,7 +780,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.reflex_pct,
                 target_range=(min_reflex or 0.0, max_reflex or 0.0),
                 suggested_change={"hebbian_increment": "increase"},
-                reason="Reflex is too low; stronger Hebbian updates help edges move into reflex tier faster.",
+                reason=(
+                    "Reflex is too low; stronger Hebbian updates help edges "
+                    "move into reflex tier faster."
+                ),
             )
         )
     if max_reflex is not None and health.reflex_pct > max_reflex:
@@ -761,7 +796,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                     "decay_half_life": "decrease",
                     "reflex_threshold": "increase",
                 },
-                reason="Reflex edges are too common; increase decay and/or require stronger evidence for reflex edges.",
+                reason=(
+                    "Reflex edges are too common; increase decay and/or require "
+                    "stronger evidence for reflex edges."
+                ),
             )
         )
 
@@ -774,7 +812,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.context_compression,
                 target_range=(min_context or 0.0, max_context or 0.0),
                 suggested_change={"decay_half_life": "decrease"},
-                reason="Context compression is high; lowering decay half-life reduces loaded context churn.",
+                reason=(
+                    "Context compression is high; lowering decay half-life "
+                    "reduces loaded context churn."
+                ),
             )
         )
 
@@ -787,7 +828,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.proto_promotion_rate,
                 target_range=(min_promo or 0.0, max_promo or 0.0),
                 suggested_change={"promotion_threshold": "decrease"},
-                reason="Promotion is too slow; lowering threshold should convert proto-links sooner.",
+                reason=(
+                    "Promotion is too slow; lowering threshold should convert "
+                    "proto-links sooner."
+                ),
             )
         )
     elif max_promo is not None and health.proto_promotion_rate > max_promo:
@@ -797,7 +841,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.proto_promotion_rate,
                 target_range=(min_promo or 0.0, max_promo or 0.0),
                 suggested_change={"promotion_threshold": "increase"},
-                reason="Promotion is too aggressive; raising threshold can reduce weak proto-link conversion.",
+                reason=(
+                    "Promotion is too aggressive; raising threshold can "
+                    "reduce weak proto-link conversion."
+                ),
             )
         )
 
@@ -809,7 +856,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                 current=health.orphan_nodes,
                 target_range=HEALTH_TARGETS["orphan_nodes"],
                 suggested_change={"investigation": "trace why nodes have no edges"},
-                reason="Orphan nodes indicate disconnected storage; investigate routing, promotion, and split/merge side-effects.",
+                reason=(
+                    "Orphan nodes indicate disconnected storage; investigate "
+                    "routing, promotion, and split/merge side-effects."
+                ),
             )
         )
 
@@ -865,7 +915,7 @@ def apply_adjustments(
         for key, direction in adjustment.suggested_change.items():
             if key not in ADJUSTMENT_PRIORITIES:
                 continue
-            last_seen = last_adjusted.get(key, -10**9)
+            last_seen = last_adjusted.get(key, -(10**9))
             if cycle_number - last_seen <= ADJUSTMENT_COOLDOWN_CYCLES:
                 continue
             requested_adjustments.append((key, direction))
@@ -886,7 +936,14 @@ def apply_adjustments(
                 candidate = before * 1.33
             else:
                 continue
-            clamped = int(round(max(safety_bounds.min_decay_half_life, min(safety_bounds.max_decay_half_life, candidate))))
+            clamped = int(
+                round(
+                    max(
+                        safety_bounds.min_decay_half_life,
+                        min(safety_bounds.max_decay_half_life, candidate),
+                    )
+                )
+            )
             bounded = int(round(candidate)) != clamped
             decay_config.half_life_turns = clamped
             _record_change(changes, "decay_half_life", before, clamped, bounded=bounded)
@@ -994,7 +1051,10 @@ def self_tune(
     previous_config = _snapshot_tune_config(syn_config, decay_config)
     if tune_history.pending:
         completed_records = tune_history.evaluate_pending(health)
-        if _should_revert(completed_records, safety_bounds) and tune_history.previous_config is not None:
+        if (
+            _should_revert(completed_records, safety_bounds)
+            and tune_history.previous_config is not None
+        ):
             _restore_tune_config(tune_history.previous_config, syn_config, decay_config)
         if tune_memory is not None:
             tune_memory.update(TuneHistory(records=completed_records))

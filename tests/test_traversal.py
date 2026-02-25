@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from crabpath import Edge, Graph, Node
 from crabpath.router import Router, RouterDecision
-from crabpath.traversal import TraversalConfig, TraversalStep, TraversalTrajectory, render_context, traverse
+from crabpath.traversal import TraversalConfig, TraversalTrajectory, render_context, traverse
 
 
 def _node_graph() -> Graph:
@@ -57,7 +57,9 @@ def test_habitual_uses_router():
             super().__init__()
             self.calls = 0
 
-        def decide_next(self, query, current_node_id, candidate_nodes, context, tier, previous_reasoning=None):
+        def decide_next(
+            self, query, current_node_id, candidate_nodes, context, tier, previous_reasoning=None
+        ):
             self.calls += 1
             # Keep deterministic and explicit for the test.
             return RouterDecision(
@@ -127,7 +129,9 @@ def test_traversal_returns_all_candidates_per_step():
     graph.add_edge(Edge(source="start", target="dormant", weight=0.1))
 
     class ForcedHabitualRouter(Router):
-        def decide_next(self, query, current_node_id, candidate_nodes, context, tier, previous_reasoning=None):
+        def decide_next(
+            self, query, current_node_id, candidate_nodes, context, tier, previous_reasoning=None
+        ):
             return RouterDecision(
                 chosen_target="habit",
                 rationale="forced",

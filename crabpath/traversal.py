@@ -154,7 +154,9 @@ def traverse(
             break
 
         # Candidate list includes all outgoing options for learning.
-        all_candidates: list[tuple[str, float]] = [(target.id, float(edge.weight)) for target, edge in outgoing]
+        all_candidates: list[tuple[str, float]] = [
+            (target.id, float(edge.weight)) for target, edge in outgoing
+        ]
         all_candidates.sort(key=lambda item: item[1], reverse=True)
         unvisited_candidates = [c for c in all_candidates if c[0] not in visited]
         if not unvisited_candidates:
@@ -163,12 +165,26 @@ def traverse(
         chosen: tuple[str, float] | None = None
         tier = "dormant"
 
-        if any(_classify_tier(weight) == "reflex" and node_id not in visited for node_id, weight in all_candidates):
-            reflex_candidates = [c for c in all_candidates if _classify_tier(c[1]) == "reflex" and c[0] not in visited]
+        if any(
+            _classify_tier(weight) == "reflex" and node_id not in visited
+            for node_id, weight in all_candidates
+        ):
+            reflex_candidates = [
+                c
+                for c in all_candidates
+                if _classify_tier(c[1]) == "reflex" and c[0] not in visited
+            ]
             tier = "reflex"
             chosen = sorted(reflex_candidates, key=lambda item: (item[1], item[0]), reverse=True)[0]
-        elif any(_classify_tier(weight) == "habitual" and node_id not in visited for node_id, weight in all_candidates):
-            habitual_candidates = [c for c in all_candidates if _classify_tier(c[1]) == "habitual" and c[0] not in visited]
+        elif any(
+            _classify_tier(weight) == "habitual" and node_id not in visited
+            for node_id, weight in all_candidates
+        ):
+            habitual_candidates = [
+                c
+                for c in all_candidates
+                if _classify_tier(c[1]) == "habitual" and c[0] not in visited
+            ]
             tier = "habitual"
             context = _build_router_context(
                 query=query,
@@ -188,7 +204,9 @@ def traverse(
             if chosen is None:
                 # Chosen edge was invalid or leads to a visited node; fallback to
                 # the highest-weight habitual candidate.
-                chosen = sorted(habitual_candidates, key=lambda item: (item[1], item[0]), reverse=True)[0]
+                chosen = sorted(
+                    habitual_candidates, key=lambda item: (item[1], item[0]), reverse=True
+                )[0]
         else:
             # All candidates are dormant for this node.
             break

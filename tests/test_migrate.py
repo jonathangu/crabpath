@@ -2,31 +2,28 @@
 
 import json
 import pytest
-from pathlib import Path
 from crabpath.migrate import (
     migrate,
     gather_files,
     parse_session_logs,
-    replay_queries,
     keyword_router,
     fallback_llm_split,
     MigrateConfig,
 )
-from crabpath.graph import Graph, Node
-from crabpath.mitosis import MitosisState, bootstrap_workspace, MitosisConfig
-from crabpath.synaptogenesis import SynaptogenesisState, SynaptogenesisConfig
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_workspace(tmp_path):
     """Create a minimal workspace for testing."""
     ws = tmp_path / "workspace"
     ws.mkdir()
     (ws / "AGENTS.md").write_text(
-        "## Rules\nFollow these rules carefully at all times. They define how the agent operates.\n\n"
+        "## Rules\nFollow these rules carefully at all times. "
+        "They define how the agent operates.\n\n"
         "## Tools\nUse these tools for coding and browsing. Codex for code, browser for web.\n\n"
         "## Safety\nStay safe. Never expose credentials. Always ask before destructive actions."
     )
@@ -35,7 +32,8 @@ def _make_workspace(tmp_path):
         "## Values\nBe helpful, direct, and honest. Own the outcome and verify facts."
     )
     (ws / "MEMORY.md").write_text(
-        "## Key Facts\nThe project started in February 2026. Main stack is Python and TypeScript.\n\n"
+        "## Key Facts\nThe project started in February 2026. "
+        "Main stack is Python and TypeScript.\n\n"
         "## Decisions\nWe decided to use CrabPath for memory management in the agent system."
     )
 
@@ -62,6 +60,7 @@ def _make_session_log(tmp_path, queries):
 # ---------------------------------------------------------------------------
 # Tests: gather_files
 # ---------------------------------------------------------------------------
+
 
 def test_gather_injection_files(tmp_path):
     ws = _make_workspace(tmp_path)
@@ -90,12 +89,16 @@ def test_gather_without_memory(tmp_path):
 # Tests: parse_session_logs
 # ---------------------------------------------------------------------------
 
+
 def test_parse_jsonl_logs(tmp_path):
-    log = _make_session_log(tmp_path, [
-        "how do I use codex for coding tasks",
-        "what are the safety rules for credentials",
-        "hi",  # short but > 5 chars with JSONL wrapping
-    ])
+    log = _make_session_log(
+        tmp_path,
+        [
+            "how do I use codex for coding tasks",
+            "what are the safety rules for credentials",
+            "hi",  # short but > 5 chars with JSONL wrapping
+        ],
+    )
     queries = parse_session_logs([log])
     assert len(queries) >= 2  # At least the two substantive ones
 
@@ -122,6 +125,7 @@ def test_parse_missing_file():
 # Tests: keyword_router
 # ---------------------------------------------------------------------------
 
+
 def test_keyword_router_multi_select():
     candidates = [
         ("node-a", 0.5, "codex coding rules workflow"),
@@ -143,6 +147,7 @@ def test_keyword_router_trivial():
 # Tests: migrate (full pipeline)
 # ---------------------------------------------------------------------------
 
+
 def test_migrate_basic(tmp_path):
     ws = _make_workspace(tmp_path)
     graph, info = migrate(
@@ -158,13 +163,17 @@ def test_migrate_basic(tmp_path):
 
 def test_migrate_with_replay(tmp_path):
     ws = _make_workspace(tmp_path)
-    log = _make_session_log(tmp_path, [
-        "what are the rules for agents",
-        "how to stay safe with tools",
-        "agent safety rules and tools",
-        "rules and safety together",
-        "what tools follow what rules",
-    ] * 5)  # 25 queries to generate some co-firing
+    log = _make_session_log(
+        tmp_path,
+        [
+            "what are the rules for agents",
+            "how to stay safe with tools",
+            "agent safety rules and tools",
+            "rules and safety together",
+            "what tools follow what rules",
+        ]
+        * 5,
+    )  # 25 queries to generate some co-firing
 
     graph, info = migrate(
         workspace_dir=ws,
@@ -187,9 +196,14 @@ def test_migrate_empty_workspace(tmp_path):
 # Tests: fallback_llm_split
 # ---------------------------------------------------------------------------
 
+
 def test_fallback_splits_by_headers():
-    content = ("## Rules\nFollow these rules carefully at all times. They define agent behavior.\n\n"
-               "## Tools\nUse these tools for coding and browsing. Codex for code, browser for web.")
+    content = (
+        "## Rules\nFollow these rules carefully at all times. "
+        "They define agent behavior.\n\n"
+        "## Tools\nUse these tools for coding and browsing. "
+        "Codex for code, browser for web."
+    )
     result = fallback_llm_split("system", f"---\n{content}\n---")
     parsed = json.loads(result)
     assert len(parsed["sections"]) == 2

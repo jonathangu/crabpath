@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import tempfile
 from collections.abc import Iterable
@@ -234,5 +233,7 @@ def test_feedback_mapping_with_delayed_correction(monkeypatch):
         assert mapped is not None
         assert mapped["turn_id"] == 5
         assert mapped["turns_since_fire"] == 5
-        assert auto_outcome(corrections_count=1, turns_since_fire=mapped["turns_since_fire"]) == -1.0
+        assert (
+            auto_outcome(corrections_count=1, turns_since_fire=mapped["turns_since_fire"]) == -1.0
+        )
         assert auto_outcome(corrections_count=0, turns_since_fire=5) == 0.3

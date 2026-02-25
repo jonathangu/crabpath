@@ -52,9 +52,7 @@ def load_scenarios(path: str | Path) -> list[ScenarioStep]:
                 ScenarioStep(
                     query=str(raw.get("query", "")),
                     feedback=dict(raw.get("feedback") or {}),
-                    expected_answer_fragments=list(
-                        raw.get("expected_answer_fragments") or []
-                    ),
+                    expected_answer_fragments=list(raw.get("expected_answer_fragments") or []),
                 )
             )
     return scenarios
@@ -93,8 +91,7 @@ def run_episode(
     nodes_after = len(graph.nodes())
 
     weight_changes = {
-        f"{update.source}->{update.target}": update.delta
-        for update in result.updates
+        f"{update.source}->{update.target}": update.delta for update in result.updates
     }
     return EpisodeMetrics(
         query=query,

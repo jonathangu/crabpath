@@ -174,7 +174,9 @@ def weight_delta(
         weights = [w for _, w in candidates]
         probs = _softmax(weights)
 
-        candidate_map = [(target, probs[target_index]) for target_index, (target, _) in enumerate(candidates)]
+        candidate_map = [
+            (target, probs[target_index]) for target_index, (target, _) in enumerate(candidates)
+        ]
 
         for target, probability in candidate_map:
             baseline_grad = 1.0 if target == chosen else 0.0
@@ -196,7 +198,9 @@ def _set_count(edge: Edge, field: str, delta: int) -> None:
     setattr(edge, field, int(current) + delta)
 
 
-def apply_weight_updates(graph: Graph, deltas: Sequence[tuple[object, object, object]], config: LearningConfig) -> list[EdgeUpdate]:
+def apply_weight_updates(
+    graph: Graph, deltas: Sequence[tuple[object, object, object]], config: LearningConfig
+) -> list[EdgeUpdate]:
     """Apply policy gradients to graph edges and score skipped candidates.
 
     The policy-gradient terms are reward-conditional (from REINFORCE) and update

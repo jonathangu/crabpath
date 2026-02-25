@@ -15,19 +15,23 @@ All with mock LLM calls for reproducibility.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Any, Callable
 
-from .graph import Graph, Node, Edge
+from .graph import Graph
 from .mitosis import (
-    MitosisConfig, MitosisState,
-    bootstrap_workspace, split_node,
-    mitosis_maintenance, find_co_firing_families,
+    MitosisConfig,
+    MitosisState,
+    bootstrap_workspace,
+    mitosis_maintenance,
 )
 from .synaptogenesis import (
-    SynaptogenesisConfig, SynaptogenesisState,
-    record_cofiring, record_skips, decay_proto_edges,
-    edge_tier_stats, classify_tier,
+    SynaptogenesisConfig,
+    SynaptogenesisState,
+    record_cofiring,
+    record_skips,
+    decay_proto_edges,
+    edge_tier_stats,
 )
 from .decay import DecayConfig, apply_decay
 
@@ -36,31 +40,33 @@ from .decay import DecayConfig, apply_decay
 # Simulation config
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SimConfig:
-    decay_interval: int = 5           # Decay every N queries
-    maintenance_interval: int = 25    # Merge/split check every N queries
-    proto_decay_interval: int = 5     # Decay proto-edges every N queries
-    decay_half_life: int = 80         # Turns for edge weight to halve
+    decay_interval: int = 5  # Decay every N queries
+    maintenance_interval: int = 25  # Merge/split check every N queries
+    proto_decay_interval: int = 5  # Decay proto-edges every N queries
+    decay_half_life: int = 80  # Turns for edge weight to halve
 
 
 # ---------------------------------------------------------------------------
 # Query scenario
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Query:
     text: str
     relevant_topics: list[str]  # Topics this query relates to (for mock routing)
-    feedback: float = 0.1       # Implicit positive unless corrected
+    feedback: float = 0.1  # Implicit positive unless corrected
 
 
 # ---------------------------------------------------------------------------
 # Mock router — deterministic for simulation
 # ---------------------------------------------------------------------------
 
-def make_mock_router(
-) -> Callable[[str, list[tuple[str, float, str]]], list[str]]:
+
+def make_mock_router() -> Callable[[str, list[tuple[str, float, str]]], list[str]]:
     """Create a mock router that selects nodes by keyword matching.
 
     Simulates cheap LLM routing without actual API calls.
@@ -114,12 +120,14 @@ def make_mock_router(
 
 def make_mock_llm_split() -> Callable[[str, str], str]:
     """Mock LLM that splits by markdown headers or paragraphs."""
+
     def mock_split(system: str, user: str) -> str:
         content = user.split("---\n", 1)[-1].rsplit("\n---", 1)[0] if "---" in user else user
 
         # Split by ## headers
         import re
-        parts = re.split(r'\n(?=## )', content)
+
+        parts = re.split(r"\n(?=## )", content)
         parts = [p.strip() for p in parts if p.strip()]
 
         if len(parts) >= 2:
@@ -137,13 +145,17 @@ def make_mock_llm_split() -> Callable[[str, str], str]:
 
 def make_mock_llm_merge() -> Callable[[str, str], str]:
     """Mock LLM for merge decisions — merges if content is very short."""
+
     def mock_merge(system: str, user: str) -> str:
         # Simple heuristic: merge if combined content is small
-        return json.dumps({
-            "should_merge": True,
-            "reason": "Chunks are fragments of same topic",
-            "merged_content": "",
-        })
+        return json.dumps(
+            {
+                "should_merge": True,
+                "reason": "Chunks are fragments of same topic",
+                "merged_content": "",
+            }
+        )
+
     return mock_merge
 
 
@@ -168,6 +180,7 @@ def make_mock_llm_all() -> Callable[[str, str], str]:
 # Snapshot for tracking
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Snapshot:
     query_num: int
@@ -186,6 +199,7 @@ class Snapshot:
 # ---------------------------------------------------------------------------
 # The simulation
 # ---------------------------------------------------------------------------
+
 
 def run_simulation(
     workspace_files: dict[str, str],
@@ -297,6 +311,7 @@ def run_simulation(
 # Pre-built scenarios
 # ---------------------------------------------------------------------------
 
+
 def workspace_scenario() -> tuple[dict[str, str], list[Query]]:
     """A realistic workspace simulation.
 
@@ -338,70 +353,53 @@ def workspace_scenario() -> tuple[dict[str, str], list[Query]]:
         Query("reset worktree after codex", ["codex", "worktrees", "reset"]),
         Query("codex coding task", ["codex", "coding"]),
         Query("run codex with full auto", ["codex", "yolo"]),
-
         # Safety queries
         Query("can I show API keys in telegram", ["credentials", "safety"]),
         Query("how to handle secrets", ["credentials", "safety"]),
         Query("delete these files", ["destructive", "safety"]),
-
         # Cross-file: tools + safety
         Query("clean up worktrees safely", ["worktrees", "destructive", "safety"]),
         Query("reset codex worktree without losing work", ["codex", "worktrees", "safety"]),
-
         # Identity queries
         Query("who are you", ["name", "personality"]),
         Query("what are your values", ["values", "personality"]),
-
         # Browser queries
         Query("how to use browser tool", ["browser", "headless"]),
         Query("browser cookie workaround", ["browser", "cookie", "bug"]),
-
         # Cost queries
         Query("check opus spending", ["cost", "tracking"]),
         Query("how much have we spent", ["cost", "opus"]),
-
         # More codex (reinforcing codex+worktree connection)
         Query("codex worktree cleanup", ["codex", "worktrees"]),
         Query("after codex what do I do", ["codex", "worktrees", "reset"]),
         Query("codex finished now what", ["codex", "worktrees"]),
         Query("post-codex checklist", ["codex", "worktrees", "reset"]),
-
         # More safety (reinforcing credential rules)
         Query("masked API key in chat", ["credentials", "safety"]),
         Query("can I paste tokens in discord", ["credentials", "safety"]),
-
         # Cross: identity + values
         Query("what does guclaw care about", ["personality", "values"]),
         Query("your core principles", ["values", "personality"]),
-
         # Novel (should not match well)
         Query("weather in san francisco", []),
         Query("what time is it", []),
-
         # Git-specific (subset of tools)
         Query("stale worktree cleanup", ["worktrees", "cleanup"]),
         Query("uncommitted work in worktree", ["worktrees", "uncommitted"]),
         Query("worktree slots", ["worktrees", "slots"]),
         Query("git worktree hygiene", ["worktrees", "cleanup"]),
-
         # Deep codex+worktree pattern (20 queries reinforcing this path)
-        *[Query(f"codex then worktree reset {i}", ["codex", "worktrees", "reset"])
-          for i in range(20)],
-
+        *[
+            Query(f"codex then worktree reset {i}", ["codex", "worktrees", "reset"])
+            for i in range(20)
+        ],
         # Safety pattern (10 queries)
-        *[Query(f"never show credentials {i}", ["credentials", "safety"])
-          for i in range(10)],
-
+        *[Query(f"never show credentials {i}", ["credentials", "safety"]) for i in range(10)],
         # Browser pattern (5 queries)
-        *[Query(f"browser headless session {i}", ["browser", "headless"])
-          for i in range(5)],
-
+        *[Query(f"browser headless session {i}", ["browser", "headless"]) for i in range(5)],
         # Mixed cross-file (10 queries)
-        *[Query(f"codex safety rules {i}", ["codex", "safety", "destructive"])
-          for i in range(5)],
-        *[Query(f"identity and tools {i}", ["name", "codex"])
-          for i in range(5)],
-
+        *[Query(f"codex safety rules {i}", ["codex", "safety", "destructive"]) for i in range(5)],
+        *[Query(f"identity and tools {i}", ["name", "codex"]) for i in range(5)],
         # Fill to 100
         Query("cost tracker alert threshold", ["cost", "opus"]),
         Query("privilege hierarchy explained", ["privilege", "safety"]),
@@ -420,8 +418,8 @@ def workspace_scenario() -> tuple[dict[str, str], list[Query]]:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
-    import sys
 
     files, queries = workspace_scenario()
     print(f"Running simulation: {len(files)} files, {len(queries)} queries\n")
@@ -432,11 +430,11 @@ def main():
     print(f"  Files: {result['bootstrap']['files']}")
     print(f"  Initial nodes: {result['bootstrap']['initial_nodes']}")
     print(f"  Initial edges: {result['bootstrap']['initial_edges']}")
-    for split in result['bootstrap']['splits']:
+    for split in result["bootstrap"]["splits"]:
         print(f"  {split['parent']}: {split['chunks']} chunks")
 
     print(f"\n=== FINAL STATE (after {len(queries)} queries) ===")
-    final = result['final']
+    final = result["final"]
     print(f"  Nodes: {final['nodes']}")
     print(f"  Edges: {final['edges']}")
     print(f"  Proto-edges: {final['proto_edges']}")
@@ -445,25 +443,30 @@ def main():
 
     # Print key snapshots
     print("\n=== KEY MOMENTS ===")
-    for snap in result['snapshots']:
-        qi = snap['query_num']
-        if qi in [1, 5, 10, 25, 50, 75, 100] or snap['promotions'] > 0:
-            print(f"  Q{qi}: {snap['query_text'][:40]:40s} | "
-                  f"nodes={snap['nodes']} edges={snap['edges']} "
-                  f"proto={snap['proto_edges']} "
-                  f"promo={snap['promotions']} "
-                  f"reinf={snap['reinforcements']} "
-                  f"tiers={snap['tiers']}")
+    for snap in result["snapshots"]:
+        qi = snap["query_num"]
+        if qi in [1, 5, 10, 25, 50, 75, 100] or snap["promotions"] > 0:
+            print(
+                f"  Q{qi}: {snap['query_text'][:40]:40s} | "
+                f"nodes={snap['nodes']} edges={snap['edges']} "
+                f"proto={snap['proto_edges']} "
+                f"promo={snap['promotions']} "
+                f"reinf={snap['reinforcements']} "
+                f"tiers={snap['tiers']}"
+            )
 
     # Save full results
     out_path = "scratch/lifecycle-sim-results.json"
     try:
         from pathlib import Path
+
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         Path(out_path).write_text(json.dumps(result, indent=2))
         print(f"\nFull results saved to {out_path}")
     except Exception:
-        pass
+        # Keep CLI/simulation mode functional when the scratch report is not
+        # writable in the current environment.
+        return None
 
 
 if __name__ == "__main__":

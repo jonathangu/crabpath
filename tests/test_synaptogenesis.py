@@ -18,6 +18,7 @@ from crabpath.synaptogenesis import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _graph_with_nodes(*ids):
     g = Graph()
     for nid in ids:
@@ -28,6 +29,7 @@ def _graph_with_nodes(*ids):
 # ---------------------------------------------------------------------------
 # Proto-edge creation
 # ---------------------------------------------------------------------------
+
 
 def test_first_cofire_creates_proto():
     g = _graph_with_nodes("A", "B")
@@ -105,6 +107,7 @@ def test_causal_direction_stronger():
 # Reinforcement of existing edges
 # ---------------------------------------------------------------------------
 
+
 def test_existing_edge_reinforced():
     g = _graph_with_nodes("A", "B")
     g.add_edge(Edge(source="A", target="B", weight=0.5))
@@ -133,6 +136,7 @@ def test_multiple_cofires_accumulate():
 # Skip penalty
 # ---------------------------------------------------------------------------
 
+
 def test_skip_penalty():
     g = _graph_with_nodes("A", "B", "C")
     g.add_edge(Edge(source="A", target="B", weight=0.5))
@@ -158,11 +162,10 @@ def test_skip_no_edge_no_crash():
 # Proto-edge decay
 # ---------------------------------------------------------------------------
 
+
 def test_proto_decay():
     state = SynaptogenesisState()
-    state.proto_edges[("A", "B")] = ProtoEdge(
-        source="A", target="B", credit=1.5
-    )
+    state.proto_edges[("A", "B")] = ProtoEdge(source="A", target="B", credit=1.5)
     config = SynaptogenesisConfig(proto_decay_rate=0.8, proto_min_credit=0.5)
 
     removed = decay_proto_edges(state, config)
@@ -180,9 +183,7 @@ def test_proto_decay():
 
 def test_proto_decay_removes_weak():
     state = SynaptogenesisState()
-    state.proto_edges[("X", "Y")] = ProtoEdge(
-        source="X", target="Y", credit=0.4
-    )
+    state.proto_edges[("X", "Y")] = ProtoEdge(source="X", target="Y", credit=0.4)
     config = SynaptogenesisConfig(proto_min_credit=0.5)
 
     removed = decay_proto_edges(state, config)
@@ -193,6 +194,7 @@ def test_proto_decay_removes_weak():
 # ---------------------------------------------------------------------------
 # Edge competition (max outgoing)
 # ---------------------------------------------------------------------------
+
 
 def test_max_outgoing_enforced():
     g = _graph_with_nodes("hub", "t1", "t2", "t3", "new")
@@ -217,6 +219,7 @@ def test_max_outgoing_enforced():
 # Tier classification
 # ---------------------------------------------------------------------------
 
+
 def test_classify_tiers():
     config = SynaptogenesisConfig()
     assert classify_tier(0.1, config) == "dormant"
@@ -228,9 +231,9 @@ def test_classify_tiers():
 
 def test_edge_tier_stats():
     g = _graph_with_nodes("A", "B", "C", "D")
-    g.add_edge(Edge(source="A", target="B", weight=0.1))   # dormant
-    g.add_edge(Edge(source="A", target="C", weight=0.5))   # habitual
-    g.add_edge(Edge(source="A", target="D", weight=0.9))   # reflex
+    g.add_edge(Edge(source="A", target="B", weight=0.1))  # dormant
+    g.add_edge(Edge(source="A", target="C", weight=0.5))  # habitual
+    g.add_edge(Edge(source="A", target="D", weight=0.9))  # reflex
 
     stats = edge_tier_stats(g)
     assert stats["dormant"] == 1
@@ -242,12 +245,17 @@ def test_edge_tier_stats():
 # State persistence
 # ---------------------------------------------------------------------------
 
+
 def test_state_save_load(tmp_path):
     state = SynaptogenesisState()
     state.proto_edges[("A", "B")] = ProtoEdge(
-        source="A", target="B", credit=2.5,
-        first_seen=100.0, last_seen=200.0,
-        causal_count=3, reverse_count=1,
+        source="A",
+        target="B",
+        credit=2.5,
+        first_seen=100.0,
+        last_seen=200.0,
+        causal_count=3,
+        reverse_count=1,
     )
 
     path = str(tmp_path / "syn.json")
@@ -268,6 +276,7 @@ def test_state_load_missing():
 # Multi-node co-firing
 # ---------------------------------------------------------------------------
 
+
 def test_three_way_cofire():
     """Co-firing A, B, C should create proto-edges for all pairs."""
     g = _graph_with_nodes("A", "B", "C")
@@ -286,7 +295,7 @@ def test_mixed_existing_and_new():
     state = SynaptogenesisState()
     config = SynaptogenesisConfig(hebbian_increment=0.05)
 
-    result = record_cofiring(g, ["A", "B", "C"], state, config)
+    record_cofiring(g, ["A", "B", "C"], state, config)
 
     # A→B should be reinforced (existing edge)
     assert g.get_edge("A", "B").weight == pytest.approx(0.45)

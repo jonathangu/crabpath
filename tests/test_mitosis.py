@@ -1,10 +1,8 @@
 """Tests for CrabPath mitosis — LLM-driven graph self-organization."""
 
 import json
-import pytest
 from crabpath.graph import Graph, Node, Edge
 from crabpath.mitosis import (
-    MitosisConfig,
     MitosisState,
     split_node,
     split_with_llm,
@@ -24,12 +22,13 @@ from crabpath.mitosis import (
 # Mock LLMs
 # ---------------------------------------------------------------------------
 
+
 def _mock_llm_split(system: str, user: str) -> str:
     """Mock LLM that splits by paragraphs."""
     content = user.split("---\n", 1)[-1].rsplit("\n---", 1)[0] if "---" in user else user
     parts = [p.strip() for p in content.split("\n\n") if p.strip()]
     if len(parts) < 2:
-        parts = [content[:len(content)//2], content[len(content)//2:]]
+        parts = [content[: len(content) // 2], content[len(content) // 2 :]]
     return json.dumps({"sections": parts})
 
 
@@ -37,46 +36,58 @@ def _mock_llm_split_3way(system: str, user: str) -> str:
     """Mock LLM that always splits into 3."""
     content = user.split("---\n", 1)[-1].rsplit("\n---", 1)[0] if "---" in user else user
     n = len(content) // 3
-    return json.dumps({"sections": [
-        content[:n],
-        content[n:2*n],
-        content[2*n:],
-    ]})
+    return json.dumps(
+        {
+            "sections": [
+                content[:n],
+                content[n : 2 * n],
+                content[2 * n :],
+            ]
+        }
+    )
 
 
 def _mock_llm_merge_yes(system: str, user: str) -> str:
     """Mock LLM that always says merge."""
-    return json.dumps({
-        "should_merge": True,
-        "reason": "These chunks are semantically identical",
-        "merged_content": "merged content here",
-    })
+    return json.dumps(
+        {
+            "should_merge": True,
+            "reason": "These chunks are semantically identical",
+            "merged_content": "merged content here",
+        }
+    )
 
 
 def _mock_llm_merge_no(system: str, user: str) -> str:
     """Mock LLM that always says don't merge."""
-    return json.dumps({
-        "should_merge": False,
-        "reason": "These serve different purposes",
-    })
+    return json.dumps(
+        {
+            "should_merge": False,
+            "reason": "These serve different purposes",
+        }
+    )
 
 
 def _mock_llm_create_yes(system: str, user: str) -> str:
     """Mock LLM that always says create."""
-    return json.dumps({
-        "should_create": True,
-        "reason": "Novel concept not in graph",
-        "content": "New concept: quantum computing basics",
-        "summary": "Quantum computing basics",
-    })
+    return json.dumps(
+        {
+            "should_create": True,
+            "reason": "Novel concept not in graph",
+            "content": "New concept: quantum computing basics",
+            "summary": "Quantum computing basics",
+        }
+    )
 
 
 def _mock_llm_create_no(system: str, user: str) -> str:
     """Mock LLM that always says don't create."""
-    return json.dumps({
-        "should_create": False,
-        "reason": "Already covered by existing nodes",
-    })
+    return json.dumps(
+        {
+            "should_create": False,
+            "reason": "Already covered by existing nodes",
+        }
+    )
 
 
 def _mock_llm_dispatch(system: str, user: str) -> str:
@@ -109,6 +120,7 @@ SMALL_CONTENT = "Too small."
 # Tests: split_with_llm (no hardcoded count)
 # ---------------------------------------------------------------------------
 
+
 def test_split_with_llm_basic():
     sections = split_with_llm(SAMPLE_CONTENT, _mock_llm_split)
     assert len(sections) >= 2
@@ -126,6 +138,7 @@ def test_split_with_llm_variable_count():
 def test_split_with_llm_fallback_on_bad_json():
     def bad_llm(s, u):
         return "not json"
+
     sections = split_with_llm(SAMPLE_CONTENT, bad_llm)
     assert len(sections) >= 2
 
@@ -133,6 +146,7 @@ def test_split_with_llm_fallback_on_bad_json():
 def test_split_with_llm_fallback_on_exception():
     def exploding_llm(s, u):
         raise RuntimeError("API error")
+
     sections = split_with_llm(SAMPLE_CONTENT, exploding_llm)
     assert len(sections) >= 2
 
@@ -141,6 +155,7 @@ def test_split_with_llm_fallback_on_exception():
 # Tests: fallback_split (structural, no count)
 # ---------------------------------------------------------------------------
 
+
 def test_fallback_split_by_headers():
     content = "## A\nFirst\n\n## B\nSecond\n\n## C\nThird"
     sections = _fallback_split(content)
@@ -148,11 +163,13 @@ def test_fallback_split_by_headers():
 
 
 def test_fallback_split_no_headers():
-    content = ("First paragraph with enough content to be meaningful on its own. "
-               "It discusses routing and activation.\n\n"
-               "Second paragraph covering a completely different topic about decay "
-               "mechanisms and how weights change over time.\n\n"
-               "Third paragraph about neurogenesis and creating new nodes in the graph.")
+    content = (
+        "First paragraph with enough content to be meaningful on its own. "
+        "It discusses routing and activation.\n\n"
+        "Second paragraph covering a completely different topic about decay "
+        "mechanisms and how weights change over time.\n\n"
+        "Third paragraph about neurogenesis and creating new nodes in the graph."
+    )
     sections = _fallback_split(content)
     assert len(sections) >= 2
 
@@ -160,6 +177,7 @@ def test_fallback_split_no_headers():
 # ---------------------------------------------------------------------------
 # Tests: should_merge (LLM-driven)
 # ---------------------------------------------------------------------------
+
 
 def test_should_merge_yes():
     chunks = [("chunk-0", "Safety rules"), ("chunk-1", "More safety rules")]
@@ -177,6 +195,7 @@ def test_should_merge_no():
 def test_should_merge_handles_error():
     def bad_llm(s, u):
         raise RuntimeError("fail")
+
     chunks = [("a", "content a"), ("b", "content b")]
     do_merge, reason, _ = should_merge(chunks, bad_llm)
     assert do_merge is False
@@ -186,6 +205,7 @@ def test_should_merge_handles_error():
 # ---------------------------------------------------------------------------
 # Tests: should_create_node (LLM neurogenesis)
 # ---------------------------------------------------------------------------
+
 
 def test_should_create_yes():
     matches = [("node-1", 0.3, "some topic")]
@@ -207,6 +227,7 @@ def test_should_create_no():
 def test_should_create_handles_error():
     def bad_llm(s, u):
         raise RuntimeError("fail")
+
     do_create, reason, _, _ = should_create_node("test", [], bad_llm)
     assert do_create is False
 
@@ -214,6 +235,7 @@ def test_should_create_handles_error():
 # ---------------------------------------------------------------------------
 # Tests: create_node
 # ---------------------------------------------------------------------------
+
 
 def test_create_node():
     g = Graph()
@@ -235,6 +257,7 @@ def test_create_node_declined():
 # ---------------------------------------------------------------------------
 # Tests: split_node
 # ---------------------------------------------------------------------------
+
 
 def test_split_node_basic():
     g = Graph()
@@ -302,6 +325,7 @@ def test_split_node_carries_protection():
 # Tests: find_co_firing_families
 # ---------------------------------------------------------------------------
 
+
 def test_co_firing_detected():
     g = Graph()
     state = MitosisState()
@@ -342,6 +366,7 @@ def test_co_firing_not_detected_when_decayed():
 # ---------------------------------------------------------------------------
 # Tests: merge_nodes (LLM-driven)
 # ---------------------------------------------------------------------------
+
 
 def test_merge_nodes_yes():
     g = Graph()
@@ -384,6 +409,7 @@ def test_merge_nodes_declined():
 # Tests: bootstrap_workspace
 # ---------------------------------------------------------------------------
 
+
 def test_bootstrap_workspace():
     g = Graph()
     state = MitosisState()
@@ -404,6 +430,7 @@ def test_bootstrap_workspace():
 # ---------------------------------------------------------------------------
 # Tests: mitosis_maintenance (unified loop)
 # ---------------------------------------------------------------------------
+
 
 def test_maintenance_merges_and_resplits():
     g = Graph()
@@ -448,6 +475,7 @@ def test_maintenance_no_action_when_separated():
 # Tests: MitosisState persistence
 # ---------------------------------------------------------------------------
 
+
 def test_state_save_load(tmp_path):
     state = MitosisState()
     state.families["soul"] = ["c0", "c1", "c2"]
@@ -470,6 +498,7 @@ def test_state_load_missing():
 # ---------------------------------------------------------------------------
 # Tests: chunk ID
 # ---------------------------------------------------------------------------
+
 
 def test_chunk_id_deterministic():
     id1 = _make_chunk_id("soul", 0, "Content")

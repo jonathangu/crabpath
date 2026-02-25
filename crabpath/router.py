@@ -7,7 +7,8 @@ import json
 
 _SYSTEM_PROMPT = (
     "You are a memory router. Given a query and candidate document pointers, "
-    "choose which to follow. Output JSON: {\"target\": \"node_id\", \"confidence\": 0.0-1.0, \"rationale\": \"brief\"}"
+    'choose which to follow. Output JSON: '
+    '{"target": "node_id", "confidence": 0.0-1.0, "rationale": "brief"}'
 )
 
 _SELECT_SYSTEM_PROMPT = (
@@ -15,7 +16,7 @@ _SELECT_SYSTEM_PROMPT = (
     "select which nodes are needed to answer this query. You may select 0, 1, or multiple. "
     "Select 0 if the query is trivial (greeting, thanks, yes/no) or none are relevant. "
     "Select multiple if the query needs context from several nodes together. "
-    "Output JSON: {\"selected\": [\"node_id1\", \"node_id2\"], \"rationale\": \"brief\"}"
+    'Output JSON: {"selected": ["node_id1", "node_id2"], "rationale": "brief"}'
 )
 
 
@@ -113,7 +114,9 @@ class Router:
         self.config = config or RouterConfig()
         self.client = client
 
-    def _coerce_candidates(self, candidates: Sequence[tuple[str, float]]) -> list[_NormalizedCandidate]:
+    def _coerce_candidates(
+        self, candidates: Sequence[tuple[str, float]]
+    ) -> list[_NormalizedCandidate]:
         normalized: list[_NormalizedCandidate] = []
         for item in candidates:
             if not isinstance(item, (tuple, list)) or len(item) < 2:
@@ -142,7 +145,13 @@ class Router:
     def _token_count(text: str) -> int:
         return len(text.split())
 
-    def build_prompt(self, query: str, candidates: list[tuple[str, float]], context: Mapping[str, Any], budget: int) -> str:
+    def build_prompt(
+        self,
+        query: str,
+        candidates: list[tuple[str, float]],
+        context: Mapping[str, Any],
+        budget: int,
+    ) -> str:
         # Keep prompt under both the caller budget and the Router hard ceiling.
         max_tokens = min(int(budget) if budget else 0, 199)
         if max_tokens <= 0:
@@ -179,8 +188,12 @@ class Router:
             if not included:
                 next_prompt = f"{header}{line}"
             else:
-                next_prompt = f"{header}{'\n'.join(included)}\n{line}"
-            if self._token_count(next_prompt) < 200 and self._token_count(next_prompt) <= max_tokens:
+                included_block = "\n".join(included)
+                next_prompt = f"{header}{included_block}\n{line}"
+            if (
+                self._token_count(next_prompt) < 200
+                and self._token_count(next_prompt) <= max_tokens
+            ):
                 included.append(line)
             else:
                 break
@@ -192,10 +205,15 @@ class Router:
         # with a very conservative fallback that keeps template validity.
         if self._token_count(prompt) >= 200 or self._token_count(prompt) > max_tokens:
             # leave room for a short suffix showing truncation and include only the top line.
-            fallback_query = query if len(query.split()) < max_tokens else " ".join(query.split()[: max_tokens // 3])
+            fallback_query = (
+                query
+                if len(query.split()) < max_tokens
+                else " ".join(query.split()[: max_tokens // 3])
+            )
             prompt = (
-                f"System: {_SYSTEM_PROMPT}\nUser: Query: {fallback_query}\nCurrent: {str(node_summary)[:40]}"
-                f"\nCandidates:\n(no candidates shown: token budget reached)"
+                f"System: {_SYSTEM_PROMPT}\nUser: Query: {fallback_query}\n"
+                f"Current: {str(node_summary)[:40]}\nCandidates:\n"
+                f"(no candidates shown: token budget reached)"
             )
 
         return prompt
@@ -358,8 +376,7 @@ class Router:
             return self._select_fallback(query, candidates)
 
         candidate_lines = "\n".join(
-            f"→ {nid} ({score:.2f}): {summary[:100]}"
-            for nid, score, summary in candidates
+            f"→ {nid} ({score:.2f}): {summary[:100]}" for nid, score, summary in candidates
         )
         user_msg = f"Query: {query}\n\nCandidates:\n{candidate_lines}"
 
@@ -368,7 +385,6 @@ class Router:
             {"role": "user", "content": user_msg},
         ]
 
-        last_error: Exception | None = None
         for _attempt in range(max(self.config.max_retries, 0) + 1):
             try:
                 raw_output = self._extract_model_output(messages)
@@ -379,8 +395,8 @@ class Router:
                     valid_ids = {nid for nid, _, _ in candidates}
                     return [str(s) for s in selected if str(s) in valid_ids]
                 return []
-            except Exception as exc:
-                last_error = exc
+            except Exception:
+                continue
 
         return self._select_fallback(query, candidates)
 
@@ -450,7 +466,10 @@ class Router:
 
         return RouterDecision(
             chosen_target=chosen.node_id,
-            rationale=f"Fallback selected highest-weight candidate '{chosen.node_id}' in tier '{tier}'.",
+            rationale=(
+                f"Fallback selected highest-weight candidate '{chosen.node_id}' "
+                f"in tier '{tier}'."
+            ),
             confidence=confidence,
             tier=tier,
             alternatives=alternatives,
@@ -459,7 +478,10 @@ class Router:
                 "tier": tier,
                 "target": chosen.node_id,
                 "confidence": confidence,
-                "rationale": f"Fallback selected highest-weight candidate '{chosen.node_id}' in tier '{tier}'.",
+                "rationale": (
+                    f"Fallback selected highest-weight candidate '{chosen.node_id}' "
+                    f"in tier '{tier}'."
+                ),
                 "alternatives": alternatives,
             },
         )

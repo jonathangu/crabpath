@@ -120,9 +120,7 @@ class CrabPathAgent:
         graph_path_obj = Path(graph_path)
         self.graph_path = str(graph_path_obj)
         self.index_path = (
-            str(graph_path_obj.with_suffix(".index.json"))
-            if index_path is None
-            else index_path
+            str(graph_path_obj.with_suffix(".index.json")) if index_path is None else index_path
         )
         self.embed_fn = embed_fn
         self.router = router or Router()
@@ -199,9 +197,12 @@ class CrabPathAgent:
                         )
                     )
                 except TypeError:
-                    pass
-                except Exception:
-                    pass
+                    # Fall back to keyword matching when index scores are malformed.
+                    self._pending_index_refresh = True
+                except Exception as exc:
+                    # Keep the query running even if embedding index access fails.
+                    self._pending_index_refresh = True
+                    _ = str(exc)
 
         if not seeds:
             raw_scores = self._keyword_raw_scores(query_text, top_k=top_k)
@@ -308,15 +309,17 @@ class CrabPathAgent:
                 self.graph.add_node(existing)
             else:
                 existing.metadata["auto_probationary"] = True
-                existing.metadata["auto_seed_count"] = int(
-                    existing.metadata.get("auto_seed_count", 0)
-                ) + 1
+                existing.metadata["auto_seed_count"] = (
+                    int(existing.metadata.get("auto_seed_count", 0)) + 1
+                )
 
             existing.metadata["last_seen_ts"] = now
             try:
                 self.index.upsert(auto_node_id, query_text, self._embedding_fn())
-            except TypeError:
-                pass
+            except TypeError as exc:
+                # Index type assumptions can vary during bootstrap; ignore this miss.
+                self._pending_index_refresh = True
+                _ = str(exc)
 
             seeds[auto_node_id] = max(seeds.get(auto_node_id, 0.0), 0.25)
 
@@ -409,7 +412,9 @@ class CrabPathAgent:
             pruned_nodes=int(stats.get("pruned_nodes", 0)),
         )
 
-    def snapshot(self, session_id: str, turn_id: int | str, firing_result: Firing) -> dict[str, Any]:
+    def snapshot(
+        self, session_id: str, turn_id: int | str, firing_result: Firing
+    ) -> dict[str, Any]:
         record = {
             "session_id": session_id,
             "turn_id": turn_id,

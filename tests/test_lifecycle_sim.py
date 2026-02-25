@@ -10,10 +10,14 @@ from crabpath.lifecycle_sim import (
 
 def test_simulation_runs_to_completion():
     files, queries = workspace_scenario()
-    result = run_simulation(files, queries, SimConfig(
-        decay_interval=10,
-        maintenance_interval=50,
-    ))
+    result = run_simulation(
+        files,
+        queries,
+        SimConfig(
+            decay_interval=10,
+            maintenance_interval=50,
+        ),
+    )
 
     assert result["bootstrap"]["files"] == 3
     assert result["bootstrap"]["initial_nodes"] > 0
@@ -27,7 +31,6 @@ def test_simulation_creates_edges_over_time():
     files, queries = workspace_scenario()
     result = run_simulation(files, queries)
 
-    initial_edges = result["bootstrap"]["initial_edges"]
     final_edges = result["final"]["edges"]
 
     # Should have grown or at least maintained

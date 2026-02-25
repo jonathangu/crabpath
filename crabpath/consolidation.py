@@ -117,7 +117,9 @@ def split_node(graph: Graph, node_id: str, parts: list[dict]) -> list[str]:
                 "fired_count": 0,
                 "last_fired_ts": 0.0,
                 "created_ts": now,
-                "protected": bool(parent.metadata.get("protected")) if isinstance(parent.metadata, dict) else False,
+                "protected": bool(parent.metadata.get("protected"))
+                if isinstance(parent.metadata, dict)
+                else False,
             },
         )
         graph.add_node(child)
@@ -169,6 +171,10 @@ def should_merge(
     config: ConsolidationConfig,
 ) -> bool:
     if total_fires <= 0:
+        return False
+    if node_a_id == node_b_id:
+        return False
+    if graph.get_node(node_a_id) is None or graph.get_node(node_b_id) is None:
         return False
     return (
         _as_float(cosine_sim, default=0.0) > config.merge_cosine_threshold

@@ -113,8 +113,15 @@ def test_should_merge() -> None:
     graph.add_node(Node(id="a", content="A"))
     graph.add_node(Node(id="b", content="B"))
 
-    assert should_merge(graph, "a", "b", cofire_count=9, total_fires=10, cosine_sim=0.91, config=config)
-    assert should_merge(graph, "a", "b", cofire_count=8, total_fires=10, cosine_sim=0.91, config=config) is False
+    assert should_merge(
+        graph, "a", "b", cofire_count=9, total_fires=10, cosine_sim=0.91, config=config
+    )
+    assert (
+        should_merge(
+            graph, "a", "b", cofire_count=8, total_fires=10, cosine_sim=0.91, config=config
+        )
+        is False
+    )
 
 
 def test_consolidate_full_sweep(monkeypatch) -> None:
@@ -140,7 +147,9 @@ def test_consolidate_full_sweep(monkeypatch) -> None:
     graph.add_edge(Edge(source="good", target="probationary", weight=1.0))
 
     monkeypatch.setattr("crabpath.consolidation.time.time", lambda: 100.0)
-    result = consolidate(graph, config=ConsolidationConfig(min_edge_weight=0.03, probation_max_turns=10))
+    result = consolidate(
+        graph, config=ConsolidationConfig(min_edge_weight=0.03, probation_max_turns=10)
+    )
 
     assert result.edges_pruned == 1
     assert result.nodes_pruned == 2

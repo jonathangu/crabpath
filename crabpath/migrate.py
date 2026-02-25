@@ -5,7 +5,7 @@ For new users migrating to CrabPath:
   1. Load workspace injection files (carbon copy)
   2. Split via cheap LLM
   3. Optionally replay session logs to warm up the graph
-  
+
 The replay accelerates graph formation — instead of waiting for
 100+ live queries to form cross-file edges, replay your recent
 history and get a pre-warmed graph immediately.
@@ -31,8 +31,11 @@ from typing import Any, Callable
 from .graph import Graph
 from .mitosis import MitosisConfig, MitosisState, bootstrap_workspace
 from .synaptogenesis import (
-    SynaptogenesisConfig, SynaptogenesisState,
-    record_cofiring, record_skips, decay_proto_edges,
+    SynaptogenesisConfig,
+    SynaptogenesisState,
+    record_cofiring,
+    record_skips,
+    decay_proto_edges,
     edge_tier_stats,
 )
 from .decay import DecayConfig, apply_decay
@@ -43,13 +46,15 @@ from .autotune import suggest_config
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MigrateConfig:
     """Configuration for migration."""
+
     # Which files to include
     injection_files: list[str] | None = None  # None = auto-detect
-    include_memory: bool = True               # Include memory/*.md
-    include_docs: bool = False                # Include docs/*.md
+    include_memory: bool = True  # Include memory/*.md
+    include_docs: bool = False  # Include docs/*.md
 
     # Splitting
     mitosis_config: MitosisConfig | None = None
@@ -59,10 +64,10 @@ class MigrateConfig:
 
     # Decay during replay
     decay_config: DecayConfig | None = None
-    decay_interval: int = 10                  # Decay every N replayed queries
+    decay_interval: int = 10  # Decay every N replayed queries
 
     # Replay
-    max_replay_queries: int = 500             # Cap on replayed queries
+    max_replay_queries: int = 500  # Cap on replayed queries
 
 
 # ---------------------------------------------------------------------------
@@ -70,14 +75,20 @@ class MigrateConfig:
 # ---------------------------------------------------------------------------
 
 DEFAULT_INJECTION_FILES = [
-    "AGENTS.md", "SOUL.md", "TOOLS.md", "USER.md",
-    "MEMORY.md", "HEARTBEAT.md", "IDENTITY.md",
+    "AGENTS.md",
+    "SOUL.md",
+    "TOOLS.md",
+    "USER.md",
+    "MEMORY.md",
+    "HEARTBEAT.md",
+    "IDENTITY.md",
 ]
 
 
 # ---------------------------------------------------------------------------
 # File gathering
 # ---------------------------------------------------------------------------
+
 
 def gather_files(
     workspace_dir: str | Path,
@@ -125,6 +136,7 @@ def gather_files(
 # Session log parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_session_logs(
     log_paths: list[str | Path],
     max_queries: int = 500,
@@ -149,6 +161,7 @@ def parse_session_logs(
                         continue
 
                     # Try JSONL
+                    extracted = False
                     try:
                         record = json.loads(line)
                         if isinstance(record, dict):
@@ -157,18 +170,18 @@ def parse_session_logs(
                             # Only user messages
                             if role == "user" and content and len(content) > 5:
                                 queries.append(str(content)[:500])
-                                continue
+                                extracted = True
 
                             # Alternative format: {"query": "..."}
                             query = record.get("query", "")
                             if query and len(query) > 5:
                                 queries.append(str(query)[:500])
-                                continue
+                                extracted = True
                     except json.JSONDecodeError:
-                        pass
+                        extracted = False
 
                     # Plain text fallback
-                    if len(line) > 5 and not line.startswith("#"):
+                    if not extracted and len(line) > 5 and not line.startswith("#"):
                         queries.append(line[:500])
 
         except Exception:
@@ -183,6 +196,7 @@ def parse_session_logs(
 # ---------------------------------------------------------------------------
 # Replay — warm up the graph with historical queries
 # ---------------------------------------------------------------------------
+
 
 def replay_queries(
     graph: Graph,
@@ -213,11 +227,13 @@ def replay_queries(
             overlap = len(q_words & n_words)
             score = min(overlap / max(len(q_words), 1), 1.0)
             if score > 0.05:
-                candidates.append((
-                    node.id,
-                    score,
-                    node.summary or node.content[:80],
-                ))
+                candidates.append(
+                    (
+                        node.id,
+                        score,
+                        node.summary or node.content[:80],
+                    )
+                )
 
         candidates.sort(key=lambda c: c[1], reverse=True)
         candidates = candidates[:10]
@@ -235,9 +251,7 @@ def replay_queries(
         # Skip penalty
         if selected:
             candidate_ids = [c[0] for c in candidates]
-            total_skips += record_skips(
-                graph, selected[0], candidate_ids, selected, syn_config
-            )
+            total_skips += record_skips(graph, selected[0], candidate_ids, selected, syn_config)
 
         # Periodic decay
         if qi % config.decay_interval == 0:
@@ -293,10 +307,11 @@ def keyword_router(
 # Fallback LLM for splitting (header-based, no API needed)
 # ---------------------------------------------------------------------------
 
+
 def fallback_llm_split(system: str, user: str) -> str:
     """Split by markdown headers. No API call needed."""
     content = user.split("---\n", 1)[-1].rsplit("\n---", 1)[0] if "---" in user else user
-    parts = re.split(r'\n(?=## )', content)
+    parts = re.split(r"\n(?=## )", content)
     parts = [p.strip() for p in parts if p.strip() and len(p.strip()) > 50]
     if len(parts) >= 2:
         return json.dumps({"sections": parts})
@@ -309,6 +324,7 @@ def fallback_llm_split(system: str, user: str) -> str:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def migrate(
     workspace_dir: str | Path = "~/.openclaw/workspace",
@@ -389,10 +405,13 @@ def migrate(
         "nodes": graph.node_count,
         "edges": graph.edge_count,
         "families": len(mit_state.families),
-        "splits": [{
-            "parent": r.parent_id,
-            "chunks": len(r.chunk_ids),
-        } for r in results],
+        "splits": [
+            {
+                "parent": r.parent_id,
+                "chunks": len(r.chunk_ids),
+            }
+            for r in results
+        ],
     }
 
     if verbose:
@@ -406,9 +425,7 @@ def migrate(
             if verbose:
                 print(f"🔄 Replaying {len(queries)} queries from session logs...")
 
-            replay_info = replay_queries(
-                graph, queries, router, syn_state, config
-            )
+            replay_info = replay_queries(graph, queries, router, syn_state, config)
 
             if verbose:
                 print(f"   Promotions: {replay_info['promotions']}")

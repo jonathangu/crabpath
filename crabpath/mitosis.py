@@ -31,22 +31,26 @@ from .graph import Graph, Node, Edge
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MitosisConfig:
     """Configuration for graph self-organization."""
-    sibling_weight: float = 0.65           # Initial sibling weight (habitual, not reflex)
-    min_content_chars: int = 200           # Don't split nodes smaller than this
-    chunk_type: str = "chunk"              # Node type for chunk nodes
-    decay_rate: float = 0.01              # Edge decay rate for sibling edges
+
+    sibling_weight: float = 0.65  # Initial sibling weight (habitual, not reflex)
+    min_content_chars: int = 200  # Don't split nodes smaller than this
+    chunk_type: str = "chunk"  # Node type for chunk nodes
+    decay_rate: float = 0.01  # Edge decay rate for sibling edges
 
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SplitResult:
     """Result of splitting a node."""
+
     parent_id: str
     chunk_ids: list[str]
     chunk_contents: list[str]
@@ -57,6 +61,7 @@ class SplitResult:
 @dataclass
 class MergeResult:
     """Result of merging nodes."""
+
     merged_id: str
     source_ids: list[str]
     content: str
@@ -65,6 +70,7 @@ class MergeResult:
 @dataclass
 class NeurogenesisResult:
     """Result of creating a new node."""
+
     node_id: str
     content: str
     connected_to: list[str]
@@ -73,6 +79,7 @@ class NeurogenesisResult:
 @dataclass
 class MaintenanceAction:
     """A single structural action proposed by the LLM."""
+
     action: str  # "split" | "merge" | "create" | "none"
     target_ids: list[str] = field(default_factory=list)
     reason: str = ""
@@ -87,6 +94,7 @@ class MaintenanceAction:
 @dataclass
 class MitosisState:
     """Tracks split history for the graph."""
+
     # parent_id -> list of chunk_ids
     families: dict[str, list[str]] = field(default_factory=dict)
     # parent_id -> generation count
@@ -96,11 +104,15 @@ class MitosisState:
 
     def save(self, path: str) -> None:
         with open(path, "w") as f:
-            json.dump({
-                "families": self.families,
-                "generations": self.generations,
-                "chunk_to_parent": self.chunk_to_parent,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "families": self.families,
+                    "generations": self.generations,
+                    "chunk_to_parent": self.chunk_to_parent,
+                },
+                f,
+                indent=2,
+            )
 
     @classmethod
     def load(cls, path: str) -> MitosisState:
@@ -126,7 +138,7 @@ SPLIT_SYSTEM_PROMPT = (
     "You decide how many sections — use as many as the content demands. "
     "Each section should be a coherent unit of related content. "
     "Prefer splitting at natural boundaries (headings, topic changes). "
-    "Return JSON: {\"sections\": [\"section1 content\", \"section2 content\", ...]}"
+    'Return JSON: {"sections": ["section1 content", "section2 content", ...]}'
 )
 
 SPLIT_USER_PROMPT = (
@@ -140,8 +152,8 @@ MERGE_SYSTEM_PROMPT = (
     "You are a memory graph organizer. Given a set of content chunks that "
     "frequently co-activate (always needed together), decide if they should "
     "be merged into one node. "
-    "Return JSON: {\"should_merge\": true/false, \"reason\": \"brief\", "
-    "\"merged_content\": \"combined content if merging\"}"
+    'Return JSON: {"should_merge": true/false, "reason": "brief", '
+    '"merged_content": "combined content if merging"}'
 )
 
 MERGE_USER_PROMPT = (
@@ -155,16 +167,16 @@ MAINTAIN_SYSTEM_PROMPT = (
     "and recent query patterns, decide what structural changes are needed. "
     "Options: split a large node, merge co-firing nodes, create a new node "
     "for an uncovered concept, or do nothing. "
-    "Return JSON: {\"actions\": [{\"action\": \"split|merge|create|none\", "
-    "\"target_ids\": [...], \"reason\": \"brief\"}]}"
+    'Return JSON: {"actions": [{"action": "split|merge|create|none", '
+    '"target_ids": [...], "reason": "brief"}]}'
 )
 
 NEUROGENESIS_SYSTEM_PROMPT = (
     "You are a memory graph builder. A query came in that doesn't match "
     "any existing node well. Decide if this represents a genuinely new concept "
     "that deserves its own node, or if it's noise/greeting/trivial. "
-    "Return JSON: {\"should_create\": true/false, \"reason\": \"brief\", "
-    "\"content\": \"node content if creating\", \"summary\": \"one line summary\"}"
+    'Return JSON: {"should_create": true/false, "reason": "brief", '
+    '"content": "node content if creating", "summary": "one line summary"}'
 )
 
 NEUROGENESIS_USER_PROMPT = (
@@ -177,6 +189,7 @@ NEUROGENESIS_USER_PROMPT = (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_chunk_id(parent_id: str, index: int, content: str) -> str:
     """Deterministic chunk ID from parent + index + content hash."""
@@ -201,14 +214,14 @@ def _fallback_split(content: str) -> list[str]:
     import re
 
     # Split by ## headers
-    parts = re.split(r'\n(?=## )', content)
+    parts = re.split(r"\n(?=## )", content)
     parts = [p.strip() for p in parts if p.strip()]
 
     if len(parts) >= 2:
         return parts
 
     # Try # headers
-    parts = re.split(r'\n(?=# )', content)
+    parts = re.split(r"\n(?=# )", content)
     parts = [p.strip() for p in parts if p.strip()]
 
     if len(parts) >= 2:
@@ -234,6 +247,7 @@ def _fallback_split(content: str) -> list[str]:
 # Core Operations — all LLM-driven
 # ---------------------------------------------------------------------------
 
+
 def split_with_llm(
     content: str,
     llm_call: Callable[[str, str], str],
@@ -253,7 +267,7 @@ def split_with_llm(
             if len(sections) >= 2:
                 return sections
     except (json.JSONDecodeError, KeyError, TypeError, Exception):
-        pass
+        return _fallback_split(content)
 
     return _fallback_split(content)
 
@@ -271,9 +285,7 @@ def should_merge(
     Returns:
         (should_merge, reason, merged_content)
     """
-    chunks_text = "\n\n".join(
-        f"--- {cid} ---\n{content[:500]}" for cid, content in chunks
-    )
+    chunks_text = "\n\n".join(f"--- {cid} ---\n{content[:500]}" for cid, content in chunks)
 
     try:
         raw = llm_call(MERGE_SYSTEM_PROMPT, MERGE_USER_PROMPT.format(chunks=chunks_text))
@@ -308,8 +320,7 @@ def should_create_node(
         (should_create, reason, content, summary)
     """
     existing_text = "\n".join(
-        f"  {nid} (score={score:.2f}): {summary[:80]}"
-        for nid, score, summary in existing_matches
+        f"  {nid} (score={score:.2f}): {summary[:80]}" for nid, score, summary in existing_matches
     )
 
     try:
@@ -332,6 +343,7 @@ def should_create_node(
 # ---------------------------------------------------------------------------
 # Graph Operations
 # ---------------------------------------------------------------------------
+
 
 def split_node(
     graph: Graph,
@@ -393,35 +405,41 @@ def split_node(
     for i, src_id in enumerate(chunk_ids):
         for j, tgt_id in enumerate(chunk_ids):
             if i != j:
-                graph.add_edge(Edge(
-                    source=src_id,
-                    target=tgt_id,
-                    weight=config.sibling_weight,
-                    decay_rate=config.decay_rate,
-                    created_by="auto",
-                ))
+                graph.add_edge(
+                    Edge(
+                        source=src_id,
+                        target=tgt_id,
+                        weight=config.sibling_weight,
+                        decay_rate=config.decay_rate,
+                        created_by="auto",
+                    )
+                )
                 edges_created += 1
 
     # Transfer parent edges to all chunks
     for src_node, edge in graph.incoming(node_id):
         for chunk_id in chunk_ids:
-            graph.add_edge(Edge(
-                source=edge.source,
-                target=chunk_id,
-                weight=edge.weight,
-                decay_rate=edge.decay_rate,
-                created_by="auto",
-            ))
+            graph.add_edge(
+                Edge(
+                    source=edge.source,
+                    target=chunk_id,
+                    weight=edge.weight,
+                    decay_rate=edge.decay_rate,
+                    created_by="auto",
+                )
+            )
 
     for tgt_node, edge in graph.outgoing(node_id):
         for chunk_id in chunk_ids:
-            graph.add_edge(Edge(
-                source=chunk_id,
-                target=edge.target,
-                weight=edge.weight,
-                decay_rate=edge.decay_rate,
-                created_by="auto",
-            ))
+            graph.add_edge(
+                Edge(
+                    source=chunk_id,
+                    target=edge.target,
+                    weight=edge.weight,
+                    decay_rate=edge.decay_rate,
+                    created_by="auto",
+                )
+            )
 
     # Remove parent
     graph.remove_node(node_id)
@@ -560,9 +578,7 @@ def create_node(
 
     No cosine thresholds. The LLM decides if the concept is novel.
     """
-    do_create, reason, content, summary = should_create_node(
-        query, existing_matches, llm_call
-    )
+    do_create, reason, content, summary = should_create_node(query, existing_matches, llm_call)
 
     if not do_create:
         return None
@@ -608,6 +624,7 @@ def create_node(
 # ---------------------------------------------------------------------------
 # Bootstrap: Carbon Copy Workspace Files
 # ---------------------------------------------------------------------------
+
 
 def bootstrap_workspace(
     graph: Graph,
@@ -659,6 +676,7 @@ def bootstrap_workspace(
 # ---------------------------------------------------------------------------
 # Maintenance: The Unified Loop
 # ---------------------------------------------------------------------------
+
 
 def mitosis_maintenance(
     graph: Graph,

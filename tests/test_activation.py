@@ -15,13 +15,14 @@ def _simple_graph() -> Graph:
     g.add_node(Node(id="c", content="end node"))
     g.add_node(Node(id="d", content="bad node"))
 
-    g.add_edge(Edge(source="a", target="b", weight=1.5))   # excitatory
-    g.add_edge(Edge(source="b", target="c", weight=1.2))   # excitatory
+    g.add_edge(Edge(source="a", target="b", weight=1.5))  # excitatory
+    g.add_edge(Edge(source="b", target="c", weight=1.2))  # excitatory
     g.add_edge(Edge(source="a", target="d", weight=-1.0))  # inhibitory
     return g
 
 
 # ---- Basic firing ----
+
 
 def test_basic_firing():
     g = _simple_graph()
@@ -162,6 +163,7 @@ def test_energy_at_firing():
 
 # ---- fired_at timing ----
 
+
 def test_fired_at_records_steps():
     """fired_at should record which step each node fired at."""
     g = _simple_graph()
@@ -191,6 +193,7 @@ def test_fired_at_inhibited_not_present():
 
 
 # ---- Traces ----
+
 
 def test_trace_set_on_firing():
     """A node's trace should be set to its firing energy."""
@@ -245,6 +248,7 @@ def test_warm_nodes():
 
 # ---- Persistent state (reset=False) ----
 
+
 def test_persistent_state():
     """With reset=False, potential should carry over between calls."""
     g = Graph()
@@ -285,6 +289,7 @@ def test_persistent_warmth():
 
 
 # ---- STDP-aware learning ----
+
 
 def test_learning_strengthens():
     g = _simple_graph()

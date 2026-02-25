@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -216,11 +215,15 @@ def _build_health_report_lines(
             else "n/a (collect query stats)"
         )
         if with_status:
+            target_text = _format_health_target(target)
             lines.append(
-                f"{metric:24} | {value_text:>20} | target { _format_health_target(target):15} | {status}"
+                f"{metric:24} | {value_text:>20} | "
+                f"target {target_text:15} | {status}"
             )
         else:
-            lines.append(f"{metric}: {value_text} (target {_format_health_target(target)}) {status}")
+            lines.append(
+                f"{metric}: {value_text} (target {_format_health_target(target)}) {status}"
+            )
     return lines
 
 
@@ -331,7 +334,8 @@ def _format_timeline(snapshots: list[dict[str, Any]]) -> str:
 
         if previous is None:
             lines.append(
-                f"#{idx:>2} {label} | nodes {nodes} | edges {edges} | cross-file {cross_file} | tiers d={dormant} h={habitual} r={reflex}"
+                f"#{idx:>2} {label} | nodes {nodes} | edges {edges} "
+                f"| cross-file {cross_file} | tiers d={dormant} h={habitual} r={reflex}"
             )
         else:
             delta_nodes = nodes - int(previous.get("nodes", 0))
@@ -346,7 +350,12 @@ def _format_timeline(snapshots: list[dict[str, Any]]) -> str:
             delta_reflex = reflex - prev_reflex
 
             lines.append(
-                f"#{idx:>2} {label} | nodes {nodes} ({delta_nodes:+d}) | edges {edges} ({delta_edges:+d}) | cross-file {cross_file} ({delta_cross:+d}) | tiers d={dormant} ({delta_dormant:+d}) h={habitual} ({delta_habitual:+d}) r={reflex} ({delta_reflex:+d})"
+                f"#{idx:>2} {label} | nodes {nodes} ({delta_nodes:+d}) "
+                f"| edges {edges} ({delta_edges:+d}) "
+                f"| cross-file {cross_file} ({delta_cross:+d}) "
+                f"| tiers d={dormant} ({delta_dormant:+d}) "
+                f"h={habitual} ({delta_habitual:+d}) "
+                f"r={reflex} ({delta_reflex:+d})"
             )
 
         previous = snapshot
@@ -474,7 +483,7 @@ def cmd_learn(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def cmd_snapshot(args: argparse.Namespace) -> dict[str, Any]:
-    graph = _load_graph(args.graph)
+    _load_graph(args.graph)
     fired_ids = _split_csv(args.fired_ids)
 
     record = {
@@ -509,7 +518,9 @@ def cmd_feedback(args: argparse.Namespace) -> dict[str, Any]:
         "turn_id": snapshot.get("turn_id"),
         "fired_ids": snapshot.get("fired_ids", []),
         "turns_since_fire": turns_since_fire,
-        "suggested_outcome": auto_outcome(corrections_count=1, turns_since_fire=int(turns_since_fire)),
+        "suggested_outcome": auto_outcome(
+            corrections_count=1, turns_since_fire=int(turns_since_fire)
+        ),
     }
 
 
@@ -639,6 +650,7 @@ def cmd_split_node(args: argparse.Namespace) -> dict[str, Any]:
     embed_fn = _safe_embed_fn()
     embed_callback = None
     if embed_fn is not None:
+
         def embed_callback(node_id: str, content: str) -> None:
             index.upsert(node_id, content, embed_fn=embed_fn)
 
@@ -757,7 +769,9 @@ def _build_parser() -> JSONArgumentParser:
     sim.add_argument("--output", default=None)
     sim.set_defaults(func=cmd_sim)
 
-    health = subparsers.add_parser("health", help="Measure graph health from graph state + optional stats")
+    health = subparsers.add_parser(
+        "health", help="Measure graph health from graph state + optional stats"
+    )
     health.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
     health.add_argument("--mitosis-state", default=None)
     health.add_argument("--query-stats", default=None)
@@ -767,7 +781,9 @@ def _build_parser() -> JSONArgumentParser:
     add = subparsers.add_parser("add", help="Add or update a node in the graph")
     add.add_argument("--id", required=True, help="Node ID")
     add.add_argument("--content", required=True, help="Node content text")
-    add.add_argument("--threshold", type=float, default=None, help="Firing threshold (default: 0.5)")
+    add.add_argument(
+        "--threshold", type=float, default=None, help="Firing threshold (default: 0.5)"
+    )
     add.add_argument("--connect", default=None, help="Comma-separated node IDs to connect to")
     add.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
     add.set_defaults(func=cmd_add)

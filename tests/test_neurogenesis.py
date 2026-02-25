@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import re
-import tempfile
 from pathlib import Path
 
 from crabpath import (
-    Edge,
-    Graph,
     Node,
     OpenClawCrabPathAdapter,
     deterministic_auto_id,
@@ -48,7 +45,9 @@ def make_mock_embed_fn(texts: list[str]):
     return embed_fn
 
 
-def _build_adapter(tmpdir: str, nodes: list[tuple[str, str]], top_texts: list[str]) -> OpenClawCrabPathAdapter:
+def _build_adapter(
+    tmpdir: str, nodes: list[tuple[str, str]], top_texts: list[str]
+) -> OpenClawCrabPathAdapter:
     graph_path = Path(tmpdir) / "graph.json"
     index_path = Path(tmpdir) / "index.json"
 
@@ -135,8 +134,7 @@ def test_noise_no_creation(monkeypatch, tmp_path):
 def test_greeting_blocked(monkeypatch, tmp_path):
     adapter = _build_adapter(
         str(tmp_path),
-        [("seed", "hello world"),
-         ("seed2", "thanks for everything")],
+        [("seed", "hello world"), ("seed2", "thanks for everything")],
         ["hello world", "thanks for everything"],
     )
     monkeypatch.setattr(
