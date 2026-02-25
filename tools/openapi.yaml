@@ -170,6 +170,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/SimResponse'
 
+  /health:
+    post:
+      summary: Measure graph health
+      operationId: health
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthRequest'
+      responses:
+        '200':
+          description: Health result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /evolve:
+    post:
+      summary: Append graph snapshot stats to a timeline
+      operationId: evolve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvolveRequest'
+      responses:
+        '200':
+          description: Evolve result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvolveResponse'
+
+  /snapshot:
+    post:
+      summary: Persist a session turn snapshot
+      operationId: snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotRequest'
+      responses:
+        '200':
+          description: Snapshot result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+
+  /feedback:
+    post:
+      summary: Resolve attributable snapshot for a session
+      operationId: feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Feedback result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+
 components:
   schemas:
     GraphPathRequest:
@@ -362,6 +434,141 @@ components:
                 type: object
             final:
               type: object
+
+    HealthRequest:
+      allOf:
+        - $ref: '#/components/schemas/GraphPathRequest'
+        - type: object
+          required: [graph]
+          properties:
+            mitosis_state:
+              type: string
+              description: Optional path to mitosis state JSON
+            query_stats:
+              type: object
+              description: Optional query statistics payload
+
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        graph:
+          type: string
+        query_stats_provided:
+          type: boolean
+        mitosis_state:
+          type: string
+          nullable: true
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthMetric'
+
+    HealthMetric:
+      type: object
+      properties:
+        metric:
+          type: string
+        value:
+          type: number
+          nullable: true
+        target_range:
+          type: array
+          items:
+            type: number
+            nullable: true
+          minItems: 2
+          maxItems: 2
+        status:
+          type: string
+
+    EvolveRequest:
+      allOf:
+        - $ref: '#/components/schemas/GraphPathRequest'
+        - type: object
+          required: [snapshots]
+          properties:
+            snapshots:
+              type: string
+              description: Path to snapshots JSONL timeline
+            report:
+              type: boolean
+              default: false
+
+    EvolveResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        snapshot:
+          $ref: '#/components/schemas/SnapshotRecord'
+        snapshots:
+          type: string
+        timeline:
+          type: string
+
+    SnapshotRecord:
+      type: object
+      properties:
+        timestamp:
+          type: number
+        nodes:
+          type: integer
+        edges:
+          type: integer
+        tier_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        cross_file_edges:
+          type: integer
+
+    SnapshotRequest:
+      allOf:
+        - $ref: '#/components/schemas/GraphPathRequest'
+        - type: object
+          required: [session, turn, fired_ids]
+          properties:
+            session:
+              type: string
+            turn:
+              type: integer
+            fired_ids:
+              type: string
+              description: Comma-separated fired node IDs
+
+    SnapshotResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        snapshot_path:
+          type: string
+
+    FeedbackRequest:
+      type: object
+      required: [session]
+      properties:
+        session:
+          type: string
+        turn_window:
+          type: integer
+          default: 5
+
+    FeedbackResponse:
+      type: object
+      properties:
+        turn_id:
+          type: integer
+        fired_ids:
+          type: array
+          items:
+            type: string
+        turns_since_fire:
+          type: integer
+        suggested_outcome:
+          type: number
 
     GenericResult:
       type: object

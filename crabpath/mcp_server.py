@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -13,8 +14,11 @@ from .activation import learn as _learn
 from .embeddings import EmbeddingIndex, openai_embed
 from .graph import Edge, Graph
 from .lifecycle_sim import SimConfig, run_simulation, workspace_scenario
+from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .migrate import MigrateConfig, fallback_llm_split, migrate as run_migration
+from .autotune import HEALTH_TARGETS, measure_health
 from .mitosis import MitosisConfig, MitosisState, split_node
+from .synaptogenesis import edge_tier_stats
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -51,6 +55,49 @@ def _load_index(path: str) -> EmbeddingIndex:
     return EmbeddingIndex.load(path)
 
 
+def _load_query_stats(path: str | None) -> tuple[dict[str, Any], bool]:
+    if path is None:
+        return {}, False
+
+    file_path = Path(path)
+    if not file_path.exists():
+        raise ValueError(f"query-stats file not found: {path}")
+
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        stats = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"failed to load query-stats: {path}: {exc}") from exc
+
+    if not isinstance(stats, dict):
+        raise ValueError(f"query-stats must be a JSON object: {path}")
+    return stats, True
+
+
+def _load_mitosis_state(path: str | None) -> MitosisState:
+    if path is None:
+        return MitosisState()
+
+    file_path = Path(path)
+    if not file_path.exists():
+        raise ValueError(f"mitosis-state file not found: {path}")
+
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        state_data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"failed to load mitosis-state: {path}: {exc}") from exc
+
+    if not isinstance(state_data, dict):
+        raise ValueError(f"mitosis-state must be a JSON object: {path}")
+
+    return MitosisState(
+        families=state_data.get("families", {}),
+        generations=state_data.get("generations", {}),
+        chunk_to_parent=state_data.get("chunk_to_parent", {}),
+    )
+
+
 def _safe_openai_embed_fn() -> Callable[[list[str]], list[list[float]]] | None:
     if not os.getenv("OPENAI_API_KEY"):
         return None
@@ -58,6 +105,85 @@ def _safe_openai_embed_fn() -> Callable[[list[str]], list[list[float]]] | None:
         return openai_embed()
     except Exception:
         return None
+
+
+def _split_csv(value: str) -> list[str]:
+    ids = [item.strip() for item in value.split(",") if item.strip()]
+    if not ids:
+        raise ValueError("fired-ids must contain at least one id")
+    return ids
+
+
+def _node_file_id(node_id: str) -> str:
+    return str(node_id).split("::", 1)[0]
+
+
+def _cross_file_edges(graph: Graph) -> int:
+    if graph.node_count <= 1:
+        return 0
+
+    cross = 0
+    for edge in graph.edges():
+        if _node_file_id(edge.source) != _node_file_id(edge.target):
+            cross += 1
+    return cross
+
+
+def _build_snapshot(graph: Graph) -> dict[str, Any]:
+    return {
+        "timestamp": time.time(),
+        "nodes": graph.node_count,
+        "edges": graph.edge_count,
+        "tier_counts": edge_tier_stats(graph),
+        "cross_file_edges": _cross_file_edges(graph),
+    }
+
+
+def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid JSON line in snapshots file: {path}: {exc}") from exc
+            if not isinstance(row, dict):
+                raise ValueError(f"invalid snapshot row in snapshots file: {path}")
+            rows.append(row)
+    return rows
+
+
+def _health_metric_available(metric: str, has_query_stats: bool) -> bool:
+    if metric in {
+        "avg_nodes_fired_per_query",
+        "context_compression",
+        "proto_promotion_rate",
+        "reconvergence_rate",
+    }:
+        return has_query_stats
+    return True
+
+
+def _health_metric_status(
+    value: float | None,
+    target: tuple[float | None, float | None],
+    available: bool,
+) -> str:
+    if not available or value is None:
+        return "warn"
+
+    min_v, max_v = target
+    if min_v is not None and value < min_v:
+        return "low"
+    if max_v is not None and value > max_v:
+        return "high"
+    return "ok"
 
 
 def _keyword_seed(graph: Graph, query_text: str) -> dict[str, float]:
@@ -255,6 +381,59 @@ def mcp_remove(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "action": "removed", "id": arguments["id"]}
 
 
+def mcp_health(arguments: dict[str, Any]) -> dict[str, Any]:
+    graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
+    state = _load_mitosis_state(arguments.get("mitosis_state"))
+    query_stats, has_query_stats = _load_query_stats(arguments.get("query_stats"))
+    health = measure_health(graph, state, query_stats)
+
+    metrics: list[dict[str, Any]] = []
+    for metric, target in HEALTH_TARGETS.items():
+        available = _health_metric_available(metric, has_query_stats)
+        raw_value = getattr(health, metric)
+        value = float(raw_value) if available and raw_value is not None else None
+        metrics.append(
+            {
+                "metric": metric,
+                "value": value,
+                "target_range": target,
+                "status": _health_metric_status(value if available else None, target, available),
+            }
+        )
+
+    return {
+        "ok": True,
+        "graph": arguments.get("graph", "crabpath_graph.json"),
+        "query_stats_provided": has_query_stats,
+        "mitosis_state": arguments.get("mitosis_state"),
+        "metrics": metrics,
+    }
+
+
+def mcp_evolve(arguments: dict[str, Any]) -> dict[str, Any]:
+    graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
+    snapshots_path = arguments.get("snapshots")
+    if not snapshots_path:
+        raise ValueError("--snapshots is required for evolve")
+
+    path = Path(snapshots_path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    snapshot = _build_snapshot(graph)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(snapshot) + "\n")
+
+    response: dict[str, Any] = {
+        "ok": True,
+        "snapshot": snapshot,
+        "snapshots": str(path),
+    }
+
+    if arguments.get("report", False):
+        response["report_rows"] = _load_snapshot_rows(path)
+    return response
+
+
 def mcp_consolidate(arguments: dict[str, Any]) -> dict[str, Any]:
     graph = _load_graph(arguments["graph"])
     result = graph.consolidate(min_weight=arguments.get("min_weight", 0.05))
@@ -282,6 +461,49 @@ def mcp_sim(arguments: dict[str, Any]) -> dict[str, Any]:
     if output:
         payload["output"] = str(output)
     return payload
+
+
+def mcp_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
+    graph = _load_graph(arguments["graph"])
+    fired_ids = _split_csv(arguments["fired_ids"])
+
+    record = {
+        "session_id": arguments["session"],
+        "turn_id": arguments["turn"],
+        "timestamp": time.time(),
+        "fired_ids": fired_ids,
+        "fired_scores": [1.0 for _ in fired_ids],
+        "fired_at": {node_id: idx for idx, node_id in enumerate(fired_ids)},
+        "inhibited": [],
+        "attributed": False,
+    }
+
+    path = snapshot_path(arguments["graph"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+    return {"ok": True, "snapshot_path": str(path)}
+
+
+def mcp_feedback(arguments: dict[str, Any]) -> dict[str, Any]:
+    snapshot = map_correction_to_snapshot(
+        session_id=arguments["session"],
+        turn_window=int(arguments.get("turn_window", 5)),
+    )
+    if snapshot is None:
+        raise ValueError(f"no attributable snapshot found for session: {arguments['session']}")
+
+    turns_since_fire = snapshot.get("turns_since_fire", 0)
+    return {
+        "turn_id": snapshot.get("turn_id"),
+        "fired_ids": snapshot.get("fired_ids", []),
+        "turns_since_fire": turns_since_fire,
+        "suggested_outcome": auto_outcome(
+            corrections_count=1,
+            turns_since_fire=int(turns_since_fire),
+        ),
+    }
 
 
 TOOLS = [
@@ -387,6 +609,72 @@ TOOLS = [
             "required": ["graph"],
         },
     },
+    {
+        "name": "health",
+        "description": "Measure graph health from state and optional stats.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph": {"type": "string"},
+                "mitosis_state": {"type": "string"},
+                "query_stats": {"type": "object"},
+            },
+            "required": ["graph"],
+        },
+    },
+    {
+        "name": "evolve",
+        "description": "Append graph snapshot stats to a timeline.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph": {"type": "string"},
+                "snapshots": {"type": "string"},
+                "report": {"type": "boolean", "default": False},
+            },
+            "required": ["graph", "snapshots"],
+        },
+    },
+    {
+        "name": "sim",
+        "description": "Run lifecycle simulation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "queries": {"type": "integer", "default": 100},
+                "decay_interval": {"type": "integer", "default": 5},
+                "decay_half_life": {"type": "integer", "default": 80},
+                "output": {"type": "string"},
+            },
+            "required": ["queries"],
+        },
+    },
+    {
+        "name": "snapshot",
+        "description": "Persist a turn snapshot.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "graph": {"type": "string"},
+                "session": {"type": "string"},
+                "turn": {"type": "integer"},
+                "fired_ids": {"type": "string"},
+            },
+            "required": ["graph", "session", "turn", "fired_ids"],
+        },
+    },
+    {
+        "name": "feedback",
+        "description": "Find attributable snapshot for a session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {"type": "string"},
+                "turn_window": {"type": "integer", "default": 5},
+            },
+            "required": ["session"],
+        },
+    },
 ]
 
 
@@ -399,6 +687,11 @@ HANDLERS = {
     "add": lambda args: mcp_add(args),
     "remove": lambda args: mcp_remove(args),
     "consolidate": lambda args: mcp_consolidate(args),
+    "health": lambda args: mcp_health(args),
+    "evolve": lambda args: mcp_evolve(args),
+    "sim": lambda args: mcp_sim(args),
+    "snapshot": lambda args: mcp_snapshot(args),
+    "feedback": lambda args: mcp_feedback(args),
 }
 
 
