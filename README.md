@@ -129,6 +129,79 @@ Every agent integration follows the same pattern:
 
 That's the whole integration. See [`examples/agent_memory.py`](examples/agent_memory.py) for a working version.
 
+## Learning Loop
+
+There are two learning modes:
+
+```python
+from crabpath import activate, learn
+from crabpath.feedback import score_retrieval, detect_correction
+from crabpath.learning import LearningConfig, RewardSignal, make_learning_step
+from crabpath.router import Router
+from crabpath.traversal import TraversalConfig, traverse
+```
+
+### 1) Real RL labels with `score_retrieval`
+
+`score_retrieval(query, retrieved_nodes, actual_response, llm_call)` asks an LLM (or mock scorer) for
+per-node relevance labels:
+
+```python
+retrieved_nodes = [("deploy_runbook.md", "deployment runbook body..."), ...]
+scores = score_retrieval(
+    query="deploy failed",
+    retrieved_nodes=retrieved_nodes,
+    actual_response="Agent answer text",
+    llm_call=my_scoring_llm,
+)
+# scores -> [("deploy_runbook.md", 1.0), ("incident_playbook.md", 0.5), ...]
+```
+
+Use that reward in `make_learning_step()`:
+
+```python
+trajectory = traverse(
+    query="deploy failed",
+    graph=graph,
+    router=Router(),
+    config=TraversalConfig(max_hops=3),
+    seed_nodes=[("deploy_runbook.md", 1.0)],
+)
+reward = RewardSignal(episode_id="deploy-loop", final_reward=0.75)
+learning_result = make_learning_step(graph, trajectory.steps, reward, LearningConfig())
+for u in learning_result.updates:
+    print(f"{u.source}->{u.target} {u.delta:+.4f} => {u.new_weight:.4f} ({u.rationale})")
+```
+
+### 2) How correction detection works (`detect_correction`)
+
+`detect_correction(current_message, previous_message)` returns:
+
+- `-1.0` for strong correction language like `"no"`, `"wrong"`, `"actually"`
+- `-0.5` for mild correction language like `"don't do that"` or `"never"` in context
+- `0.0` for neutral turns
+
+Use it when a user follow-up appears to negate a prior answer.
+
+### 3) Full pipeline (query → retrieve → score → learn → update)
+
+```text
+query
+  -> seed retrieval / traversal
+  -> score_retrieval(...)
+  -> RewardSignal(...)
+  -> make_learning_step(...)
+  -> edge weight updates in graph
+```
+
+### 4) Cost and what to choose
+
+- Baseline: `learn()` / co-firing (Hebbian) is free and works without any LLM scoring.
+  It updates edges from structural co-firing patterns (which nodes fire together).
+- RL scoring is optional but outcome-driven: you use real labels (`score_retrieval`) so successful retrieval
+  routes are reinforced and poor routes are discouraged.
+- Without scoring, CrabPath learns from structural patterns only (which nodes fire together). With scoring, it learns from outcomes (which retrievals actually helped). Both work. Scoring is better but costs about **$0.001 per query**.
+
 ## CLI
 
 CrabPath ships with a JSON-only CLI for agent runtimes.
