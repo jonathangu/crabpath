@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .graph import Graph, Node
+from .graph import Edge, Graph, Node
 
 
 @dataclass
@@ -141,6 +141,8 @@ def learn(
     result: Firing,
     outcome: float,
     rate: float = 0.1,
+    create_edges: bool = True,
+    max_new_edges: int = 10,
 ) -> None:
     """
     STDP-aware Hebbian learning: adjust weights between co-fired nodes.
@@ -156,22 +158,31 @@ def learn(
     Negative outcome → weaken causal edges, strengthen anti-causal.
     Weights clamped to [-10, 10].
 
+    If create_edges is True, missing edges between co-fired nodes are added
+    using a half-strength STDP update:
+
+    initial_weight = rate * outcome * timing_factor * 0.5
+
+    We only create new edges when abs(initial_weight) > 0.05, and we create
+    at most max_new_edges of them, choosing the strongest first.
+
     Args:
         graph: The memory graph.
         result: A previous Firing result (with timing info).
         outcome: Positive = good, negative = bad.
         rate: Learning rate.
+        create_edges: If True, create new edges for co-fired node pairs.
+        max_new_edges: Maximum number of new edges to create per call.
     """
     fired_ids = [n.id for n, _ in result.fired]
     fa = result.fired_at
+    new_edges: list[tuple[float, str, str, float]] = []
 
     for src_id in fired_ids:
         for tgt_id in fired_ids:
             if src_id == tgt_id:
                 continue
             edge = graph.get_edge(src_id, tgt_id)
-            if not edge:
-                continue
 
             # STDP timing factor
             if fa and src_id in fa and tgt_id in fa:
@@ -189,5 +200,21 @@ def learn(
                 # No timing info: fall back to symmetric
                 timing = 1.0
 
-            edge.weight += rate * outcome * timing
-            edge.weight = max(-10.0, min(10.0, edge.weight))
+            if edge:
+                edge.weight += rate * outcome * timing
+                edge.weight = max(-10.0, min(10.0, edge.weight))
+            elif create_edges:
+                initial_weight = rate * outcome * timing * 0.5
+                if abs(initial_weight) > 0.05:
+                    new_edges.append((abs(initial_weight), src_id, tgt_id, initial_weight))
+
+    if create_edges and new_edges:
+        new_edges.sort(key=lambda x: x[0], reverse=True)
+        for _, src_id, tgt_id, initial_weight in new_edges[:max_new_edges]:
+            graph.add_edge(
+                Edge(
+                    source=src_id,
+                    target=tgt_id,
+                    weight=max(-10.0, min(10.0, initial_weight)),
+                )
+            )

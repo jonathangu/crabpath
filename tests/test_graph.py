@@ -110,3 +110,79 @@ def test_repr():
     g = Graph()
     g.add_node(Node(id="a", content="A"))
     assert "nodes=1" in repr(g)
+
+
+def test_consolidate_prunes_weak_edges():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+    g.add_node(Node(id="d", content="D"))
+
+    g.add_edge(Edge(source="a", target="b", weight=0.04))
+    g.add_edge(Edge(source="b", target="c", weight=0.60))
+    g.add_edge(Edge(source="c", target="a", weight=0.03))
+    g.add_edge(Edge(source="a", target="d", weight=0.10))
+
+    stats = g.consolidate(min_weight=0.05)
+    assert stats == {"pruned_edges": 2, "pruned_nodes": 0}
+    assert g.edge_count == 2
+    assert g.get_edge("b", "c") is not None
+    assert g.get_edge("a", "d") is not None
+
+
+def test_consolidate_prunes_orphans():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+    g.add_edge(Edge(source="a", target="b", weight=0.8))
+
+    stats = g.consolidate()
+    assert stats == {"pruned_edges": 0, "pruned_nodes": 1}
+    assert g.node_count == 2
+    assert g.get_node("c") is None
+
+
+def test_consolidate_protects_nodes():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C", metadata={"protected": True}))
+
+    stats = g.consolidate()
+    assert stats == {"pruned_edges": 0, "pruned_nodes": 2}
+    assert g.node_count == 1
+    assert g.get_node("c") is not None
+    assert g.get_node("c").metadata["protected"] is True
+
+
+def test_merge_nodes():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+    g.add_node(Node(id="d", content="D"))
+    g.add_edge(Edge(source="a", target="c", weight=0.2))
+    g.add_edge(Edge(source="b", target="c", weight=0.9))
+    g.add_edge(Edge(source="d", target="b", weight=0.4))
+    g.add_edge(Edge(source="b", target="a", weight=-0.3))
+
+    assert g.merge_nodes("a", "b") is True
+    assert g.node_count == 3
+    assert g.get_node("b") is None
+    assert g.get_edge("a", "c").weight == 0.9
+    assert g.get_edge("d", "a").weight == 0.4
+    assert g.get_edge("a", "a").weight == -0.3
+
+
+def test_merge_nodes_edge_conflict():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+    g.add_edge(Edge(source="a", target="c", weight=0.2))
+    g.add_edge(Edge(source="b", target="c", weight=-0.7))
+
+    assert g.merge_nodes("a", "b") is True
+    assert g.get_edge("a", "c").weight == -0.7

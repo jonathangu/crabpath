@@ -1,6 +1,6 @@
 """Tests for CrabPath neuron-style activation."""
 
-from crabpath import Graph, Node, Edge, activate, learn
+from crabpath import Edge, Firing, Graph, Node, activate, learn
 
 
 def _simple_graph() -> Graph:
@@ -367,3 +367,81 @@ def test_stdp_simultaneous_partial_credit():
     assert new > old
     delta = new - old
     assert abs(delta - 0.1 * 1.0 * 0.5) < 0.001  # rate * outcome * 0.5
+
+
+def test_neurogenesis_creates_edge():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+
+    result = activate(g, seeds={"a": 1.0, "b": 1.0, "c": 1.0}, max_steps=1)
+    learn(g, result, outcome=1.0, rate=0.3)
+
+    assert g.get_edge("a", "b") is not None
+    assert g.get_edge("b", "a") is not None
+    assert g.get_edge("a", "c") is not None
+
+
+def test_neurogenesis_respects_timing():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+    g.add_edge(Edge(source="c", target="b", weight=2.0))
+
+    # a and c fire first, b fires next
+    result = activate(g, seeds={"a": 1.0, "c": 1.0}, max_steps=3)
+    learn(g, result, outcome=1.0, rate=0.5)
+
+    ab = g.get_edge("a", "b")
+    ba = g.get_edge("b", "a")
+
+    assert ab is not None
+    assert ba is not None
+    assert abs(ab.weight) > abs(ba.weight)
+    assert ab.weight > 0
+    assert ba.weight < 0
+
+
+def test_neurogenesis_disabled():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+
+    result = activate(g, seeds={"a": 1.0, "b": 1.0}, max_steps=1)
+    learn(g, result, outcome=1.0, create_edges=False, rate=0.3)
+
+    assert g.edge_count == 0
+
+
+def test_neurogenesis_max_edges():
+    g = Graph()
+    g.add_node(Node(id="a", content="A"))
+    g.add_node(Node(id="b", content="B"))
+    g.add_node(Node(id="c", content="C"))
+
+    result = Firing(
+        fired=[
+            (g.get_node("a"), 1.0),
+            (g.get_node("b"), 1.0),
+            (g.get_node("c"), 1.0),
+        ],
+        inhibited=[],
+        fired_at={"a": 0, "b": 1, "c": 2},
+        steps=3,
+    )
+
+    learn(g, result, outcome=1.0, rate=0.61, max_new_edges=2, create_edges=True)
+
+    expected = 0.61 * 0.5 * 0.5
+    ab = g.get_edge("a", "b")
+    bc = g.get_edge("b", "c")
+    ac = g.get_edge("a", "c")
+
+    assert g.edge_count == 2
+    assert ab is not None
+    assert bc is not None
+    assert ac is None
+    assert abs(ab.weight - expected) < 0.0001
+    assert abs(bc.weight - expected) < 0.0001
