@@ -26,6 +26,17 @@ from .neurogenesis import (
     connect_new_node,
     deterministic_auto_id,
 )
+from .mitosis import (
+    MitosisConfig,
+    MitosisState,
+    SplitResult,
+    split_node,
+    split_with_llm,
+    check_reconvergence,
+    merge_and_resplit,
+    bootstrap_workspace,
+    mitosis_maintenance,
+)
 
 __all__ = [
     "Graph", "Node", "Edge",
@@ -36,4 +47,7 @@ __all__ = [
     "BLOCKED_QUERIES", "NeurogenesisConfig", "NoveltyResult",
     "assess_novelty", "connect_new_node", "deterministic_auto_id",
     "auto_outcome", "map_correction_to_snapshot",
+    "MitosisConfig", "MitosisState", "SplitResult",
+    "split_node", "split_with_llm", "check_reconvergence",
+    "merge_and_resplit", "bootstrap_workspace", "mitosis_maintenance",
 ]
