@@ -10,8 +10,17 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 
 - Python 3.10+
 - Zero dependencies (stdlib only)
-- Optional: `OPENAI_API_KEY` for semantic embeddings (`text-embedding-3-small` via OpenAI API)
-- Optional: any OpenAI-compatible embedding endpoint
+- Optional: semantic embeddings via providers (`auto_embed()` by default)
+- Supported providers:
+  - `openai_embed`: `OPENAI_API_KEY` (`text-embedding-3-small`)
+  - `gemini_embed`: `GEMINI_API_KEY` or `GOOGLE_API_KEY` (`text-embedding-004`)
+  - `cohere_embed`: `COHERE_API_KEY` (`embed-v4`)
+  - `ollama_embed`: no API key required (`nomic-embed-text`, local Ollama)
+
+`auto_embed()` is the default recommendation. It tries providers in order:
+OpenAI → Gemini → Ollama.
+
+`ollama_embed` is free/local and requires no API key.
 
 ## Install
 
@@ -19,9 +28,9 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 pip install crabpath   # or: pip install .
 ```
 
-`OPENAI_API_KEY` is optional but recommended. Without it, CrabPath falls back to
-keyword-based routing. With it, semantic embeddings use
-`text-embedding-3-small` for substantially better retrieval quality.
+`auto_embed()` is optional but recommended. Without any configured provider,
+CrabPath falls back to keyword-based routing. With one configured, semantic
+embeddings use the selected provider for substantially better retrieval quality.
 
 ## The Loop
 
@@ -43,7 +52,7 @@ That's the whole integration. See [`examples/agent_memory.py`](examples/agent_me
 CrabPath ships with a JSON-only CLI for agent runtimes.
 All commands emit one-line JSON on `stdout` and JSON errors on `stderr`.
 Commands that use embeddings (`query`, `migrate`, `split`) use keyword fallback
-when `OPENAI_API_KEY` is not set.
+when no provider can be selected.
 
 ```bash
 python -m crabpath.cli query "deploy broke after config change" --graph crabpath_graph.json --index crabpath_embeddings.json --top 12

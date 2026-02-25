@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -203,3 +204,122 @@ def openai_embed(
         return [d.embedding for d in resp.data]
 
     return embed_fn
+
+
+def gemini_embed(
+    model: str = "text-embedding-004",
+) -> Callable[[list[str]], list[list[float]]]:
+    """Returns an embed_fn that uses Google Gemini embeddings."""
+    from google import generativeai as genai
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "Gemini API key missing. Set GEMINI_API_KEY or GOOGLE_API_KEY."
+        )
+
+    genai.configure(api_key=api_key)
+
+    model_name = model if model.startswith("models/") else f"models/{model}"
+
+    def embed_fn(texts: list[str]) -> list[list[float]]:
+        vectors = []
+        for text in texts:
+            result = genai.embed_content(
+                model=model_name,
+                content=text,
+                task_type="retrieval_document",
+            )
+            vectors.append([float(x) for x in result["embedding"]])
+        return vectors
+
+    return embed_fn
+
+
+def cohere_embed(
+    model: str = "embed-v4",
+) -> Callable[[list[str]], list[list[float]]]:
+    """Returns an embed_fn that uses Cohere embeddings."""
+    import cohere
+
+    api_key = os.getenv("COHERE_API_KEY")
+    if not api_key:
+        raise RuntimeError("Cohere API key missing. Set COHERE_API_KEY.")
+
+    client = cohere.Client(api_key=api_key)
+
+    def embed_fn(texts: list[str]) -> list[list[float]]:
+        response = client.embed(texts=texts, model=model)
+        return [[float(x) for x in row] for row in response.embeddings]
+
+    return embed_fn
+
+
+def ollama_embed(
+    model: str = "nomic-embed-text",
+    base_url: str = "http://localhost:11434",
+) -> Callable[[list[str]], list[list[float]]]:
+    """Returns an embed_fn that uses a local Ollama endpoint."""
+    import requests
+
+    endpoint = f"{base_url.rstrip('/')}/api/embeddings"
+
+    # Verify service and model existence up front.
+    resp = requests.post(
+        endpoint,
+        json={"model": model, "prompt": "probe"},
+        timeout=1.5,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Ollama returned HTTP {resp.status_code} for model '{model}' at {base_url}"
+        )
+
+    def embed_fn(texts: list[str]) -> list[list[float]]:
+        vectors = []
+        for text in texts:
+            payload = {"model": model, "prompt": text}
+            response = requests.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            embedding = result.get("embedding")
+            if embedding is None:
+                raise RuntimeError(f"Ollama response missing embedding: {result}")
+            vectors.append([float(x) for x in embedding])
+        return vectors
+
+    return embed_fn
+
+
+def auto_embed(
+    openai_model: str = "text-embedding-3-small",
+    gemini_model: str = "text-embedding-004",
+    ollama_model: str = "nomic-embed-text",
+    ollama_base_url: str = "http://localhost:11434",
+) -> Callable[[list[str]], list[list[float]]]:
+    """Return the first available embedding provider adapter."""
+    errors: list[str] = []
+
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            return openai_embed(model=openai_model)
+        except Exception as exc:
+            errors.append(f"OpenAI failed: {exc}")
+
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        try:
+            return gemini_embed(model=gemini_model)
+        except Exception as exc:
+            errors.append(f"Gemini failed: {exc}")
+
+    try:
+        return ollama_embed(model=ollama_model, base_url=ollama_base_url)
+    except Exception as exc:
+        errors.append(f"Ollama failed: {exc}")
+
+    raise RuntimeError(
+        "No embedding provider available. "
+        "Set OPENAI_API_KEY or GEMINI_API_KEY (or GOOGLE_API_KEY), "
+        "or run Ollama locally at http://localhost:11434 with an embed model. "
+        + " | ".join(errors)
+    )

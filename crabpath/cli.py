@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional
 
 from .activation import Firing
 from .activation import learn as _learn
-from .embeddings import EmbeddingIndex, openai_embed
+from .embeddings import EmbeddingIndex, auto_embed
 from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .graph import Graph
 from .lifecycle_sim import run_simulation, workspace_scenario, SimConfig
@@ -390,11 +390,9 @@ def _keyword_seed(graph: Graph, query_text: str) -> dict[str, float]:
     return seeds
 
 
-def _safe_openai_embed_fn() -> Optional[Callable[[list[str]], list[list[float]]]]:
-    if not os.getenv("OPENAI_API_KEY"):
-        return None
+def _safe_embed_fn() -> Optional[Callable[[list[str]], list[list[float]]]]:
     try:
-        return openai_embed()
+        return auto_embed()
     except Exception:
         return None
 
@@ -404,14 +402,13 @@ def cmd_query(args: argparse.Namespace) -> dict[str, Any]:
     index = _load_index(args.index)
 
     seeds: dict[str, float] = {}
-    if os.getenv("OPENAI_API_KEY"):
-        embed_fn = _safe_openai_embed_fn()
-        if embed_fn is not None and index.vectors:
-            seeds = index.seed(
-                args.query,
-                embed_fn=embed_fn,
-                top_k=args.top,
-            )
+    embed_fn = _safe_embed_fn()
+    if embed_fn is not None and index.vectors:
+        seeds = index.seed(
+            args.query,
+            embed_fn=embed_fn,
+            top_k=args.top,
+        )
 
     if not seeds:
         seeds = _keyword_seed(graph, args.query)
@@ -544,7 +541,7 @@ def cmd_migrate(args: argparse.Namespace) -> dict[str, Any]:
         include_memory=args.include_memory,
         include_docs=args.include_docs,
     )
-    embed_fn = _safe_openai_embed_fn()
+    embed_fn = _safe_embed_fn()
     embeddings_index = EmbeddingIndex()
     embed_callback = None
     if args.output_embeddings is not None and embed_fn is not None:
@@ -639,7 +636,7 @@ def cmd_split_node(args: argparse.Namespace) -> dict[str, Any]:
     graph = _load_graph(args.graph)
     state = MitosisState()
     index = _load_index(args.index)
-    embed_fn = _safe_openai_embed_fn()
+    embed_fn = _safe_embed_fn()
     embed_callback = None
     if embed_fn is not None:
         def embed_callback(node_id: str, content: str) -> None:

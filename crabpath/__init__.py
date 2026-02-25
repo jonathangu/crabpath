@@ -15,7 +15,14 @@ __version__ = "1.0.0"
 
 from .graph import Graph, Node, Edge
 from .activation import activate, learn, Firing
-from .embeddings import EmbeddingIndex, openai_embed
+from .embeddings import (
+    EmbeddingIndex,
+    auto_embed,
+    cohere_embed,
+    gemini_embed,
+    ollama_embed,
+    openai_embed,
+)
 from .adapter import CrabPathAgent, OpenClawCrabPathAdapter
 from .feedback import auto_outcome, map_correction_to_snapshot
 from .neurogenesis import (
@@ -66,7 +73,8 @@ from .mitosis import (
 __all__ = [
     "Graph", "Node", "Edge",
     "activate", "learn", "Firing",
-    "EmbeddingIndex", "openai_embed",
+    "EmbeddingIndex", "auto_embed", "gemini_embed", "cohere_embed", "ollama_embed",
+    "openai_embed",
     "CrabPathAgent",
     "OpenClawCrabPathAdapter",
     "BLOCKED_QUERIES", "NeurogenesisConfig", "NoveltyResult",
