@@ -31,6 +31,7 @@ from .feedback import (
     map_correction_to_snapshot,
     score_retrieval,
 )
+from .shadow_logger import ShadowLog
 from .neurogenesis import (
     BLOCKED_QUERIES,
     NeurogenesisConfig,
@@ -103,6 +104,7 @@ __all__ = [
     "detect_correction",
     "score_retrieval",
     "map_correction_to_snapshot",
+    "ShadowLog",
     "migrate",
     "MigrateConfig",
     "gather_files",
