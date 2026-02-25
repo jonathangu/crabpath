@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from typing import Any
 
 from .graph import Graph
@@ -19,22 +20,22 @@ from .synaptogenesis import edge_tier_stats
 
 DEFAULTS = {
     "small": {
-        "sibling_weight": 0.60,
+        "sibling_weight": 0.45,
         "promotion_threshold": 2,
-        "decay_half_life": 60,
-        "decay_interval": 6,
+        "decay_half_life": 50,
+        "decay_interval": 4,
         "min_content_chars": 160,
-        "hebbian_increment": 0.06,
+        "hebbian_increment": 0.08,
         "skip_factor": 0.92,
-        "max_outgoing": 16,
+        "max_outgoing": 14,
     },
     "medium": {
-        "sibling_weight": 0.65,
+        "sibling_weight": 0.5,
         "promotion_threshold": 3,
         "decay_half_life": 80,
         "decay_interval": 10,
         "min_content_chars": 200,
-        "hebbian_increment": 0.05,
+        "hebbian_increment": 0.06,
         "skip_factor": 0.90,
         "max_outgoing": 20,
     },
@@ -77,6 +78,179 @@ class Adjustment:
     target_range: MetricRange
     suggested_change: dict[str, Any]
     reason: str
+
+
+@dataclass
+class TuneHistoryRecord:
+    cycle: int
+    metric: str
+    knob: str
+    direction: str
+    before_value: float | int
+    after_value: float | int
+    before_health: GraphHealth
+    after_health: GraphHealth | None = None
+    delta_toward_target: int = 0
+    score: int = 0
+
+
+@dataclass
+class TuneHistory:
+    records: list[TuneHistoryRecord] = field(default_factory=list)
+    pending: list[TuneHistoryRecord] = field(default_factory=list)
+
+    def record_adjustments(
+        self,
+        cycle: int,
+        pre_health: GraphHealth,
+        adjustments: list[Adjustment],
+        changes: dict[str, dict[str, float | int]],
+    ) -> list[TuneHistoryRecord]:
+        """Store applied adjustments for deferred evaluation on a later cycle."""
+        new_records: list[TuneHistoryRecord] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        for adjustment in adjustments:
+            for knob, direction in adjustment.suggested_change.items():
+                if knob not in changes:
+                    continue
+                key = (adjustment.metric, knob, direction)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                change = changes[knob]
+                record = TuneHistoryRecord(
+                    cycle=cycle,
+                    metric=adjustment.metric,
+                    knob=knob,
+                    direction=direction,
+                    before_value=change["before"],
+                    after_value=change["after"],
+                    before_health=pre_health,
+                )
+                self.pending.append(record)
+                new_records.append(record)
+
+        return new_records
+
+    def evaluate_pending(self, current_health: GraphHealth) -> list[TuneHistoryRecord]:
+        """Evaluate previously recorded adjustments against current health."""
+        if not self.pending:
+            return []
+
+        evaluated: list[TuneHistoryRecord] = []
+        for record in self.pending:
+            metric = record.metric
+            pre_metric = _coerce_float(getattr(record.before_health, metric), default=0.0)
+            post_metric = _coerce_float(getattr(current_health, metric), default=0.0)
+            target = HEALTH_TARGETS[metric]
+
+            score = _score_metric_toward_target(pre_metric, post_metric, target)
+            record.after_health = current_health
+            record.delta_toward_target = score
+            record.score = score
+            self.records.append(record)
+            evaluated.append(record)
+
+        self.pending = []
+        return evaluated
+
+
+@dataclass
+class TuneMemory:
+    scores: dict[tuple[str, str, str], int] = field(default_factory=dict)
+
+    @staticmethod
+    def _key(metric: str, knob: str, direction: str) -> tuple[str, str, str]:
+        return metric, knob, direction
+
+    @staticmethod
+    def _triple_to_key(metric: str, knob: str, direction: str) -> str:
+        return f"{metric}|{knob}|{direction}"
+
+    @staticmethod
+    def _key_to_triple(key: str) -> tuple[str, str, str] | None:
+        parts = key.split("|", 2)
+        if len(parts) != 3:
+            return None
+        return parts[0], parts[1], parts[2]
+
+    def get_score(self, metric: str, knob: str, direction: str) -> int:
+        return self.scores.get(self._key(metric, knob, direction), 0)
+
+    def is_blocked(self, metric: str, knob: str, direction: str) -> bool:
+        return self.get_score(metric, knob, direction) < -2
+
+    def is_preferred(self, metric: str, knob: str, direction: str) -> bool:
+        return self.get_score(metric, knob, direction) > 2
+
+    def update(self, history: TuneHistory) -> None:
+        for record in history.records:
+            if record.score == 0:
+                continue
+            key = self._key(record.metric, record.knob, record.direction)
+            self.scores[key] = self.scores.get(key, 0) + record.score
+
+    def report(self) -> str:
+        works: list[str] = []
+        blocked: list[str] = []
+        preferred: list[str] = []
+
+        for (metric, knob, direction), score in sorted(self.scores.items()):
+            triple = f"{metric}:{knob}:{direction}"
+            if score > 2:
+                preferred.append(f"{triple} => {score}")
+            elif score < -2:
+                blocked.append(f"{triple} => {score}")
+            elif score > 0:
+                works.append(f"{triple} => {score}")
+
+        if not works:
+            works.append("<none>")
+        if not blocked:
+            blocked.append("<none>")
+        if not preferred:
+            preferred.append("<none>")
+
+        return "\n".join(
+            [
+                "TuneMemory report",
+                "Working triples:",
+                *[f"- {item}" for item in works],
+                "Blocked triples:",
+                *[f"- {item}" for item in blocked],
+                "Preferred triples:",
+                *[f"- {item}" for item in preferred],
+            ]
+        )
+
+    def save(self, path: str) -> None:
+        data = {
+            self._triple_to_key(metric, knob, direction): score
+            for (metric, knob, direction), score in self.scores.items()
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+
+    @classmethod
+    def load(cls, path: str) -> "TuneMemory":
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return cls()
+
+        scores: dict[tuple[str, str, str], int] = {}
+        for key, score in data.items():
+            triple = cls._key_to_triple(str(key))
+            if triple is None:
+                continue
+            try:
+                scores[triple] = int(score)
+            except (TypeError, ValueError):
+                continue
+        return cls(scores=scores)
 
 
 HEALTH_TARGETS: dict[str, MetricRange] = {
@@ -261,6 +435,64 @@ def _range_desc(target: MetricRange) -> str:
     if max_v is None:
         return f">={min_v}"
     return f"{min_v}-{max_v}"
+
+
+def _metric_distance_to_target(value: float, target: MetricRange) -> float:
+    min_v, max_v = target
+    if min_v is not None and value < min_v:
+        return min_v - value
+    if max_v is not None and value > max_v:
+        return value - max_v
+    return 0.0
+
+
+def _score_metric_toward_target(before: float, after: float, target: MetricRange) -> int:
+    before_distance = _metric_distance_to_target(before, target)
+    after_distance = _metric_distance_to_target(after, target)
+    if after_distance < before_distance:
+        return 1
+    if after_distance > before_distance:
+        return -1
+    return 0
+
+
+def _filter_adjustments(
+    adjustments: list[Adjustment],
+    tune_memory: TuneMemory | None,
+) -> list[Adjustment]:
+    if tune_memory is None:
+        return adjustments
+
+    preferred_adjustments: list[Adjustment] = []
+    regular_adjustments: list[Adjustment] = []
+
+    for adjustment in adjustments:
+        filtered: dict[str, str] = {}
+        has_preferred = False
+
+        for knob, direction in adjustment.suggested_change.items():
+            if tune_memory.is_blocked(adjustment.metric, knob, direction):
+                continue
+            if tune_memory.is_preferred(adjustment.metric, knob, direction):
+                has_preferred = True
+            filtered[knob] = direction
+
+        if not filtered:
+            continue
+
+        filtered_adjustment = Adjustment(
+            metric=adjustment.metric,
+            current=adjustment.current,
+            target_range=adjustment.target_range,
+            suggested_change=filtered,
+            reason=adjustment.reason,
+        )
+        if has_preferred:
+            preferred_adjustments.append(filtered_adjustment)
+        else:
+            regular_adjustments.append(filtered_adjustment)
+
+    return preferred_adjustments + regular_adjustments
 
 
 def measure_health(graph: Graph, state: MitosisState, query_stats: dict[str, Any]) -> GraphHealth:
@@ -591,10 +823,21 @@ def self_tune(
     mitosis_config: MitosisConfig,
     cycle_number: int = 0,
     last_adjusted: dict[str, int] | None = None,
+    tune_history: TuneHistory | None = None,
+    tune_memory: TuneMemory | None = None,
 ) -> tuple[GraphHealth, list[Adjustment], dict[str, dict[str, float | int]]]:
     """Run one full health-tuning cycle."""
+    if tune_history is None:
+        tune_history = TuneHistory()
+
     health = measure_health(graph, state, query_stats)
+    if tune_history.pending:
+        completed_records = tune_history.evaluate_pending(health)
+        if tune_memory is not None:
+            tune_memory.update(TuneHistory(records=completed_records))
+
     adjustments = autotune(graph, health)
+    adjustments = _filter_adjustments(adjustments, tune_memory)
     changes = apply_adjustments(
         adjustments,
         syn_config,
@@ -603,4 +846,6 @@ def self_tune(
         last_adjusted=last_adjusted,
         cycle_number=cycle_number,
     )
+    tune_history.record_adjustments(cycle_number, health, adjustments, changes)
+
     return health, adjustments, changes

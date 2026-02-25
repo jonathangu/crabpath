@@ -10,6 +10,8 @@ from crabpath.autotune import (
     autotune,
     apply_adjustments,
     self_tune,
+    TuneHistory,
+    TuneMemory,
 )
 from crabpath.graph import Edge, Graph, Node
 from crabpath.mitosis import MitosisState
@@ -306,3 +308,172 @@ def test_self_tune_runs_apply_adjustments_cycle(monkeypatch):
     assert syn_config.promotion_threshold == 3
     assert changes["decay_half_life"]["delta"] == -10
     assert changes["promotion_threshold"]["delta"] == -1
+
+
+def test_tune_history_records_and_scores_pending_adjustments():
+    pre_health = GraphHealth(
+        avg_nodes_fired_per_query=10.0,
+        cross_file_edge_pct=10.0,
+        dormant_pct=75.0,
+        reflex_pct=2.0,
+        context_compression=12.0,
+        proto_promotion_rate=8.0,
+        reconvergence_rate=0.0,
+        orphan_nodes=0,
+    )
+    post_health = GraphHealth(
+        avg_nodes_fired_per_query=6.0,
+        cross_file_edge_pct=10.0,
+        dormant_pct=75.0,
+        reflex_pct=2.0,
+        context_compression=12.0,
+        proto_promotion_rate=8.0,
+        reconvergence_rate=0.0,
+        orphan_nodes=0,
+    )
+    adjustment = Adjustment(
+        metric="avg_nodes_fired_per_query",
+        current=pre_health.avg_nodes_fired_per_query,
+        target_range=HEALTH_TARGETS["avg_nodes_fired_per_query"],
+        suggested_change={"decay_half_life": "decrease"},
+        reason="move spread down",
+    )
+    changes = {
+        "decay_half_life": {"before": 80, "after": 60, "delta": -20},
+    }
+
+    history = TuneHistory()
+    history.record_adjustments(1, pre_health, [adjustment], changes)
+    assert len(history.pending) == 1
+
+    evaluated = history.evaluate_pending(post_health)
+    assert len(evaluated) == 1
+    record = evaluated[0]
+    assert record.score == 1
+    assert record.delta_toward_target == 1
+    assert record.before_health == pre_health
+    assert record.after_health == post_health
+
+
+def test_tune_memory_blocks_and_prefers_adjustments_in_self_tune(monkeypatch, tmp_path):
+    history = TuneHistory()
+    memory = TuneMemory()
+    memory.scores = {
+        ("avg_nodes_fired_per_query", "decay_half_life", "decrease"): -3,
+        ("proto_promotion_rate", "promotion_threshold", "decrease"): 3,
+    }
+
+    assert memory.is_blocked("avg_nodes_fired_per_query", "decay_half_life", "decrease")
+    assert memory.is_preferred("proto_promotion_rate", "promotion_threshold", "decrease")
+
+    pre_health = GraphHealth(
+        avg_nodes_fired_per_query=10.0,
+        cross_file_edge_pct=8.0,
+        dormant_pct=75.0,
+        reflex_pct=2.0,
+        context_compression=12.0,
+        proto_promotion_rate=1.0,
+        reconvergence_rate=0.0,
+        orphan_nodes=0,
+    )
+    post_health = GraphHealth(
+        avg_nodes_fired_per_query=11.0,
+        cross_file_edge_pct=8.0,
+        dormant_pct=75.0,
+        reflex_pct=2.0,
+        context_compression=12.0,
+        proto_promotion_rate=2.5,
+        reconvergence_rate=0.0,
+        orphan_nodes=0,
+    )
+    assert post_health.avg_nodes_fired_per_query > pre_health.avg_nodes_fired_per_query
+
+    graph = Graph()
+    graph.add_node(Node(id="file::a", content="alpha"))
+    graph.add_node(Node(id="file::b", content="beta"))
+    syn_config = SynaptogenesisConfig(
+        promotion_threshold=4,
+        reflex_threshold=0.9,
+    )
+    decay_config = DecayConfig(half_life_turns=80)
+    mitosis_config = MitosisConfig()
+
+    autotune_responses = [
+        [
+            Adjustment(
+                metric="avg_nodes_fired_per_query",
+                current=pre_health.avg_nodes_fired_per_query,
+                target_range=HEALTH_TARGETS["avg_nodes_fired_per_query"],
+                suggested_change={"decay_half_life": "decrease"},
+                reason="too wide",
+            ),
+            Adjustment(
+                metric="proto_promotion_rate",
+                current=pre_health.proto_promotion_rate,
+                target_range=HEALTH_TARGETS["proto_promotion_rate"],
+                suggested_change={"promotion_threshold": "decrease"},
+                reason="too slow",
+            ),
+        ],
+        [],
+    ]
+
+    measure_calls = iter([pre_health, post_health])
+    autotune_calls = iter(autotune_responses)
+
+    import importlib
+
+    autotune_module = importlib.import_module("crabpath.autotune")
+    monkeypatch.setattr(autotune_module, "measure_health", lambda *_, **__: next(measure_calls))
+    monkeypatch.setattr(autotune_module, "autotune", lambda *_, **__: next(autotune_calls))
+
+    first_health, first_adjustments, first_changes = self_tune(
+        graph,
+        MitosisState(),
+        {"fired_counts": [3, 4]},
+        syn_config,
+        decay_config,
+        mitosis_config,
+        cycle_number=1,
+        tune_history=history,
+        tune_memory=memory,
+    )
+
+    second_health, _, _ = self_tune(
+        graph,
+        MitosisState(),
+        {"fired_counts": [3, 4]},
+        syn_config,
+        decay_config,
+        mitosis_config,
+        cycle_number=2,
+        tune_history=history,
+        tune_memory=memory,
+    )
+
+    assert first_health == pre_health
+    assert second_health == post_health
+    assert "decay_half_life" not in first_changes
+    assert "promotion_threshold" in first_changes
+    assert first_adjustments == [
+        Adjustment(
+            metric="proto_promotion_rate",
+            current=pre_health.proto_promotion_rate,
+            target_range=HEALTH_TARGETS["proto_promotion_rate"],
+            suggested_change={"promotion_threshold": "decrease"},
+            reason="too slow",
+        )
+    ]
+    assert memory.get_score("proto_promotion_rate", "promotion_threshold", "decrease") == 4
+    assert len(history.pending) == 0
+
+    report = memory.report()
+    assert "Blocked triples:" in report
+    assert "Preferred triples:" in report
+    assert "avg_nodes_fired_per_query:decay_half_life:decrease => -3" in report
+    assert "proto_promotion_rate:promotion_threshold:decrease => 4" in report
+
+    persist_path = tmp_path / "memory.json"
+    memory.save(str(persist_path))
+    loaded = TuneMemory.load(str(persist_path))
+    assert loaded.get_score("proto_promotion_rate", "promotion_threshold", "decrease") == 4
