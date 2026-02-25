@@ -127,7 +127,8 @@ def test_autotune_for_low_avg_nodes_and_fast_growth():
     assert item.suggested_change["promotion_threshold"] == "decrease"
 
 
-def test_autotune_low_cross_file_and_dormant_recommendations():
+def test_autotune_low_cross_file_and_dormant_no_conflict():
+    """When both cross_file and dormant are low, cross-file wins — dormant decay suppressed."""
     health = GraphHealth(
         avg_nodes_fired_per_query=5,
         cross_file_edge_pct=1,
@@ -143,8 +144,8 @@ def test_autotune_low_cross_file_and_dormant_recommendations():
     dormant = _metric(adjustments, "dormant_pct")
     assert cross_file is not None
     assert cross_file.suggested_change["promotion_threshold"] == "decrease"
-    assert dormant is not None
-    assert dormant.suggested_change["decay_half_life"] == "decrease"
+    # Dormant adjustment suppressed to avoid conflicting with cross-file discovery
+    assert dormant is None
 
 
 def test_autotune_high_reflex_and_promotion_rates():

@@ -90,6 +90,8 @@ HEALTH_TARGETS: dict[str, MetricRange] = {
     "orphan_nodes": (0.0, 0.0),
 }
 
+ADJUSTMENT_COOLDOWN_CYCLES = 2
+
 
 # ---------------------------------------------------------------------------
 # Warm-start defaults
@@ -285,12 +287,12 @@ def measure_health(graph: Graph, state: MitosisState, query_stats: dict[str, Any
 
     promoted = _sum_query_value(
         query_stats,
-        ["promotions", "promoted", "promoted_count"],
+        ["promotions", "total_promotions", "promoted", "promoted_count"],
         default=0,
     )
     proto_created = _sum_query_value(
         query_stats,
-        ["proto_created", "proto_creations", "created"],
+        ["proto_created", "total_protos_created", "proto_creations", "created"],
         default=0,
     )
     proto_promotion_rate = (promoted / proto_created * 100.0) if proto_created else 0.0
@@ -355,6 +357,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
 
     # cross_file_edge_pct
     min_cross, max_cross = HEALTH_TARGETS["cross_file_edge_pct"]
+    cross_file_low = health.cross_file_edge_pct < (min_cross or 0.0)
     if health.cross_file_edge_pct < (min_cross or 0.0):
         adjustments.append(
             Adjustment(
@@ -378,7 +381,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
 
     # dormant_pct
     min_dormant, max_dormant = HEALTH_TARGETS["dormant_pct"]
-    if health.dormant_pct < (min_dormant or 0.0):
+    if (health.dormant_pct < (min_dormant or 0.0)) and not cross_file_low:
         adjustments.append(
             Adjustment(
                 metric="dormant_pct",
@@ -401,6 +404,16 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
 
     # reflex_pct
     min_reflex, max_reflex = HEALTH_TARGETS["reflex_pct"]
+    if health.reflex_pct < (min_reflex or 0.0):
+        adjustments.append(
+            Adjustment(
+                metric="reflex_pct",
+                current=health.reflex_pct,
+                target_range=(min_reflex or 0.0, max_reflex or 0.0),
+                suggested_change={"hebbian_increment": "increase"},
+                reason="Reflex is too low; stronger Hebbian updates help edges move into reflex tier faster.",
+            )
+        )
     if max_reflex is not None and health.reflex_pct > max_reflex:
         adjustments.append(
             Adjustment(
@@ -412,6 +425,19 @@ def autotune(graph: Graph, health: GraphHealth) -> list[Adjustment]:
                     "reflex_threshold": "increase",
                 },
                 reason="Reflex edges are too common; increase decay and/or require stronger evidence for reflex edges.",
+            )
+        )
+
+    # context_compression
+    min_context, max_context = HEALTH_TARGETS["context_compression"]
+    if max_context is not None and health.context_compression > max_context:
+        adjustments.append(
+            Adjustment(
+                metric="context_compression",
+                current=health.context_compression,
+                target_range=(min_context or 0.0, max_context or 0.0),
+                suggested_change={"decay_half_life": "decrease"},
+                reason="Context compression is high; lowering decay half-life reduces loaded context churn.",
             )
         )
 
@@ -472,6 +498,8 @@ def apply_adjustments(
     syn_config: SynaptogenesisConfig,
     decay_config: DecayConfig,
     mitosis_config: MitosisConfig,
+    last_adjusted: dict[str, int] | None = None,
+    cycle_number: int = 0,
 ) -> dict[str, dict[str, float | int]]:
     """Apply suggestions from autotune() directly to live config objects.
 
@@ -479,10 +507,15 @@ def apply_adjustments(
         Mapping of changed public keys to `{before, after, delta}`.
     """
     del mitosis_config
+    if last_adjusted is None:
+        last_adjusted = {}
     changes: dict[str, dict[str, float | int]] = {}
 
     for adjustment in adjustments:
         for key, direction in adjustment.suggested_change.items():
+            last_seen = last_adjusted.get(key, -10**9)
+            if cycle_number - last_seen <= ADJUSTMENT_COOLDOWN_CYCLES:
+                continue
             if key == "decay_half_life":
                 before = decay_config.half_life_turns
                 if direction == "decrease":
@@ -494,6 +527,7 @@ def apply_adjustments(
                 after = int(round(max(20, min(300, after))))
                 decay_config.half_life_turns = after
                 _record_change(changes, "decay_half_life", before, after)
+                last_adjusted[key] = cycle_number
 
             elif key == "promotion_threshold":
                 before = int(syn_config.promotion_threshold)
@@ -503,9 +537,10 @@ def apply_adjustments(
                     after = before + 1
                 else:
                     continue
-                after = max(1, min(10, after))
+                after = max(2, min(10, after))
                 syn_config.promotion_threshold = after
                 _record_change(changes, "promotion_threshold", before, after)
+                last_adjusted[key] = cycle_number
 
             elif key == "reflex_threshold":
                 before = float(syn_config.reflex_threshold)
@@ -516,6 +551,7 @@ def apply_adjustments(
                 after = min(0.95, after)
                 syn_config.reflex_threshold = after
                 _record_change(changes, "reflex_threshold", before, after)
+                last_adjusted[key] = cycle_number
 
             elif key == "skip_factor":
                 before = float(syn_config.skip_factor)
@@ -528,6 +564,20 @@ def apply_adjustments(
                 after = max(0.0, min(1.0, after))
                 syn_config.skip_factor = after
                 _record_change(changes, "skip_factor", before, after)
+                last_adjusted[key] = cycle_number
+
+            elif key == "hebbian_increment":
+                before = float(syn_config.hebbian_increment)
+                if direction == "increase":
+                    after = before + 0.01
+                elif direction == "decrease":
+                    after = before - 0.01
+                else:
+                    continue
+                after = max(0.02, min(0.15, after))
+                syn_config.hebbian_increment = after
+                _record_change(changes, "hebbian_increment", before, after)
+                last_adjusted[key] = cycle_number
 
     return changes
 
@@ -539,9 +589,18 @@ def self_tune(
     syn_config: SynaptogenesisConfig,
     decay_config: DecayConfig,
     mitosis_config: MitosisConfig,
+    cycle_number: int = 0,
+    last_adjusted: dict[str, int] | None = None,
 ) -> tuple[GraphHealth, list[Adjustment], dict[str, dict[str, float | int]]]:
     """Run one full health-tuning cycle."""
     health = measure_health(graph, state, query_stats)
     adjustments = autotune(graph, health)
-    changes = apply_adjustments(adjustments, syn_config, decay_config, mitosis_config)
+    changes = apply_adjustments(
+        adjustments,
+        syn_config,
+        decay_config,
+        mitosis_config,
+        last_adjusted=last_adjusted,
+        cycle_number=cycle_number,
+    )
     return health, adjustments, changes
