@@ -26,6 +26,16 @@ from .neurogenesis import (
     connect_new_node,
     deterministic_auto_id,
 )
+from .synaptogenesis import (
+    SynaptogenesisConfig,
+    SynaptogenesisState,
+    ProtoEdge,
+    record_cofiring,
+    record_skips,
+    decay_proto_edges,
+    classify_tier,
+    edge_tier_stats,
+)
 from .mitosis import (
     MitosisConfig,
     MitosisState,
@@ -52,6 +62,9 @@ __all__ = [
     "BLOCKED_QUERIES", "NeurogenesisConfig", "NoveltyResult",
     "assess_novelty", "connect_new_node", "deterministic_auto_id",
     "auto_outcome", "map_correction_to_snapshot",
+    "SynaptogenesisConfig", "SynaptogenesisState", "ProtoEdge",
+    "record_cofiring", "record_skips", "decay_proto_edges",
+    "classify_tier", "edge_tier_stats",
     "MitosisConfig", "MitosisState", "SplitResult", "MergeResult", "NeurogenesisResult",
     "split_node", "split_with_llm", "should_merge", "should_create_node",
     "create_node", "find_co_firing_families", "merge_nodes",
