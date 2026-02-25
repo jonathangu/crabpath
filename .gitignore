@@ -34,3 +34,9 @@ htmlcov/
 *.db
 data/
 scratch/
+
+# CrabPath data (keep in private repo)
+*.json
+!package.json
+*.events.db
+snapshots/
