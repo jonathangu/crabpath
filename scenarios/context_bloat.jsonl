@@ -1,0 +1,20 @@
+{"query": "How do I resolve a git merge conflict fast?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Resolve merge", "git diff --merge", "conflict markers"]}
+{"query": "What is the safe way to start debugging a failing CI run?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["failed test name", "collect logs", "targeted tests"]}
+{"query": "Which rule prevents accidentally pushing secrets?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["No plaintext secrets", "never commit secrets", "secret manager"]}
+{"query": "How should I handle a schema migration in production?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["staging", "migration window", "roll-forward"]}
+{"query": "How do I isolate flaky tests and rerun?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["smallest dataset", "isolated", "pytest unit"]}
+{"query": "How do I prevent cache contamination in multi-tenant systems?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["cache keys", "context and version", "configuration drift"]}
+{"query": "What is the rollout safety rule for risky deploys?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["small batches", "error windows", "monitor"]}
+{"query": "How do I triage a high traffic incident?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["request_id", "trace", "correlation IDs"]}
+{"query": "When can I restart containers with active traffic?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["one container at a time", "drain traffic", "tool log query"]}
+{"query": "What should I do before publishing a release?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["release notes", "changelog", "test before merge"]}
+{"query": "How can I fix an API idempotency bug?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["idempotency key", "safe retry", "guardrail"]}
+{"query": "How should rate limits be implemented at scale?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["per-endpoint", "429", "ratelimit"]}
+{"query": "What is the right flow for security-related fixes?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["reproduce exploit", "validation check", "secret scan"]}
+{"query": "How do I prepare for a planned rollback?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["snapshot", "rollback", "helm rollback"]}
+{"query": "How do I validate deployment readiness?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["smoke tests", "ready check", "health endpoints"]}
+{"query": "How to keep authentication changes safe?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["reviewer", "risk", "authentication code"]}
+{"query": "What to do when dependencies change before merge?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["dependency drift", "changelog", "readme update"]}
+{"query": "How do I check production readiness for database changes?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["backup validation", "restore", "staging"]}
+{"query": "Which guardrail blocks dangerous workspace commands?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["destructive commands", "production", "approval tag"]}
+{"query": "Where should I start when telemetry looks broken?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["trace", "request to db write", "latency"]}

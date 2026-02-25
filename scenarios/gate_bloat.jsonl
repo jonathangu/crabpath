@@ -1,0 +1,20 @@
+{"query": "Preparing a hotfix for a critical API bug", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Regression tests", "idempotent", "Fail fast"]}
+{"query": "Deploying a database migration under production pressure", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["staged rollout", "schema", "snapshot"]}
+{"query": "Need to cleanly summarize context for the current incident task", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["task intent", "context", "budget"]}
+{"query": "Running auth changes and preparing for production write", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["explicit approval", "prod write", "scopes"]}
+{"query": "Submitting PR for a risky infrastructure change", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["issue references", "risk", "review"]}
+{"query": "Rolling out canary traffic to a shared service", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["health checks", "expand", "blue-green"]}
+{"query": "Investigating a bug in user-facing serialization", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["invalid input", "regression tests", "explicit types"]}
+{"query": "Building a concise memory plan for this coding task", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["relevant", "summaries", "duplicate"]}
+{"query": "Responding to elevated token usage and possible abuse", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["rate limit", "credential leaks", "audit"]}
+{"query": "Preparing branch-level review for production impact", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["owner sign-off", "reviewer", "minimal diffs"]}
+{"query": "Scheduling maintenance and avoiding risky commands", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["off-hours", "safely", "rollout"]}
+{"query": "Fixing flaky behavior in a new feature", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["regression tests", "focused", "small diffs"]}
+{"query": "Handling user request context and not overloading memory", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["context", "budget", "relevant"]}
+{"query": "Preparing access to secret store for a script", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["plain text", "scopes", "approval"]}
+{"query": "Checking for stale instructions before final merge", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["stale", "close findings", "PR description"]}
+{"query": "Release window decision for a major service", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["deployment window", "health checks", "error budget"]}
+{"query": "Refactoring for maintainability while staying within policy", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["feature flags", "explicit", "tests"]}
+{"query": "Summarizing session memory for handoff", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["high-precision retrieval", "prune", "summaries"]}
+{"query": "Tool policy for external integrations and webhooks", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["webhook signatures", "validation", "audit"]}
+{"query": "Preparing PR docs and changelog before merge", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["issue references", "risk", "changelog"]}

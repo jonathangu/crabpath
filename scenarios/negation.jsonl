@@ -1,0 +1,11 @@
+{"query": "Can we run a migration now?", "feedback": {"reward": 0.0}, "expected_answer_fragments": ["Directly in production", "run now"]}
+{"query": "What is the migration policy for this request?", "feedback": {"reward": 0.0}, "expected_answer_fragments": ["Directly in production", "run now"]}
+{"query": "Could we skip staging and run immediately?", "feedback": {"reward": 0.0}, "expected_answer_fragments": ["Directly in production", "skip staging"]}
+{"query": "Correction: Do NOT run migrations directly in production; stage first.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Do NOT", "staged"]}
+{"query": "What is the updated migration policy?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Do NOT", "staged"]}
+{"query": "Should I run it in production right now?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Do NOT", "staged"]}
+{"query": "Confirm the policy for migration execution.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["maintenance window", "staged"]}
+{"query": "What if this migration is urgent?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["maintenance window", "Do NOT"]}
+{"query": "Can you explain the right sequence?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["staged", "feature flag"]}
+{"query": "What should we execute before migration in prod?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["validate", "staged"]}
+{"query": "Is direct prod migration still allowed?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Do NOT", "staged"]}

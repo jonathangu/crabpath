@@ -1,0 +1,30 @@
+{"query": "Who is the current incident coordinator?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Jordan"]}
+{"query": "Which primary region should traffic use?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["us-east-1"]}
+{"query": "What retry policy applies right now?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["2 attempts"]}
+{"query": "Who is the current incident coordinator?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Jordan"]}
+{"query": "Which primary region should traffic use?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["us-east-1"]}
+{"query": "What retry policy applies right now?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["2 attempts"]}
+{"query": "Who is the current incident coordinator?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Jordan"]}
+{"query": "Which primary region should traffic use?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["us-east-1"]}
+{"query": "What retry policy applies right now?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["2 attempts"]}
+{"query": "Who is the current incident coordinator?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Jordan"]}
+{"query": "Correction: The incident coordinator is Morgan, not Jordan.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Correction: Production traffic now uses eu-west-1, not us-east-1.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "Correction: Use 4 jittered retry attempts, not 2.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}
+{"query": "The coordinator is now Morgan and not Jordan.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Remember, production routing is now eu-west-1.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "Who should own priority incidents?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Which region currently serves production traffic?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "What are the transient retry limits?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}
+{"query": "Who should own priority incidents?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Which region currently serves production traffic?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "What are the transient retry limits?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}
+{"query": "Who should own priority incidents?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Which region currently serves production traffic?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "What are the transient retry limits?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}
+{"query": "Who should own priority incidents?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Which region currently serves production traffic?", "feedback": {"reward": -1.0}, "expected_answer_fragments": ["Jordan", "us-east-1", "2 attempts"]}
+{"query": "What are the transient retry limits?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}
+{"query": "Who should own priority incidents?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["Morgan"]}
+{"query": "Which region currently serves production traffic?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["eu-west-1"]}
+{"query": "What are the transient retry limits?", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["4 attempts"]}

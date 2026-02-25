@@ -1,0 +1,10 @@
+{"query": "Resolve a production bug in the checkout path.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Troubleshoot a failing deployment and patch quickly.", "feedback": {"reward": -1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Debug a flaky test in the service health check path.", "feedback": {"reward": -1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Fix a regression in a customer-facing endpoint.", "feedback": {"reward": 0.4}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Address a production exception in background jobs.", "feedback": {"reward": 0.4}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Recover from config drift in runtime.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Handle a test-only failure before release.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Stabilize a request timeout regression.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Repair a broken startup sequence.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
+{"query": "Patch a service path after monitoring alert.", "feedback": {"reward": 1.0}, "expected_answer_fragments": ["check logs", "read config", "fix code", "run tests"]}
