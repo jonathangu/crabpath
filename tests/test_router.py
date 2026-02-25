@@ -66,7 +66,7 @@ def test_router_config_defaults():
     cfg = RouterConfig()
 
     assert cfg.model == "gpt-5-mini"
-    assert cfg.temperature == 0.2
+    assert cfg.temperature is None  # Use model default
     assert cfg.timeout_s == 8.0
     assert cfg.max_retries == 2
     assert cfg.fallback_behavior == "heuristic"
