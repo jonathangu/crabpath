@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crabpath"
-version = "0.6.0"
-description = "🦀 Neuron-inspired memory graphs for AI agents. Everything evolves into this."
+version = "1.0.0"
+description = "🦀 CrabPath: The Graph is the Prompt. LLM-guided memory traversal with learned pointer weights."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"

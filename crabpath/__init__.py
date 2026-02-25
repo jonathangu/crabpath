@@ -1,10 +1,14 @@
 """
-🦀 CrabPath — Neuron-inspired memory graphs for AI agents.
-Everything evolves into this.
+🦀 CrabPath: The Graph is the Prompt.
+
+LLM-guided memory traversal with learned pointer weights
+and corrected policy gradients.
 
 CLI:
   python -m crabpath.cli
   crabpath  # via console_scripts entry point
+
+Paper: https://jonathangu.com/crabpath/
 """
 
 __version__ = "0.4.0"
