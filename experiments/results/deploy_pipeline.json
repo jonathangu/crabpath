@@ -1,0 +1,943 @@
+{
+  "experiment": "deploy_pipeline",
+  "arms": {
+    "static": {
+      "episodes": [
+        {
+          "query": "Deploy the latest changes to production",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship the new feature",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy quickly, we need this out now",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "We need to deploy ASAP",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy this fix",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship it",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Production is down, rollback now",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": true,
+          "cumulative_correct": 0.1111111111111111
+        },
+        {
+          "query": "Deploy the new version",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.1
+        },
+        {
+          "query": "Quick deploy needed",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.09090909090909091
+        },
+        {
+          "query": "Deploy to prod",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.08333333333333333
+        },
+        {
+          "query": "Urgent hotfix for the login bug",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.07692307692307693
+        },
+        {
+          "query": "Deploy the latest",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.07142857142857142
+        },
+        {
+          "query": "Ship it fast",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.06666666666666667
+        }
+      ],
+      "avg_tokens": 525.0,
+      "accuracy": 0.06666666666666667
+    },
+    "rag": {
+      "episodes": [
+        {
+          "query": "Deploy the latest changes to production",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_prod",
+            "skip_tests",
+            "deploy_staging",
+            "rollback",
+            "hotfix",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship the new feature",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_root",
+            "check_tests",
+            "check_ci",
+            "deploy_staging",
+            "deploy_prod",
+            "rollback",
+            "skip_tests",
+            "hotfix"
+          ],
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy quickly, we need this out now",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "We need to deploy ASAP",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "skip_tests",
+            "hotfix",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy this fix",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship it",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_root",
+            "check_tests",
+            "check_ci",
+            "deploy_staging",
+            "deploy_prod",
+            "rollback",
+            "skip_tests",
+            "hotfix"
+          ],
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Production is down, rollback now",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "check_ci",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "deploy_staging",
+            "hotfix"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": true,
+          "cumulative_correct": 0.1111111111111111
+        },
+        {
+          "query": "Deploy the new version",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "rollback",
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "If deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.1
+        },
+        {
+          "query": "Quick deploy needed",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.09090909090909091
+        },
+        {
+          "query": "Deploy to prod",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback",
+            "hotfix",
+            "deploy_staging",
+            "skip_tests",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.08333333333333333
+        },
+        {
+          "query": "Urgent hotfix for the login bug",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "hotfix",
+            "deploy_root",
+            "check_tests",
+            "check_ci",
+            "deploy_staging",
+            "deploy_prod",
+            "rollback",
+            "skip_tests"
+          ],
+          "answer": "For urgent fixes: run specific test, deploy staging, verify, then prod.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.",
+          "correct": false,
+          "cumulative_correct": 0.07692307692307693
+        },
+        {
+          "query": "Deploy the latest",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "skip_tests",
+            "hotfix",
+            "deploy_prod",
+            "deploy_staging",
+            "rollback",
+            "deploy_root",
+            "check_tests",
+            "check_ci"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.",
+          "correct": false,
+          "cumulative_correct": 0.07142857142857142
+        },
+        {
+          "query": "Ship it fast",
+          "tokens_loaded": 525,
+          "nodes_loaded": 8,
+          "selected_nodes": [
+            "deploy_root",
+            "check_tests",
+            "check_ci",
+            "deploy_staging",
+            "deploy_prod",
+            "rollback",
+            "skip_tests",
+            "hotfix"
+          ],
+          "answer": "Deployment pipeline entry point\n\nRun: pytest tests/ -v. Verifies all tests pass before deployment.\n\nRun: gh run list --limit 1. Verify CI pipeline is green.\n\nRun: ssh staging cd /app && git pull && pm2 restart. Deploy to staging first.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.\n\nDeploy without running tests. DANGEROUS - can break production.\n\nFor urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.06666666666666667
+        }
+      ],
+      "avg_tokens": 525.0,
+      "accuracy": 0.06666666666666667
+    },
+    "crabpath_corrected": {
+      "episodes": [
+        {
+          "query": "Deploy the latest changes to production",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship the new feature",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy quickly, we need this out now",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "We need to deploy ASAP",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy this fix",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship it",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Production is down, rollback now",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": true,
+          "cumulative_correct": 0.1111111111111111
+        },
+        {
+          "query": "Deploy the new version",
+          "tokens_loaded": 91,
+          "nodes_loaded": 1,
+          "selected_nodes": [
+            "rollback"
+          ],
+          "visit_order": [
+            "rollback"
+          ],
+          "answer": "If deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.1
+        },
+        {
+          "query": "Quick deploy needed",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.09090909090909091
+        },
+        {
+          "query": "Deploy to prod",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.08333333333333333
+        },
+        {
+          "query": "Urgent hotfix for the login bug",
+          "tokens_loaded": 71,
+          "nodes_loaded": 1,
+          "selected_nodes": [
+            "hotfix"
+          ],
+          "visit_order": [
+            "hotfix"
+          ],
+          "answer": "For urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.07692307692307693
+        },
+        {
+          "query": "Deploy the latest",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.07142857142857142
+        },
+        {
+          "query": "Ship it fast",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.06666666666666667
+        }
+      ],
+      "avg_tokens": 199.4,
+      "accuracy": 0.06666666666666667
+    },
+    "crabpath_myopic": {
+      "episodes": [
+        {
+          "query": "Deploy the latest changes to production",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship the new feature",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy quickly, we need this out now",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "We need to deploy ASAP",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy the latest changes",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Deploy this fix",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Ship it",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.0
+        },
+        {
+          "query": "Production is down, rollback now",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": true,
+          "cumulative_correct": 0.1111111111111111
+        },
+        {
+          "query": "Deploy the new version",
+          "tokens_loaded": 91,
+          "nodes_loaded": 1,
+          "selected_nodes": [
+            "rollback"
+          ],
+          "visit_order": [
+            "rollback"
+          ],
+          "answer": "If deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.1
+        },
+        {
+          "query": "Quick deploy needed",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.09090909090909091
+        },
+        {
+          "query": "Deploy to prod",
+          "tokens_loaded": 162,
+          "nodes_loaded": 2,
+          "selected_nodes": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Run: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.08333333333333333
+        },
+        {
+          "query": "Urgent hotfix for the login bug",
+          "tokens_loaded": 71,
+          "nodes_loaded": 1,
+          "selected_nodes": [
+            "hotfix"
+          ],
+          "visit_order": [
+            "hotfix"
+          ],
+          "answer": "For urgent fixes: run specific test, deploy staging, verify, then prod.",
+          "correct": false,
+          "cumulative_correct": 0.07692307692307693
+        },
+        {
+          "query": "Deploy the latest",
+          "tokens_loaded": 225,
+          "nodes_loaded": 3,
+          "selected_nodes": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.07142857142857142
+        },
+        {
+          "query": "Ship it fast",
+          "tokens_loaded": 256,
+          "nodes_loaded": 4,
+          "selected_nodes": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "visit_order": [
+            "deploy_root",
+            "skip_tests",
+            "deploy_prod",
+            "rollback"
+          ],
+          "answer": "Deployment pipeline entry point\n\nDeploy without running tests. DANGEROUS - can break production.\n\nRun: ssh prod cd /app && git pull && pm2 restart. Deploy to production.\n\nIf deploy fails: ssh prod git checkout HEAD~1 && pm2 restart. Rollback to previous version.",
+          "correct": false,
+          "cumulative_correct": 0.06666666666666667
+        }
+      ],
+      "avg_tokens": 199.4,
+      "accuracy": 0.06666666666666667
+    }
+  }
+}
