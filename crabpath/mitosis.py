@@ -222,7 +222,13 @@ def split_with_llm(
             sections = [str(s).strip() for s in sections if str(s).strip()]
             if len(sections) >= 2:
                 return sections
-    except (json.JSONDecodeError, KeyError, TypeError, Exception):
+    except (json.JSONDecodeError, KeyError, TypeError, Exception) as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: split_with_llm failed: {exc}. Falling back to structural split.",
+            stacklevel=2,
+        )
         return _fallback_split(content)
 
     return _fallback_split(content)
@@ -256,7 +262,13 @@ def should_merge(
             merged = "\n\n".join(content for _, content in chunks)
 
         return bool(do_merge), str(reason), str(merged)
-    except (json.JSONDecodeError, KeyError, TypeError, Exception):
+    except (json.JSONDecodeError, KeyError, TypeError, Exception) as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: should_merge LLM call failed: {exc}. Falling back to not merging.",
+            stacklevel=2,
+        )
         return False, "llm_error", ""
 
 
@@ -292,7 +304,13 @@ def should_create_node(
         summary = parsed.get("summary", query[:80])
 
         return bool(do_create), str(reason), str(content), str(summary)
-    except (json.JSONDecodeError, KeyError, TypeError, Exception):
+    except (json.JSONDecodeError, KeyError, TypeError, Exception) as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: should_create_node LLM call failed: {exc}. Falling back to not creating a new node.",
+            stacklevel=2,
+        )
         return False, "llm_error", "", ""
 
 

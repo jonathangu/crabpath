@@ -65,7 +65,13 @@ def _seed_nodes_from_index(
         scores = raw_scores(query, top_k=top_k)
     except TypeError:
         scores = raw_scores(query, None, top_k=top_k)
-    except Exception:
+    except Exception as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: embedding index raw_scores failed: {exc}. Falling back to safe seed extraction.",
+            stacklevel=2,
+        )
         return []
 
     normalized: list[tuple[str, float]] = []

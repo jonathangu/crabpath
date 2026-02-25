@@ -334,6 +334,12 @@ class Router:
                 decision.raw = payload
                 return decision
             except (RouterError, Exception) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"CrabPath: Router.decide_next failed: {exc}. Falling back to heuristic routing.",
+                    stacklevel=2,
+                )
                 last_error = exc
 
         if self.config.fallback_behavior == "heuristic":
@@ -394,7 +400,13 @@ class Router:
                         selected_nodes = selected_nodes[: self.config.max_select]
                     return selected_nodes
                 return []
-            except Exception:
+            except Exception as exc:
+                import warnings
+
+                warnings.warn(
+                    f"CrabPath: select_nodes failed: {exc}. Falling back to heuristic selection.",
+                    stacklevel=2,
+                )
                 continue
 
         return self._select_fallback(query, candidates, current_node_id, graph)

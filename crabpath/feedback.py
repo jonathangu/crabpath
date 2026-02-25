@@ -158,7 +158,13 @@ def score_retrieval(
         raw = scorer(prompt, system)
     except ImportError:
         raise
-    except Exception:
+    except Exception as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: score_retrieval LLM call failed: {exc}. Falling back to default scores.",
+            stacklevel=2,
+        )
         return {"scores": default_scores, "overall": 0.0}
 
     parsed = _parse_retrieval_scores(raw)
@@ -257,13 +263,21 @@ def no_reward_on_missing_signal(
 
     if not node_scores:
         return None
-    max_score = max(_coerce_score(score) for score in node_scores)
+    coerced = [_coerce_score(s) for s in node_scores]
+    max_score = max(coerced)
+    min_score = min(coerced)
+
+    # If any node is actively harmful, return negative so RL punishes the path
+    if min_score <= -0.5:
+        return min_score
+
+    # If best node is useful, return positive
     if max_score > 0.5:
         return max_score
     if max_score >= min_helpfulness:
-        return 0.3
-    if max_score < min_helpfulness:
-        return None
+        return max_score
+
+    # No clear signal
     return None
 
 

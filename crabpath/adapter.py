@@ -154,7 +154,13 @@ class CrabPathAgent:
         try:
             self.index.build(self.graph, embed_fn, batch_size=max(1, top_k))
             self._pending_index_refresh = False
-        except Exception:
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"CrabPath: index build failed: {exc}. Falling back to best-effort behavior.",
+                stacklevel=2,
+            )
             # Keep going with best-effort behavior in constrained environments.
             self._pending_index_refresh = True
 
@@ -246,7 +252,13 @@ class CrabPathAgent:
                         embed_fn=self._embedding_fn(),
                         top_k=top_k,
                     )
-                except Exception:
+                except Exception as exc:
+                    import warnings
+
+                    warnings.warn(
+                        f"CrabPath: embedding raw score retrieval failed: {exc}. Falling back to keyword scoring.",
+                        stacklevel=2,
+                    )
                     return []
 
         return self._keyword_raw_scores(query_text, top_k=top_k)

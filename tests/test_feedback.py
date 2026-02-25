@@ -123,5 +123,12 @@ def test_no_reward_on_missing_signal() -> None:
     ) == 0.6  # max score gate on best chunk
     assert no_reward_on_missing_signal(
         correction=0.0, retrieval_helpfulness=0.4, min_helpfulness=0.3
-    ) == 0.3  # legacy scalar input still treated as max score
+    ) == 0.4  # scalar input returns actual score when above gate
+    # Negative scores flow through
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness={"good": 1.0, "bad": -1.0}
+    ) == -1.0  # harmful node takes priority
+    assert no_reward_on_missing_signal(
+        correction=0.0, retrieval_helpfulness={"a": -0.8, "b": 0.3}
+    ) == -0.8  # harmful dominates
     assert no_reward_on_missing_signal(correction=-1.0, retrieval_helpfulness=0.9) == -1.0

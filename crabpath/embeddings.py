@@ -302,17 +302,35 @@ def auto_embed(
         try:
             return openai_embed(model=openai_model)
         except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"CrabPath: OpenAI embedding provider failed: {exc}. Falling back to other providers.",
+                stacklevel=2,
+            )
             errors.append(f"OpenAI failed: {exc}")
 
     if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
         try:
             return gemini_embed(model=gemini_model)
         except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"CrabPath: Gemini embedding provider failed: {exc}. Falling back to other providers.",
+                stacklevel=2,
+            )
             errors.append(f"Gemini failed: {exc}")
 
     try:
         return ollama_embed(model=ollama_model, base_url=ollama_base_url)
     except Exception as exc:
+        import warnings
+
+        warnings.warn(
+            f"CrabPath: Ollama embedding provider failed: {exc}. Falling back to runtime error.",
+            stacklevel=2,
+        )
         errors.append(f"Ollama failed: {exc}")
 
     raise RuntimeError(
