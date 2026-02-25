@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from crabpath.router import Router, RouterConfig, RouterError
+from crabpath.graph import Graph, Node, Edge
 
 
 def test_fallback_picks_highest_weight():
@@ -152,6 +153,22 @@ def test_select_with_llm_filters_invalid_ids():
     candidates = [("node-a", 0.9, "real node")]
     selected = router.select_nodes("test", candidates)
     assert selected == ["node-a"]
+
+
+def test_select_fallback_filters_negative_edges():
+    graph = Graph()
+    graph.add_node(Node(id="current", content="Current context"))
+    graph.add_node(Node(id="avoid", content="Avoided node"))
+    graph.add_node(Node(id="safe", content="Safe node"))
+    graph.add_edge(Edge(source="current", target="avoid", weight=-0.2))
+    graph.add_edge(Edge(source="current", target="safe", weight=0.4))
+
+    router = Router()
+    candidates = [("avoid", 0.9, "should be skipped"), ("safe", 0.8, "safe pick")]
+
+    selected = router.select_nodes("query", candidates, current_node_id="current", graph=graph)
+
+    assert selected == ["safe"]
 
 
 def test_select_falls_back_on_error():

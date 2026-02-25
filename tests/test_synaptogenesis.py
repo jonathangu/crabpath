@@ -9,9 +9,11 @@ from crabpath.synaptogenesis import (
     record_cofiring,
     record_skips,
     decay_proto_edges,
+    record_correction,
     classify_tier,
     edge_tier_stats,
 )
+from crabpath.decay import apply_decay, DecayConfig
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +241,72 @@ def test_edge_tier_stats():
     assert stats["dormant"] == 1
     assert stats["habitual"] == 1
     assert stats["reflex"] == 1
+    assert stats["inhibitory"] == 0
+
+
+def test_record_correction_halves_positive_edge():
+    g = _graph_with_nodes("A", "B")
+    g.add_edge(Edge(source="A", target="B", weight=0.9))
+    config = SynaptogenesisConfig(correction_decay=0.5)
+
+    results = record_correction(g, ["A", "B"], config=config)
+
+    assert g.get_edge("A", "B").weight == pytest.approx(0.45)
+    assert results == [
+        {"source": "A", "target": "B", "before": 0.9, "after": 0.45}
+    ]
+
+
+def test_record_correction_pushes_negative_deeper():
+    g = _graph_with_nodes("A", "B")
+    g.add_edge(Edge(source="A", target="B", weight=-0.5))
+
+    results = record_correction(g, ["A", "B"])
+
+    assert g.get_edge("A", "B").weight == pytest.approx(-0.6)
+    assert len(results) == 1
+    assert results[0]["before"] == -0.5
+    assert results[0]["after"] == -0.6
+
+
+def test_record_correction_creates_negative_edge():
+    g = _graph_with_nodes("A", "B")
+
+    results = record_correction(g, ["A", "B"])
+
+    created = g.get_edge("A", "B")
+    assert created is not None
+    assert created.weight == pytest.approx(-0.15)
+    assert results[0]["before"] is None
+    assert results[0]["after"] == -0.15
+
+
+def test_record_correction_caps_at_negative_1():
+    g = _graph_with_nodes("A", "B")
+    g.add_edge(Edge(source="A", target="B", weight=-0.95))
+
+    results = record_correction(g, ["A", "B"])
+
+    assert g.get_edge("A", "B").weight == pytest.approx(-1.0)
+    assert results[0]["after"] == -1.0
+
+
+def test_classify_tier_inhibitory():
+    config = SynaptogenesisConfig()
+    assert classify_tier(-0.01, config) == "inhibitory"
+    assert classify_tier(-0.3, config) == "inhibitory"
+    assert classify_tier(0.0, config) == "dormant"
+
+
+def test_negative_edge_decays_toward_zero():
+    g = _graph_with_nodes("A", "B")
+    g.add_edge(Edge(source="A", target="B", weight=-0.4))
+    config = DecayConfig(half_life_turns=1)
+
+    changed = apply_decay(g, 1, config)
+
+    assert changed == {"A->B": -0.2}
+    assert g.get_edge("A", "B").weight == pytest.approx(-0.2)
 
 
 # ---------------------------------------------------------------------------

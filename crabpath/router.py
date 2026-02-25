@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from .graph import Graph
 from ._structural_utils import parse_markdown_json
 
 
@@ -345,12 +346,17 @@ class Router:
         self,
         query: str,
         candidates: list[tuple[str, float, str]],
+        current_node_id: str | None = None,
+        graph: Graph | None = None,
     ) -> list[str]:
         """Select 0, 1, or N nodes relevant to a query. LLM decides.
 
         Args:
             query: The user query.
             candidates: List of (node_id, score, summary) tuples.
+            current_node_id: Optional current context node (used to avoid candidates
+                with inhibitory edges from it.
+            graph: Optional graph for current-context edge checks.
 
         Returns:
             List of selected node_ids (may be empty).
@@ -359,10 +365,11 @@ class Router:
             return []
 
         if not self.client or self.config.fallback_behavior == "heuristic":
-            return self._select_fallback(query, candidates)
+            return self._select_fallback(query, candidates, current_node_id, graph)
 
         candidate_lines = "\n".join(
-            f"→ {nid} ({score:.2f}): {summary[:100]}" for nid, score, summary in candidates
+            f"→ {'AVOID: ' if score < 0 else ''}{nid} ({score:.2f}): {summary[:100]}"
+            for nid, score, summary in candidates
         )
         user_msg = f"Query: {query}\n\nCandidates:\n{candidate_lines}"
 
@@ -384,16 +391,27 @@ class Router:
             except Exception:
                 continue
 
-        return self._select_fallback(query, candidates)
+        return self._select_fallback(query, candidates, current_node_id, graph)
 
     def _select_fallback(
         self,
         query: str,
         candidates: list[tuple[str, float, str]],
+        current_node_id: str | None = None,
+        graph: Graph | None = None,
     ) -> list[str]:
         """Heuristic fallback: select top candidates by score."""
         if not candidates:
             return []
+
+        if current_node_id and graph is not None:
+            filtered_candidates: list[tuple[str, float, str]] = []
+            for node_id, score, summary in candidates:
+                edge = graph.get_edge(current_node_id, node_id)
+                if edge is not None and edge.weight < 0:
+                    continue
+                filtered_candidates.append((node_id, score, summary))
+            candidates = filtered_candidates
 
         # Trivial query detection
         trivial = {"hello", "hi", "thanks", "yes", "no", "ok", "sure", "yeah", "bye"}

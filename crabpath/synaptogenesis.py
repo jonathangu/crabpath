@@ -58,6 +58,10 @@ class SynaptogenesisConfig(ConfigBase):
     max_outgoing: int = 20  # Max outgoing edges per node
     min_edge_weight: float = 0.05  # Below this, edge dies
 
+    # Correction
+    negative_cap: float = -1.0  # Never let inhibitory edges drop below this
+    correction_decay: float = 0.5  # How much to halve positive edges on correction
+
     # Tiers
     dormant_threshold: float = 0.3  # Below = dormant (invisible to router)
     reflex_threshold: float = 0.8  # Above = reflex (auto-follow)
@@ -251,6 +255,69 @@ def record_skips(
     return penalized
 
 
+def record_correction(
+    graph: Graph,
+    trajectory: list[str],
+    reward: float = -1.0,
+    config: SynaptogenesisConfig | None = None,
+) -> list[dict[str, float | str | None]]:
+    """Apply inhibitory correction along a traversed trajectory.
+
+    Args:
+        graph: The graph to mutate.
+        trajectory: Ordered node IDs that were traversed.
+        reward: Only negative rewards apply correction.
+        config: Config.
+
+    Returns:
+        List of modified edges with before/after weights.
+    """
+    if reward >= 0.0:
+        return []
+
+    config = config or SynaptogenesisConfig()
+    modified: list[dict[str, float | str | None]] = []
+
+    if len(trajectory) < 2:
+        return modified
+
+    for source, target in zip(trajectory, trajectory[1:]):
+        existing = graph.get_edge(source, target)
+        if existing is not None:
+            before = existing.weight
+            if existing.weight > 0:
+                existing.weight = existing.weight * config.correction_decay
+            else:
+                existing.weight = max(existing.weight - 0.1, config.negative_cap)
+            after = existing.weight
+            if after != before:
+                modified.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        "before": before,
+                        "after": after,
+                    }
+                )
+            continue
+
+        before = None
+        new_edge = Edge(source=source, target=target, weight=-0.15, created_by="auto")
+        _add_edge_with_competition(graph, new_edge, config)
+        added = graph.get_edge(source, target)
+        if added is not None:
+            modified.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "before": before,
+                    "after": added.weight,
+                }
+            )
+
+    return modified
+
+
 def decay_proto_edges(
     state: SynaptogenesisState,
     config: SynaptogenesisConfig | None = None,
@@ -304,6 +371,8 @@ def _add_edge_with_competition(
 def classify_tier(weight: float, config: SynaptogenesisConfig | None = None) -> str:
     """Classify an edge weight into a tier."""
     config = config or SynaptogenesisConfig()
+    if weight < 0:
+        return "inhibitory"
     return classify_edge_tier(
         weight,
         dormant_threshold=config.dormant_threshold,
@@ -319,7 +388,7 @@ def classify_tier(weight: float, config: SynaptogenesisConfig | None = None) -> 
 def edge_tier_stats(graph: Graph, config: SynaptogenesisConfig | None = None) -> dict[str, int]:
     """Count edges in each tier."""
     config = config or SynaptogenesisConfig()
-    stats = {"reflex": 0, "habitual": 0, "dormant": 0}
+    stats = {"reflex": 0, "habitual": 0, "dormant": 0, "inhibitory": 0}
     for edge in graph.edges():
         tier = classify_tier(edge.weight, config)
         stats[tier] += 1
