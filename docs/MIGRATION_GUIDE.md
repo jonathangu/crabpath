@@ -4,54 +4,66 @@
 
 Current agent prompts load workspace instruction files (`AGENTS.md`, `MEMORY.md`, `TOOLS.md`, `USER.md`, etc.) into every turn.
 
-These files often contain 30K+ chars.
+A typical workspace has 30K+ chars of static context. You pay the full token cost even when only one section is relevant. Every gate, every rule, every fact — loaded every turn.
 
-You pay the full parse cost even when only one section is relevant.
+## Phase 1: Shadow mode
 
-You also keep irrelevant rules, obsolete context, and duplicate statements in the active context every turn.
+Run CrabPath in parallel with your existing static files. Change nothing. Add one instruction to your agent:
 
-CrabPath moves this into a retrieval graph:
+> Before answering non-trivial questions, also query CrabPath and read the fired nodes as supplementary context.
 
-- split workspace text into typed nodes
-- keep only nodes needed for the current task
-- learn edge weights from outcomes instead of rereading everything
+The agent still has its normal files. CrabPath runs alongside. You compare what CrabPath surfaces vs what the agent actually needed. Log everything.
 
-## The conversion
+No risk. If CrabPath fires irrelevant nodes, ignore them. If it fires useful nodes the agent would have missed, that is the value.
 
-Treat every workspace heading section as a node.
+```bash
+# Bootstrap your workspace into a CrabPath graph
+python3 scripts/bootstrap_from_workspace.py /path/to/workspace --output graph.json
 
-Each `##` and `###` block becomes one node.
+# Build embeddings (requires OPENAI_API_KEY)
+python3 -c "
+from crabpath import Graph, EmbeddingIndex, openai_embed
+g = Graph.load('graph.json')
+idx = EmbeddingIndex()
+idx.build(g, openai_embed())
+idx.save('embeddings.json')
+"
+```
 
-Node type rules:
+Run this once. The graph and embeddings persist on disk.
 
-- headings that contain a rule, constraint, or prohibition become `guardrail`
-- headings that encode procedural steps become `procedure`
-- headings with explicit tool usage become `tool_call`
-- everything else becomes `fact`
+## Phase 2: Reduce static files
 
-For each file, add edges between neighboring sections in the same order.
+Once CrabPath consistently fires the right nodes, start trimming your workspace files:
 
-Create cross-file edges when one section text mentions another section heading.
+| File | What moves to CrabPath | What stays |
+|------|----------------------|------------|
+| TOOLS.md | Codex workflow, model strategy, scripts | Nothing — all becomes nodes |
+| MEMORY.md | Projects, people, cron jobs, learnings | Nothing — all becomes nodes |
+| AGENTS.md | Procedures, gates, hygiene rules | Nothing — all becomes nodes |
+| USER.md | Facts about the user | Nothing — all becomes nodes |
+| SOUL.md | — | **Stays static** |
+| Safety rules | — | **Stays static** |
 
-This is strict string-match at bootstrap time.
+Each section heading becomes a node. Cross-references become edges. The bootstrap script handles this automatically.
 
-## Warm start weights
+## Phase 3: Keep only the soul
 
-Every new node starts with `0.5`.
+What stays static forever:
 
-Increase weight for:
+- **SOUL.md** — identity, values, voice. This is who the agent is, not what it knows. Always needed.
+- **Hard safety rules** — the "never" rules (no credentials on remote, no destructive commands). These must fire every turn.
+- **Session context** — inbound metadata, channel info. Changes every message.
 
-- sections that are frequently referenced by other sections
-- gates/procedures with high fire counts from historical correction logs
+Everything else is in the graph.
 
-Edges are initialized as:
+```
+Before:  SOUL (5.7K) + AGENTS (8.9K) + TOOLS (9.8K) + USER (2.6K) + MEMORY (3.7K) = 30.7K chars/turn
+After:   SOUL (5.7K) + safety (1K) + CrabPath (~2K) = 8.7K chars/turn
+Savings: 72% fewer tokens every turn
+```
 
-- `0.6` for same-file neighbor edges
-- `0.4` for cross-file heading-reference edges
-
-## Bootstrap script
-
-Use:
+## The bootstrap script
 
 ```bash
 python3 scripts/bootstrap_from_workspace.py /path/to/workspace --output graph.json
@@ -60,29 +72,27 @@ python3 scripts/bootstrap_from_workspace.py /path/to/workspace --output graph.js
 The script:
 
 - reads all `.md` files under the workspace
-- splits by `##`/`###` headings
-- classifies each node type by text heuristics
-- creates same-file edges at `0.6`
-- creates cross-file reference edges at `0.4`
+- splits by `##`/`###` headings into nodes
+- classifies each node type by text heuristics:
+  - contains `Run:` or tool commands → `tool_call`
+  - contains `never`, `always`, `must`, `do not` → `guardrail`
+  - contains numbered steps → `procedure`
+  - everything else → `fact`
+- creates same-file edges at weight `0.6`
+- creates cross-file reference edges at weight `0.4`
 - writes a CrabPath graph JSON
 - prints conversion stats
 
-## What stays static
+## Warm start weights
 
-Do not put these into the graph:
-
-- core identity block (the first paragraph of `SOUL.md`)  
-- hard safety policy text that never changes by turn
-- current user context and session state
-
-Keep those outside graph context and inject separately as hardcoded context.
+Every new node starts at `0.5`. The bootstrap script increases weight for sections that are frequently referenced by other sections. Over time, CrabPath's learning adjusts these weights from feedback.
 
 ## Expected results
 
-On large workspaces:
+On a real production workspace (181 files, 3,667 nodes):
 
-- 32K chars static context shrinks toward 300-500 chars per turn
-- token spend reduction in the 95-99% range versus raw workspace replay
-- corrected behavior propagates by edge weight updates without manual file rewrites
+- Static context: 1,656,670 chars loaded every turn
+- CrabPath: ~1,500-2,000 chars loaded per turn (4-8 nodes)
+- Reduction: 99.9%
 
-The practical effect is lower context cost and faster convergence on active workspace policy.
+Corrections propagate by edge weight updates. No manual file editing needed.
