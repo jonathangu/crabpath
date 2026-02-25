@@ -7,6 +7,7 @@ from crabpath.autotune import (
     HEALTH_TARGETS,
     Adjustment,
     measure_health,
+    compute_window_stats,
     autotune,
     apply_adjustments,
     self_tune,
@@ -96,6 +97,30 @@ def test_measure_health_uses_graph_state_and_query_stats():
     assert health.proto_promotion_rate == 10.0
     assert health.reconvergence_rate == 50.0
     assert health.orphan_nodes == 0
+
+
+def test_compute_window_stats_tracks_last_fired_counts_and_delta_totals():
+    current_stats = {
+        "fired_counts": [1, 2, 3, 4],
+        "context_chars": [10, 20, 30, 40],
+        "promotions": 12,
+        "proto_created": 25,
+    }
+    snapshot = {
+        "fired_counts": [1, 2],
+        "context_chars": [10, 20],
+        "promotions": 5,
+        "proto_created": 10,
+    }
+
+    window_stats = compute_window_stats(current_stats, snapshot)
+
+    assert window_stats["fired_counts"] == [3, 4]
+    assert window_stats["context_chars"] == [30, 40]
+    assert window_stats["total_promotions"] == 7
+    assert window_stats["promotions"] == 7
+    assert window_stats["total_protos_created"] == 15
+    assert window_stats["proto_created"] == 15
 
 
 def test_autotune_for_avg_nodes_recommendations():
@@ -284,6 +309,153 @@ def test_apply_adjustments_enforces_bounds_and_limit():
     assert changes["promotion_threshold"]["bounded"] is True
     assert changes["hebbian_increment"]["bounded"] is True
 
+
+def test_self_tune_uses_windowed_stats_and_tracks_snapshot(monkeypatch):
+    graph = Graph()
+    graph.add_node(Node(id="file::a", content="alpha"))
+    graph.add_node(Node(id="file::b", content="beta"))
+    syn_config = SynaptogenesisConfig(
+        promotion_threshold=4,
+        hebbian_increment=0.06,
+    )
+    decay_config = DecayConfig(half_life_turns=40)
+    mitosis_config = MitosisConfig()
+    history = TuneHistory()
+
+    capture: list[dict[str, object]] = []
+
+    def fake_measure(*_args, **_kwargs):
+        capture.append(_kwargs.get("query_stats", _args[2]))
+        return GraphHealth(
+            avg_nodes_fired_per_query=10.0,
+            cross_file_edge_pct=1.0,
+            dormant_pct=50.0,
+            reflex_pct=8.0,
+            context_compression=0.0,
+            proto_promotion_rate=1.0,
+            reconvergence_rate=0.0,
+            orphan_nodes=0,
+        )
+
+    import importlib
+
+    autotune_module = importlib.import_module("crabpath.autotune")
+    monkeypatch.setattr(autotune_module, "measure_health", fake_measure)
+    monkeypatch.setattr(autotune_module, "autotune", lambda *_args, **_kwargs: [])
+
+    self_tune(
+        graph,
+        MitosisState(),
+        {
+            "fired_counts": [1, 2],
+            "context_chars": [10, 20],
+            "promotions": 5,
+            "proto_created": 10,
+        },
+        syn_config,
+        decay_config,
+        mitosis_config,
+        cycle_number=1,
+        tune_history=history,
+    )
+    self_tune(
+        graph,
+        MitosisState(),
+        {
+            "fired_counts": [1, 2, 3, 4],
+            "context_chars": [10, 20, 30, 40],
+            "promotions": 12,
+            "proto_created": 25,
+        },
+        syn_config,
+        decay_config,
+        mitosis_config,
+        cycle_number=2,
+        tune_history=history,
+    )
+
+    assert len(capture) == 2
+    assert capture[0] == {
+        "fired_counts": [1, 2],
+        "context_chars": [10, 20],
+        "promotions": 5,
+        "proto_created": 10,
+    }
+    assert capture[1] == {
+        "fired_counts": [3, 4],
+        "context_chars": [30, 40],
+        "promotions": 7,
+        "total_promotions": 7,
+        "proto_created": 15,
+        "total_protos_created": 15,
+    }
+
+
+def test_self_tune_applies_one_adjustment_with_meta_learning(monkeypatch):
+    graph = Graph()
+    graph.add_node(Node(id="file::a", content="alpha"))
+    graph.add_node(Node(id="file::b", content="beta"))
+    syn_config = SynaptogenesisConfig(
+        promotion_threshold=4,
+        hebbian_increment=0.06,
+    )
+    decay_config = DecayConfig(half_life_turns=80)
+    mitosis_config = MitosisConfig()
+    memory = TuneMemory()
+
+    def fake_autotune(*_args, **_kwargs):
+        return [
+            Adjustment(
+                metric="avg_nodes_fired_per_query",
+                current=10.0,
+                target_range=HEALTH_TARGETS["avg_nodes_fired_per_query"],
+                suggested_change={"decay_half_life": "decrease", "promotion_threshold": "decrease"},
+                reason="high spread",
+            ),
+            Adjustment(
+                metric="cross_file_edge_pct",
+                current=1.0,
+                target_range=HEALTH_TARGETS["cross_file_edge_pct"],
+                suggested_change={"promotion_threshold": "decrease"},
+                reason="cross-file too low",
+            ),
+            Adjustment(
+                metric="reflex_pct",
+                current=8.0,
+                target_range=HEALTH_TARGETS["reflex_pct"],
+                suggested_change={"hebbian_increment": "increase"},
+                reason="too many reflex",
+            ),
+        ]
+
+    import importlib
+
+    autotune_module = importlib.import_module("crabpath.autotune")
+    monkeypatch.setattr(autotune_module, "measure_health", lambda *_args, **_kwargs: GraphHealth(
+        avg_nodes_fired_per_query=10.0,
+        cross_file_edge_pct=1.0,
+        dormant_pct=50.0,
+        reflex_pct=8.0,
+        context_compression=0.0,
+        proto_promotion_rate=1.0,
+        reconvergence_rate=0.0,
+        orphan_nodes=0,
+    ))
+    monkeypatch.setattr(autotune_module, "autotune", fake_autotune)
+
+    _, _, changes = self_tune(
+        graph,
+        MitosisState(),
+        {"fired_counts": [3, 4]},
+        syn_config,
+        decay_config,
+        mitosis_config,
+        cycle_number=1,
+        tune_memory=memory,
+        tune_history=TuneHistory(),
+    )
+
+    assert list(changes.keys()) == ["decay_half_life"]
 
 def test_validate_config_bounds():
     syn_config = SynaptogenesisConfig(

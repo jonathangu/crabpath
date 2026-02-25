@@ -45,7 +45,7 @@ from .decay import DecayConfig, apply_decay
 @dataclass
 class SimConfig(ConfigBase):
     decay_interval: int = 5  # Decay every N queries
-    maintenance_interval: int = 25  # Merge/split check every N queries
+    maintenance_interval: int = 10  # Merge/split check every N queries
     proto_decay_interval: int = 5  # Decay proto-edges every N queries
     decay_half_life: int = 80  # Turns for edge weight to halve
 

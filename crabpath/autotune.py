@@ -100,6 +100,7 @@ class TuneHistory:
     records: list[TuneHistoryRecord] = field(default_factory=list)
     pending: list[TuneHistoryRecord] = field(default_factory=list)
     previous_config: dict[str, float | int] | None = None
+    query_stats_snapshot: dict[str, Any] = field(default_factory=dict)
 
     def record_adjustments(
         self,
@@ -494,6 +495,74 @@ def _sum_query_value(query_stats: dict[str, Any], keys: list[str], *, default: i
     return _coerce_int(value, default)
 
 
+def compute_window_stats(
+    current_stats: dict[str, Any],
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a delta stats dict representing query activity since the snapshot."""
+    snapshot = snapshot or {}
+
+    windowed: dict[str, Any] = {}
+    for key, value in current_stats.items():
+        if isinstance(value, list):
+            prior = snapshot.get(key)
+            if isinstance(prior, (list, tuple)):
+                if len(value) >= len(prior):
+                    windowed[key] = list(value[len(prior):])
+                else:
+                    windowed[key] = list(value)
+            else:
+                windowed[key] = list(value)
+        elif isinstance(value, tuple):
+            prior = snapshot.get(key)
+            if isinstance(prior, (list, tuple)):
+                if len(value) >= len(prior):
+                    windowed[key] = list(value[len(prior):])
+                else:
+                    windowed[key] = list(value)
+            else:
+                windowed[key] = list(value)
+        elif isinstance(value, dict):
+            windowed[key] = dict(value)
+        else:
+            windowed[key] = value
+
+    current_promotions = _sum_query_value(
+        current_stats,
+        ["promotions", "total_promotions", "promoted", "promoted_count"],
+        default=0,
+    )
+    snapshot_promotions = _sum_query_value(
+        snapshot,
+        ["promotions", "total_promotions", "promoted", "promoted_count"],
+        default=0,
+    )
+    total_promotions = current_promotions - snapshot_promotions
+    if any(key in current_stats or key in snapshot for key in ["promotions", "total_promotions", "promoted", "promoted_count"]):
+        windowed["promotions"] = max(0, total_promotions)
+        windowed["total_promotions"] = max(0, total_promotions)
+
+    current_protos_created = _sum_query_value(
+        current_stats,
+        ["proto_created", "total_protos_created", "proto_creations", "created"],
+        default=0,
+    )
+    snapshot_protos_created = _sum_query_value(
+        snapshot,
+        ["proto_created", "total_protos_created", "proto_creations", "created"],
+        default=0,
+    )
+    total_protos_created = current_protos_created - snapshot_protos_created
+    if any(
+        key in current_stats or key in snapshot
+        for key in ["proto_created", "total_protos_created", "proto_creations", "created"]
+    ):
+        windowed["proto_created"] = max(0, total_protos_created)
+        windowed["total_protos_created"] = max(0, total_protos_created)
+
+    return windowed
+
+
 def _average_context_chars(query_stats: dict[str, Any]) -> float:
     total = query_stats.get("context_chars")
     if total is None:
@@ -517,6 +586,20 @@ def _average_context_chars(query_stats: dict[str, Any]) -> float:
         return total_f / queries
 
     return total_f
+
+
+def _clone_query_stats(query_stats: dict[str, Any]) -> dict[str, Any]:
+    cloned: dict[str, Any] = {}
+    for key, value in query_stats.items():
+        if isinstance(value, list):
+            cloned[key] = list(value)
+        elif isinstance(value, tuple):
+            cloned[key] = tuple(value)
+        elif isinstance(value, dict):
+            cloned[key] = dict(value)
+        else:
+            cloned[key] = value
+    return cloned
 
 
 def _orphan_nodes(graph: Graph) -> int:
@@ -1046,7 +1129,15 @@ def self_tune(
     if tune_history is None:
         tune_history = TuneHistory()
 
-    health = measure_health(graph, state, query_stats)
+    if tune_history.query_stats_snapshot:
+        window_query_stats = compute_window_stats(
+            query_stats,
+            tune_history.query_stats_snapshot,
+        )
+    else:
+        window_query_stats = query_stats
+
+    health = measure_health(graph, state, window_query_stats)
 
     previous_config = _snapshot_tune_config(syn_config, decay_config)
     if tune_history.pending:
@@ -1061,6 +1152,7 @@ def self_tune(
 
     adjustments = autotune(graph, health)
     adjustments = _filter_adjustments(adjustments, tune_memory)
+    effective_max = 1 if tune_memory is not None else safety_bounds.max_adjustments_per_cycle
     changes = apply_adjustments(
         adjustments,
         syn_config,
@@ -1068,9 +1160,23 @@ def self_tune(
         mitosis_config,
         last_adjusted=last_adjusted,
         cycle_number=cycle_number,
-        safety_bounds=safety_bounds,
+        safety_bounds=SafetyBounds(
+            min_decay_half_life=safety_bounds.min_decay_half_life,
+            max_decay_half_life=safety_bounds.max_decay_half_life,
+            min_promotion_threshold=safety_bounds.min_promotion_threshold,
+            max_promotion_threshold=safety_bounds.max_promotion_threshold,
+            min_hebbian_increment=safety_bounds.min_hebbian_increment,
+            max_hebbian_increment=safety_bounds.max_hebbian_increment,
+            min_helpfulness_gate=safety_bounds.min_helpfulness_gate,
+            max_helpfulness_gate=safety_bounds.max_helpfulness_gate,
+            min_harmful_reward_threshold=safety_bounds.min_harmful_reward_threshold,
+            max_harmful_reward_threshold=safety_bounds.max_harmful_reward_threshold,
+            max_adjustments_per_cycle=effective_max,
+            revert_threshold=safety_bounds.revert_threshold,
+        ),
     )
     tune_history.previous_config = previous_config
+    tune_history.query_stats_snapshot = _clone_query_stats(query_stats)
     tune_history.record_adjustments(cycle_number, health, adjustments, changes)
 
     return health, adjustments, changes
