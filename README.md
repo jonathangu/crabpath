@@ -82,6 +82,76 @@ python -m crabpath.cli consolidate --graph crabpath_graph.json --min-weight 0.05
 {"ok":true,"pruned_edges":12,"pruned_nodes":3}
 ```
 
+```bash
+crabpath migrate --workspace ~/.openclaw/workspace --session-logs session.jsonl --output-graph graph.json --output-embeddings embed.json
+```
+
+```json
+{"ok":true,"graph_path":"graph.json","embeddings_path":"embed.json","info":{...}}
+```
+
+```bash
+crabpath split --graph graph.json --node-id tools --save
+```
+
+```json
+{"ok":true,"action":"split","node_id":"tools","chunk_ids":["tools:chunk-1","tools:chunk-2"],"chunk_count":2}
+```
+
+```bash
+crabpath sim --queries 200 --output results.json
+```
+
+```json
+{"ok":true,"queries":200,"result":{"final":{"nodes":1234}}}
+```
+
+## MCP Server
+
+`crabpath/mcp_server.py` runs an stdio MCP server:
+
+```bash
+python -m crabpath.mcp_server
+```
+
+Supported tools:
+- `query`
+- `migrate`
+- `learn`
+- `stats`
+- `split`
+- `add`
+- `remove`
+- `consolidate`
+
+## OpenAI Tools
+
+`tools/openai-tools.json` contains OpenAI function-calling definitions for agent integrations.
+
+```python
+import json
+from pathlib import Path
+
+openai_tools = json.loads(Path("tools/openai-tools.json").read_text())["tools"]
+print([tool["function"]["name"] for tool in openai_tools])
+```
+
+## OpenAPI
+
+`tools/openapi.yaml` documents the REST API.
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"deploy","graph":"graph.json","top":8}'
+```
+
+```bash
+curl -X POST http://localhost:8000/sim \
+  -H "Content-Type: application/json" \
+  -d '{"queries":200,"output":"results.json"}'
+```
+
 ## OpenClaw Integration
 
 Phase 1 adds `OpenClawCrabPathAdapter`, a small wrapper for
@@ -141,6 +211,31 @@ graph = Graph.load("/path/to/crabpath_graph.json")
 print(f"nodes={graph.node_count}, edges={graph.edge_count}")
 ```
 
+## Migration & Replay
+
+Developer flow for pre-warming:
+
+1. Install `crabpath`.
+2. Point at workspace files (`~/.openclaw/workspace`).
+3. Optionally pass session logs.
+4. Receive a pre-warmed graph immediately.
+
+```python
+from pathlib import Path
+from crabpath.migrate import migrate
+
+graph, info = migrate(
+    workspace_dir=Path("~/.openclaw/workspace").expanduser(),
+    session_logs=["session.jsonl"],  # optional
+)
+graph.save("graph.json")
+print(info["nodes"], info["edges"])
+```
+
+```bash
+crabpath migrate --workspace ~/.openclaw/workspace --session-logs session.jsonl --output-graph graph.json --output-embeddings embed.json
+```
+
 ## Quick Start
 
 ```python
@@ -173,6 +268,20 @@ learn(g, result, outcome=1.0)
 g.save("memory.json")
 g = Graph.load("memory.json")
 ```
+
+## Synaptogenesis
+
+Synaptogenesis is the edge-formation layer in CrabPath:
+
+- **Proto-edges** are provisional links created when nodes co-fire before promotion.
+- **Promotion** turns qualified proto-edges into real edges, with initial causal or co-fire weight.
+- **Hebbian reinforcement** strengthens existing co-fired edges (`+`).
+- **Skip penalty** (`×0.9`) weakens edges that are repeatedly bypassed.
+- **Tiers** split routing pressure:
+  - `dormant` (`< 0.3`, invisible routing)
+  - `habitual` (`0.3`–`0.8`, model-assisted routing)
+  - `reflex` (`> 0.8`, auto-follow)
+- Prolonged inactivity/low credit decays and removes weak structure.
 
 ## How Activation Works
 

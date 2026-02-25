@@ -250,10 +250,20 @@ def cmd_migrate(args: argparse.Namespace) -> dict[str, Any]:
         include_memory=args.include_memory,
         include_docs=args.include_docs,
     )
+    embed_fn = _safe_openai_embed_fn()
+    embeddings_index = EmbeddingIndex()
+    embed_callback = None
+    if args.output_embeddings is not None and embed_fn is not None:
+        embeddings_index = _load_index(args.output_embeddings)
+
+        def embed_callback(node_id: str, content: str) -> None:
+            embeddings_index.upsert(node_id, content, embed_fn=embed_fn)
+
     graph, info = migrate(
         workspace_dir=args.workspace,
         session_logs=args.session_logs or None,
         config=config,
+        embed_callback=embed_callback,
         verbose=False,
     )
     if "states" in info:
@@ -265,7 +275,10 @@ def cmd_migrate(args: argparse.Namespace) -> dict[str, Any]:
 
     embeddings_path = args.output_embeddings
     if embeddings_path:
-        EmbeddingIndex().save(embeddings_path)
+        if embed_callback is not None:
+            embeddings_index.save(embeddings_path)
+        else:
+            EmbeddingIndex().save(embeddings_path)
 
     return {
         "ok": True,
@@ -331,12 +344,20 @@ def cmd_consolidate(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_split_node(args: argparse.Namespace) -> dict[str, Any]:
     graph = _load_graph(args.graph)
     state = MitosisState()
+    index = _load_index(args.index)
+    embed_fn = _safe_openai_embed_fn()
+    embed_callback = None
+    if embed_fn is not None:
+        def embed_callback(node_id: str, content: str) -> None:
+            index.upsert(node_id, content, embed_fn=embed_fn)
+
     result = split_node(
         graph,
         node_id=args.node_id,
         llm_call=fallback_llm_split,
         state=state,
         config=MitosisConfig(),
+        embed_callback=embed_callback,
     )
 
     if result is None:
@@ -344,6 +365,8 @@ def cmd_split_node(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.save:
         graph.save(args.graph)
+        if embed_callback is not None:
+            index.save(args.index)
 
     return {
         "ok": True,
@@ -431,6 +454,7 @@ def _build_parser() -> JSONArgumentParser:
 
     split = subparsers.add_parser("split", help="Split a node into coherent chunks")
     split.add_argument("--graph", default=DEFAULT_GRAPH_PATH)
+    split.add_argument("--index", default=DEFAULT_INDEX_PATH)
     split.add_argument("--node-id", required=True, dest="node_id")
     split.add_argument("--save", action="store_true")
     split.set_defaults(func=cmd_split_node)

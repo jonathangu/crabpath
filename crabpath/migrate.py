@@ -316,6 +316,7 @@ def migrate(
     router_fn: Callable | None = None,
     config: MigrateConfig | None = None,
     verbose: bool = False,
+    embed_callback: Callable[[str, str], None] | None = None,
 ) -> tuple[Graph, dict[str, Any]]:
     """Migrate a workspace to CrabPath.
 
@@ -352,7 +353,18 @@ def migrate(
     mit_config = config.mitosis_config or MitosisConfig(sibling_weight=0.65)
     syn_state = SynaptogenesisState()
 
-    results = bootstrap_workspace(graph, files, llm, mit_state, mit_config)
+    results = bootstrap_workspace(
+        graph,
+        files,
+        llm,
+        mit_state,
+        mit_config,
+        embed_callback=embed_callback,
+    )
+
+    if embed_callback is not None:
+        for node in graph.nodes():
+            embed_callback(node.id, node.content)
 
     bootstrap_info = {
         "files": len(files),

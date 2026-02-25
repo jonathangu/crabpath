@@ -339,6 +339,7 @@ def split_node(
     llm_call: Callable[[str, str], str],
     state: MitosisState,
     config: MitosisConfig | None = None,
+    embed_callback: Callable[[str, str], None] | None = None,
 ) -> SplitResult | None:
     """Split a node into coherent sections using the cheap LLM.
 
@@ -383,6 +384,8 @@ def split_node(
             chunk_node.metadata["protected"] = True
 
         graph.add_node(chunk_node)
+        if embed_callback is not None:
+            embed_callback(chunk_id, section_content)
         chunk_ids.append(chunk_id)
 
     # Sibling edges (all-to-all at weight 1.0)
@@ -479,6 +482,7 @@ def merge_nodes(
     llm_call: Callable[[str, str], str],
     state: MitosisState,
     config: MitosisConfig | None = None,
+    embed_callback: Callable[[str, str], None] | None = None,
 ) -> MergeResult | None:
     """Ask the LLM if co-firing chunks should merge. If yes, merge them.
 
@@ -535,6 +539,8 @@ def merge_nodes(
 
     graph.add_node(merged_node)
     state.families.pop(parent_id, None)
+    if embed_callback is not None:
+        embed_callback(parent_id, merged_content)
 
     return MergeResult(
         merged_id=parent_id,
@@ -609,6 +615,7 @@ def bootstrap_workspace(
     llm_call: Callable[[str, str], str],
     state: MitosisState,
     config: MitosisConfig | None = None,
+    embed_callback: Callable[[str, str], None] | None = None,
 ) -> list[SplitResult]:
     """Bootstrap CrabPath from workspace files.
 
@@ -635,7 +642,14 @@ def bootstrap_workspace(
         )
         graph.add_node(file_node)
 
-        result = split_node(graph, file_id, llm_call, state, config)
+        result = split_node(
+            graph,
+            file_id,
+            llm_call,
+            state,
+            config,
+            embed_callback=embed_callback,
+        )
         if result:
             results.append(result)
 
@@ -651,6 +665,7 @@ def mitosis_maintenance(
     llm_call: Callable[[str, str], str],
     state: MitosisState,
     config: MitosisConfig | None = None,
+    embed_callback: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the full maintenance cycle. One cheap LLM does everything.
 
@@ -668,7 +683,15 @@ def mitosis_maintenance(
     # 1. Find co-firing families and ask LLM about merging
     co_firing = find_co_firing_families(graph, state)
     for parent_id, chunk_ids in co_firing:
-        merge_result = merge_nodes(graph, parent_id, chunk_ids, llm_call, state, config)
+        merge_result = merge_nodes(
+            graph,
+            parent_id,
+            chunk_ids,
+            llm_call,
+            state,
+            config,
+            embed_callback=embed_callback,
+        )
         if merge_result:
             merges.append(merge_result)
 
@@ -676,7 +699,12 @@ def mitosis_maintenance(
             merged_node = graph.get_node(merge_result.merged_id)
             if merged_node and len(merged_node.content) >= config.min_content_chars:
                 split_result = split_node(
-                    graph, merge_result.merged_id, llm_call, state, config
+                    graph,
+                    merge_result.merged_id,
+                    llm_call,
+                    state,
+                    config,
+                    embed_callback=embed_callback,
                 )
                 if split_result:
                     splits.append(split_result)
@@ -693,7 +721,14 @@ def mitosis_maintenance(
             continue  # Is a tracked parent
         if len(node.content) >= config.min_content_chars * 3:
             # Big standalone node — ask LLM to split
-            split_result = split_node(graph, node.id, llm_call, state, config)
+            split_result = split_node(
+                graph,
+                node.id,
+                llm_call,
+                state,
+                config,
+                embed_callback=embed_callback,
+            )
             if split_result:
                 splits.append(split_result)
 
