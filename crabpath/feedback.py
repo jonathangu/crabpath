@@ -122,7 +122,7 @@ def score_retrieval(
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            temperature=1,  # gpt-5-mini only supports temperature=1
+
             response_format={"type": "json_object"},
             timeout=DEFAULT_OPENAI_TIMEOUT,
         )
