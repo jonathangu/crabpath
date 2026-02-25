@@ -37,6 +37,15 @@ from .synaptogenesis import (
     classify_tier,
     edge_tier_stats,
 )
+from .autotune import (
+    DEFAULTS,
+    Adjustment,
+    GraphHealth,
+    HEALTH_TARGETS,
+    autotune,
+    measure_health,
+    suggest_config,
+)
 from .mitosis import (
     MitosisConfig,
     MitosisState,
@@ -71,4 +80,6 @@ __all__ = [
     "split_node", "split_with_llm", "should_merge", "should_create_node",
     "create_node", "find_co_firing_families", "merge_nodes",
     "bootstrap_workspace", "mitosis_maintenance",
+    "DEFAULTS", "Adjustment", "GraphHealth", "HEALTH_TARGETS",
+    "autotune", "measure_health", "suggest_config",
 ]

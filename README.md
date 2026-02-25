@@ -283,6 +283,62 @@ Synaptogenesis is the edge-formation layer in CrabPath:
   - `reflex` (`> 0.8`, auto-follow)
 - Prolonged inactivity/low credit decays and removes weak structure.
 
+## Autotuner
+
+The autotuner is outcome-driven: it tunes toward good behavior metrics instead of arbitrary knobs.
+
+`HEALTH_TARGETS` defines the target operating range for each metric:
+
+| Metric | Target range |
+| --- | --- |
+| `avg_nodes_fired_per_query` | 3.0–8.0 |
+| `cross_file_edge_pct` | 5.0%–20.0% |
+| `dormant_pct` | 60.0%–90.0% |
+| `reflex_pct` | 1.0%–5.0% |
+| `context_compression` | ≤20.0% |
+| `proto_promotion_rate` | 5.0%–15.0% |
+| `reconvergence_rate` | ≤10.0% |
+| `orphan_nodes` | 0 |
+
+`suggest_config(workspace_files)` warm-starts mitosis/synaptogenesis parameters from workspace size (small / medium / large) so new projects get sensible defaults.
+
+`measure_health(graph, state, query_stats)` computes a `GraphHealth` snapshot;  
+`autotune(graph, health)` returns `Adjustment` suggestions (for example, `decay_half_life` or `promotion_threshold`) when a metric drifts out of range.
+
+```python
+from pathlib import Path
+from crabpath import Graph, suggest_config, measure_health, autotune
+from crabpath.mitosis import bootstrap_workspace, MitosisState, MitosisConfig
+
+workspace_files = {
+    p.name: p.read_text() for p in Path("~/.openclaw/workspace").expanduser().glob("**/*.py")
+}
+config = suggest_config(workspace_files)
+
+graph = Graph()
+state = MitosisState()
+bootstrap_workspace(
+    graph,
+    workspace_files,
+    llm_call=my_llm,
+    state=state,
+    config=MitosisConfig(**config),
+)
+
+query_stats = {
+    "avg_nodes_fired_per_query": 6.2,
+    "promoted": 9,
+    "created": 120,
+    "reconvergence_events": 1,
+    "context_chars": 2100,
+    "queries": 150,
+}
+
+health = measure_health(graph, state, query_stats)
+for adjustment in autotune(graph, health):
+    print(adjustment.metric, adjustment.current, adjustment.target_range, adjustment.suggested_change)
+```
+
 ## How Activation Works
 
 Each node has a **potential** (energy) and a **threshold**. When potential ≥ threshold, the node **fires**.
@@ -343,8 +399,6 @@ workspace file
     ↓
 repeat...
 ```
-
-The graph refines its granularity through repeated division. No heatmaps, no thresholds — just edges and decay.
 
 ### API
 
