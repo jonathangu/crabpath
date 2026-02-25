@@ -367,22 +367,32 @@ for adjustment in autotune(graph, health):
     print(adjustment.metric, adjustment.current, adjustment.target_range, adjustment.suggested_change)
 ```
 
-## Emergent Properties
+## What Emerges
 
-The graph should converge to a healthy operating profile. Use this as the signal for whether self-tuning is working:
+CrabPath’s behavior changes as it interacts. The graph does not only store facts about code; it forms habits, boundaries, and regulatory loops that feel more like cognitive behavior than indexing.
+
+1. **Procedural Memory** — The graph learns sequences, not just facts. `Codex task → worktree reset → safety check` becomes a reflex chain. Multi-hop paths that repeatedly solve problems become auto-follow edges. Like muscle memory.
+2. **Domain Separation with Cross-Domain Bridges** — Coding and safety knowledge separate into distinct subgraphs. The split is not isolation: when needed, safety-adjacent links emerge (for example, cleanup can route to safety checks). The graph finds domain boundaries and the bridges that should exist.
+3. **Selective Forgetting** — ~95% of sibling edges decay to dormant after about 100 queries. This is deliberate pruning. The graph learns what NOT to load. A model that remembers everything becomes as bad as one that remembers nothing.
+4. **Self-Regulation** — The autotuner keeps the graph in a stable operating range. Too much decay makes it back off; promotion that stalls makes it speed up. The graph protects itself from drift and misconfiguration through feedback.
+5. **Individuation** — Two agents with identical workspace files but different query patterns converge on different graph shapes. Same genome, different phenotype. Structure is the experience record.
+
+Memory retrieval is a learned skill. CrabPath is where that skill develops automatically from use.
+
+### Health Metrics
+
+Use these empirically calibrated ranges as a compact health check:
 
 | Metric | Target | Why this matters |
 | --- | --- | --- |
-| `avg_nodes_fired_per_query` | `3-8` | Sparse activation: load only what's needed per query. |
-| `cross_file_edge_pct` | `5-20%` | Cross-file discovery: graph finds useful connections humans never made. |
-| `dormant_pct` | `60-90%` | Tier differentiation: graph learns what matters and keeps most links dormant. |
-| `reflex_pct` | `1-5%` | Compiled paths: critical paths auto-follow as reflex edges. |
-| `context_compression` | `<20%` | Context compression: only fraction of graph actually loaded per query. |
-| `proto_promotion_rate` | `5-15%` | Promotion filtering: not everything sticks, not nothing sticks. |
-| `reconvergence_rate` | `<10%` | Split quality: low reconvergence means splits stay meaningful. |
-| `orphan_nodes` | `0` | Full connectivity: every node should stay reachable. |
-
-Defaults are grid-calibrated from `360` parameter combinations. Treat this as a strong prior, not a fixed truth.
+| `avg_nodes_fired_per_query` | `3-8` | Sparse activation: load only what is needed per query. |
+| `cross_file_edge_pct` | `5-20%` | Cross-file discovery: graph finds useful cross-file connections. |
+| `dormant_pct` | `60-90%` | Tier differentiation: most edges stay dormant; only useful ones stay active. |
+| `reflex_pct` | `1-5%` | Compiled action paths: critical sequences become reflex edges. |
+| `context_compression` | `<20%` | Context compression: only a small graph fraction is loaded per query. |
+| `proto_promotion_rate` | `5-15%` | Promotion filtering: avoid over/under-learning. |
+| `reconvergence_rate` | `<10%` | Split quality: low reconvergence means split clusters remain meaningful. |
+| `orphan_nodes` | `0` | Full connectivity: every retained node should stay reachable. |
 
 Self-tuning loop:
 
