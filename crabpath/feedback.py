@@ -20,8 +20,8 @@ from .synaptogenesis import (
 DEFAULT_SNAPSHOT_PATH = "crabpath_events.db"
 
 
-RETRIEVAL_SCORING_MODEL = "gpt-5-mini"
-DEFAULT_OPENAI_TIMEOUT = 30.0
+RETRIEVAL_SCORING_MODEL = "gpt-4o-mini"  # No reasoning overhead — 3x faster than gpt-5-mini for scoring
+DEFAULT_OPENAI_TIMEOUT = 10.0  # gpt-4o-mini typically responds in 1-2s
 
 _CORRECTION_START_PATTERNS = (
     "no",
