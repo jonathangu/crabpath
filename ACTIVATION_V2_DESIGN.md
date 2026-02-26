@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # Activation v2 Design: LLM-Guided Graph Activation for CrabPath
 
 ## 0) Scope and baseline

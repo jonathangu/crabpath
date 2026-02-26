@@ -45,6 +45,57 @@ learn(g, result, outcome=1.0)  # STDP: causal edges strengthened
 g.save("memory.json")
 ```
 
+## Recommended Import Path
+
+Use `MemoryController` as the primary API for new integrations; it wraps query and learn in one place.
+
+### Query-only
+
+```python
+from crabpath import Graph, MemoryController
+
+graph = Graph.load("graph.json")
+controller = MemoryController(graph)
+result = controller.query("How do I respond to a rollback?")
+print(result.context)
+```
+
+### Query + learn
+
+```python
+from crabpath import Graph, MemoryController
+
+graph = Graph.load("graph.json")
+controller = MemoryController(graph)
+
+result = controller.query("How do I respond to a rollback?")
+controller.learn(result, reward=1.0)
+graph.save("graph.json")
+```
+
+### Full shadow mode (query, log, learn)
+
+```python
+import json
+from pathlib import Path
+from time import time
+from crabpath import Graph, MemoryController
+
+graph = Graph.load("graph.json")
+controller = MemoryController(graph)
+result = controller.query("Incident failed after deploy")
+
+log_path = Path.home() / ".crabpath" / "shadow.log"
+log_path.parent.mkdir(parents=True, exist_ok=True)
+with log_path.open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps({"ts": time(), "query": "Incident failed after deploy", "nodes": result.selected_nodes}) + "\n")
+
+controller.learn(result, reward=1.0)
+graph.save("graph.json")
+```
+
+Lower-level modules like `synaptogenesis`, `mitosis`, and `autotune` are still available for advanced users who need direct control.
+
 ## Architecture
 
 CrabPath has three components:

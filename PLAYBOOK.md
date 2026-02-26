@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath Playbook: from install to active mode
 
 ## Quick Start (5 minutes)

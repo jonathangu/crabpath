@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "nodes": [
+    {
+      "id": "query-root",
+      "content": "runbook query root"
+    },
+    {
+      "id": "query-answer",
+      "content": "runbook answer"
+    }
+  ],
+  "edges": [
+    {
+      "source": "query-root",
+      "target": "query-answer",
+      "weight": 0.9
+    }
+  ]
+}

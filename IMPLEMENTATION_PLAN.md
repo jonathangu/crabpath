@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath v0.5 Integration Plan (Post-0.4.0)
 
 Current status: v0.4.0, 61 passing tests, pure-Python core, zero dependencies, graph currently 153 nodes / 143 edges.

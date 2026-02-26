@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import patches
 
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import patches
 
 ROOT = Path(__file__).resolve().parent.parent
 

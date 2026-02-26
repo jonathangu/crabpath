@@ -177,6 +177,23 @@ def test_render_context_truncation():
     assert len(context) <= 150
 
 
+def test_render_context_basic():
+    graph = Graph()
+    graph.add_node(Node(id="a", content="Alpha context"))
+    graph.add_node(Node(id="b", content="Beta context"))
+    graph.add_node(Node(id="c", content="Gamma context"))
+
+    trajectory = TraversalTrajectory(
+        steps=[],
+        visit_order=["b", "a", "c"],
+        context_nodes=[],
+        raw_context="",
+    )
+
+    context = render_context(trajectory, graph, max_chars=200)
+    assert context == "Beta context\n\nAlpha context\n\nGamma context"
+
+
 def test_normalize_seed_nodes_with_bad_scores():
     assert _normalize_seed_nodes({"a": "bad", "b": None}) == [("a", 1.0), ("b", 1.0)]
     assert _normalize_seed_nodes([("a", "bad"), ("b", None), "plain"]) == [

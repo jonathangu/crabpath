@@ -104,6 +104,21 @@ def test_parse_jsonl_logs(tmp_path):
     assert len(queries) >= 2  # At least the two substantive ones
 
 
+def test_parse_openclaw_jsonl_message_field(tmp_path):
+    openclaw_file = tmp_path / "openclaw.jsonl"
+    payload = {
+        "type": "message",
+        "message": (
+            "{'role': 'user', 'content': ["
+            "{'type': 'text', 'text': 'openclaw query about safety checks'}]"
+            "}"
+        ),
+    }
+    openclaw_file.write_text(json.dumps(payload), encoding="utf-8")
+    queries = parse_session_logs([openclaw_file])
+    assert queries == ["openclaw query about safety checks"]
+
+
 def test_parse_plain_text_logs(tmp_path):
     log = tmp_path / "plain.txt"
     log.write_text("how do I use codex\nwhat are the safety rules\n")

@@ -10,7 +10,7 @@ import sys
 from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:

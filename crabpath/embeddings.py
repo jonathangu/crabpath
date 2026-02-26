@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .graph import Graph
@@ -157,9 +159,17 @@ class EmbeddingIndex:
 
     def save(self, path: str) -> None:
         """Save index to JSON."""
+        target = Path(path)
         data = {"dim": self.dim, "vectors": self.vectors}
-        with open(path, "w") as f:
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=str(target.parent), suffix=".tmp"
+        ) as f:
             json.dump(data, f)
+            temp_path = Path(f.name)
+
+        os.replace(temp_path, target)
 
     @classmethod
     def load(cls, path: str) -> EmbeddingIndex:

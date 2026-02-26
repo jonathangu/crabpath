@@ -5,9 +5,68 @@ Every quantitative claim in the paper maps to a script, seed, and expected outpu
 ## Environment
 
 - Python 3.10+
-- Zero pip dependencies (stdlib only)
+- Zero pip dependencies for core runtime (stdlib only)
 - Optional: `OPENAI_API_KEY` for LLM-based routing/scoring (mock router used in ablation)
 - Hardware: Apple M4 Pro, 64 GB RAM (any modern machine will work)
+
+## Exact reproduction workflow
+
+```bash
+# 1) Create a clean environment
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+
+# 2) Verify Python and dependency baselines
+python --version
+python - <<'PY'
+import sys
+print("python", sys.version)
+print("python_requires", ">=3.10")
+PY
+```
+
+## Commands to reproduce all paper outputs
+
+```bash
+# Full benchmark suite used by the paper
+cd experiments
+python run_all.py
+
+# Deploy simulation and comparison outputs
+python run_deploy_sim.py
+python run_comparison.py
+
+# Ablation and phase-transition figures (deterministic/stochastic split as noted)
+cd ../scripts
+python ablation_study.py
+python phase_transition_plot.py
+
+# Additional diagnostics
+python replay_shadow_queries.py
+python bootstrap_from_workspace.py
+```
+
+## Seeds and deterministic configuration
+
+- All ablation and phase-transition scripts use seeded RNGs (`SEED = 2026`).
+- Bootstrap CIs in ablation use `bootstrap_ci(..., seed=2026)`.
+- Run `cd scripts` before calling script-level entrypoints above to match default relative paths.
+
+## Expected experiment output
+
+- `run_all.py` and comparators write JSON artifacts under `experiments/results/*.json`.
+- `ablation_study.py` prints per-arm accuracies, token counts, CIs, and a JSON-like report.
+- `phase_transition_plot.py` writes plot artifacts with trajectory summaries.
+- Always archive the raw output directory and commit it for exact comparisons.
+
+## Quickstart before reproducing paper scripts
+
+Use `examples/quickstart.py` as the canonical starter path before full benchmark runs:
+
+```bash
+python examples/quickstart.py
+```
 
 ## Paper Claims → Scripts
 
@@ -76,3 +135,20 @@ python -m pytest tests/test_learning.py -v
 python -m pytest tests/test_inhibition.py -v
 python -m pytest tests/test_ablation.py -v
 ```
+
+## Expected output format
+
+Most scripts emit readable logs plus JSON payloads with this schema:
+
+```json
+{
+  "experiment": "context_bloat",
+  "arms": {
+    "static": {"accuracy": 0.98, "avg_tokens": 6066},
+    "rag": {"accuracy": 0.90, "avg_tokens": 1000},
+    "crabpath_corrected": {"accuracy": 0.96, "avg_tokens": 297}
+  }
+}
+```
+
+For single-run utilities, validate summary metrics against the claim table above.

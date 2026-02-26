@@ -22,7 +22,9 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -40,6 +42,19 @@ from .synaptogenesis import (
     record_cofiring,
     record_skips,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class CrabPathError(ValueError):
+    """Raised for migration-time data and workspace errors."""
+
+
+def _is_system_noise(text: str) -> bool:
+    """Return true for non-query transcripts like system/assistant/tool lines."""
+    lowered = text.strip().lower()
+    noise_prefixes = ("system:", "[system", "assistant:", "[assistant", "tool:", "[tool")
+    return lowered.startswith(noise_prefixes) or len(lowered) < 3
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -146,6 +161,36 @@ def parse_session_logs(
     Also supports plain text (one query per line).
     """
     queries = []
+    skipped_records = 0
+
+    def _extract_message_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if not isinstance(value, list):
+            return ""
+
+        parts: list[str] = []
+        for block in value:
+            if not isinstance(block, dict):
+                continue
+            text = block.get("text")
+            if isinstance(text, str):
+                parts.append(text.strip())
+        return " ".join(part for part in parts if part)
+
+    def _extract_query_from_record(record: dict[str, Any]) -> str:
+        role = str(record.get("role", ""))
+        content = record.get("content", "")
+
+        if role == "user" and content:
+            text = _extract_message_text(content)
+            if text:
+                return text
+
+        query = record.get("query", "")
+        if isinstance(query, str):
+            return query.strip()
+        return ""
 
     for path in log_paths:
         p = Path(path).expanduser()
@@ -161,35 +206,80 @@ def parse_session_logs(
 
                     # Try JSONL
                     extracted = False
+                    is_json = False
                     try:
                         record = json.loads(line)
-                        if isinstance(record, dict):
-                            role = record.get("role", "")
-                            content = record.get("content", "")
-                            # Only user messages
-                            if role == "user" and content and len(content) > 5:
-                                queries.append(str(content)[:500])
-                                extracted = True
+                        is_json = True
+                        if not isinstance(record, dict):
+                            raise ValueError("Session log JSON records must be objects")
 
-                            # Alternative format: {"query": "..."}
-                            query = record.get("query", "")
-                            if query and len(query) > 5:
-                                queries.append(str(query)[:500])
+                        # OpenClaw transcript format: type='message'
+                        # with nested message dict.
+                        if record.get("type") == "message":
+                            message = record.get("message")
+                            if isinstance(message, dict):
+                                query = _extract_query_from_record(message)
+                            elif isinstance(message, str):
+                                try:
+                                    message_payload = json.loads(message)
+                                except json.JSONDecodeError as exc:
+                                    try:
+                                        message_payload = ast.literal_eval(message)
+                                    except (ValueError, SyntaxError) as inner_exc:
+                                        raise ValueError("Unable to decode OpenClaw message payload") from inner_exc
+                                if not isinstance(message_payload, dict):
+                                    raise ValueError("OpenClaw message payload must be a dict")
+                                query = _extract_query_from_record(message_payload)
+                            else:
+                                raise ValueError("OpenClaw message record missing message payload")
+
+                            if query and len(query) > 5 and not _is_system_noise(query):
+                                queries.append(query[:500])
+                            extracted = True
+                            continue
+
+                        # Skip other OpenClaw record types (session,
+                        # model_change, thinking_level_change, custom, etc.)
+                        if record.get("type") in (
+                            "session",
+                            "model_change",
+                            "thinking_level_change",
+                            "custom",
+                        ):
+                            continue
+
+                        query = _extract_query_from_record(record)
+                        if query and len(query) > 5:
+                            candidate = query
+                            if not _is_system_noise(candidate):
+                                queries.append(candidate[:500])
                                 extracted = True
                     except json.JSONDecodeError:
-                        extracted = False
+                        is_json = False
+                    except (KeyError, ValueError):
+                        skipped_records += 1
+                        continue
 
-                    # Plain text fallback
-                    if not extracted and len(line) > 5 and not line.startswith("#"):
+                    # Plain text fallback — only for non-JSON lines
+                    if (
+                        not extracted
+                        and not is_json
+                        and len(line) > 5
+                        and not line.startswith("#")
+                    ):
                         queries.append(line[:500])
 
-        except Exception:
+        except OSError:
             continue
 
         if len(queries) >= max_queries:
             break
 
+    if skipped_records:
+        logger.debug("parse_session_logs skipped %s malformed records", skipped_records)
+
     return queries[:max_queries]
+
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +451,7 @@ def migrate(
         print(f"📁 Gathered {len(files)} files ({sum(len(v) for v in files.values()):,} chars)")
 
     if not files:
-        raise ValueError(f"No workspace files found in {workspace_dir}")
+        raise CrabPathError(f"No workspace files found in {workspace_dir}")
 
     if not explicit_config:
         autotune_defaults = suggest_config(files)

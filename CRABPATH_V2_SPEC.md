@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath v2.0 Specification and Paper Rewrite Plan
 
 Date: 2026-02-25

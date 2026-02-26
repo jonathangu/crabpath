@@ -11,9 +11,15 @@ Nodes hold content. Edges are weighted pointers. That's it.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
+
+
+SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -647,8 +653,23 @@ class Graph:
 
     def save(self, path: str) -> None:
         """Save graph to a JSON file."""
-        with open(path, "w") as f:
-            json.dump(self.to_v2_dict(), f, indent=2)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = self.to_dict()
+
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=str(target.parent), suffix=".tmp"
+        ) as f:
+            json.dump(data, f, indent=2)
+            temp_path = Path(f.name)
+
+        os.replace(temp_path, target)
+
+    @classmethod
+    def _migrate_v0_to_v1(cls, data: dict[str, Any]) -> dict[str, Any]:
+        migrated = dict(data)
+        migrated["schema_version"] = SCHEMA_VERSION
+        return migrated
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Graph:
@@ -664,13 +685,33 @@ class Graph:
         """Load graph from a JSON file."""
         with open(path) as f:
             data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("invalid graph file: top-level object must be a dict")
+
+        raw_schema_version = data.get("schema_version", 0)
+        try:
+            schema_version = int(raw_schema_version) if raw_schema_version is not None else 0
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid schema_version: {raw_schema_version}") from exc
+
+        if schema_version == 0:
+            data = cls._migrate_v0_to_v1(data)
+        elif schema_version > SCHEMA_VERSION:
+            raise ValueError(
+                f"Graph was saved with CrabPath v{schema_version}, you have v{SCHEMA_VERSION}. Please upgrade."
+            )
+
         return cls.from_dict(data)
 
-    def to_v2_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": SCHEMA_VERSION,
             "nodes": [_node_to_dict(n) for n in self._nodes.values()],
             "edges": [_edge_to_dict(e) for e in self._edges.values()],
         }
+
+    def to_v2_dict(self) -> dict[str, Any]:
+        return self.to_dict()
 
     def __repr__(self) -> str:
         return f"Graph(nodes={self.node_count}, edges={self.edge_count})"

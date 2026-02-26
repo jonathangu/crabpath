@@ -1,5 +1,7 @@
 """Tests for the CrabPath graph."""
 
+import json
+
 from crabpath import Edge, Graph, Node
 
 
@@ -249,3 +251,22 @@ def test_edge_provenance_round_trip(tmp_path):
     restored = Graph.load(str(path))
 
     assert restored.get_edge("a", "b").provenance == "correction"
+
+
+def test_graph_load_backward_compatible_schema(tmp_path):
+    path = tmp_path / "legacy_graph.json"
+    path.write_text(json.dumps({"nodes": [], "edges": []}), encoding="utf-8")
+
+    graph = Graph.load(str(path))
+    assert graph.node_count == 0
+    assert graph.edge_count == 0
+
+
+def test_graph_save_includes_schema_version(tmp_path):
+    g = Graph()
+    g.add_node(Node(id="a", content="schema"))
+    path = tmp_path / "schema_graph.json"
+    g.save(str(path))
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1

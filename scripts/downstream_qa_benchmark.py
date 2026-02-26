@@ -6,7 +6,6 @@ from __future__ import annotations
 import copy
 import json
 import random
-import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -19,20 +18,23 @@ if str(ROOT) not in sys.path:
 
 from crabpath.decay import DecayConfig, apply_decay  # noqa: E402
 from crabpath.embeddings import EmbeddingIndex  # noqa: E402
-from crabpath.graph import Edge  # noqa: E402
 from crabpath.learning import LearningConfig, RewardSignal, make_learning_step  # noqa: E402
 from crabpath.lifecycle_sim import make_mock_llm_all  # noqa: E402
-from crabpath.mitosis import MitosisConfig, MitosisState, bootstrap_workspace  # noqa: E402
+from crabpath.mitosis import (  # noqa: E402
+    MitosisConfig,
+    MitosisState,
+    bootstrap_workspace,
+    mitosis_maintenance,
+)
+from crabpath.mitosis import create_node as create_mitosis_node  # noqa: E402
 from crabpath.synaptogenesis import (  # noqa: E402
     SynaptogenesisConfig,
     SynaptogenesisState,
-    classify_tier,
     decay_proto_edges,
     record_cofiring,
     record_correction,
     record_skips,
 )
-from crabpath.mitosis import create_node as create_mitosis_node, mitosis_maintenance  # noqa: E402
 from scripts import ablation_study as ablation  # noqa: E402
 
 SEED = ablation.SEED

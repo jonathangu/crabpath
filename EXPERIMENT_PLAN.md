@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath v2 Simulation Experiment Suite
 
 This suite is designed to test the claim that CrabPath v2 reduces context per turn while improving retrieval/selection quality versus static context and top-k RAG, and that the Gu-corrected update rule materially improves correction behavior.

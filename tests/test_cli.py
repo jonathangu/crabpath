@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from crabpath import Edge, EmbeddingIndex, Graph, Node
+from crabpath import Edge, EmbeddingIndex, Graph, Node, __version__
 from crabpath.mitosis import MitosisState
 
 
@@ -473,3 +473,91 @@ def test_sim_cli_runs_and_outputs_snapshots(tmp_path: Path) -> None:
     assert payload["result"]["final"]["nodes"] >= 1
     assert len(payload["result"]["snapshots"]) == 5
     assert output.exists()
+
+
+def test_query_command_with_explain(tmp_path: Path) -> None:
+    graph_path = tmp_path / "graph.json"
+
+    graph = Graph()
+    graph.add_node(Node(id="deploy", content="Deployment safety checks and runbook"))
+    graph.add_node(Node(id="safety", content="Safety rules and guardrails"))
+    graph.add_node(Node(id="runtime", content="Runtime recovery playbook"))
+    graph.add_node(Node(id="blocked", content="Deprecated fallback path"))
+    graph.add_edge(Edge(source="deploy", target="safety", weight=1.0))
+    graph.add_edge(Edge(source="deploy", target="runtime", weight=0.2))
+    graph.add_edge(Edge(source="deploy", target="blocked", weight=-0.4))
+    graph.save(str(graph_path))
+
+    result = _run_cli(
+        [
+            "query",
+            "deploy safe",
+            "--graph",
+            str(graph_path),
+            "--explain",
+        ],
+        env={"OPENAI_API_KEY": ""},
+    )
+    assert result.returncode == 0
+    payload = _load_json_output(result.stdout)
+
+    assert payload["explain"]["traversal_path"]
+    assert payload["explain"]["candidate_rankings"]
+    assert payload["explain"]["fired_with_reasoning"]
+    assert payload["seeds"]
+
+
+def test_init_example_command(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    result = _run_cli(
+        ["init", "--example", "--data-dir", str(data_dir)], env={"OPENAI_API_KEY": ""}
+    )
+    assert result.returncode == 0
+
+    payload = _load_json_output(result.stdout)
+    assert payload["ok"] is True
+    assert payload["graph_path"] == str(data_dir / "graph.json")
+    assert payload["embeddings_path"] == str(data_dir / "embed.json")
+    assert Path(payload["graph_path"]).exists()
+    assert Path(payload["embeddings_path"]).exists()
+    assert payload["next_steps"]
+
+
+def test_extract_sessions_command(tmp_path: Path) -> None:
+    agents_root = tmp_path / "agents"
+    sessions_dir = agents_root / "alice" / "sessions"
+    sessions_dir.mkdir(parents=True)
+    user_query_one = json.dumps(
+        {"type": "message", "message": "{'role': 'user', 'content': 'query one'}"}
+    )
+    assistant_query = json.dumps(
+        {"type": "message", "message": "{'role': 'assistant', 'content': 'ignored'}"}
+    )
+    user_query_two = json.dumps(
+        {"type": "message", "message": "{'role': 'user', 'content': 'query two'}"}
+    )
+    (sessions_dir / "one.jsonl").write_text(
+        "\n".join(
+            [
+                user_query_one,
+                assistant_query,
+                user_query_two,
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "sessions.out"
+    result = _run_cli(["extract-sessions", str(output), "--agents-root", str(agents_root)])
+    assert result.returncode == 0
+
+    payload = _load_json_output(result.stdout)
+    assert payload["ok"] is True
+    assert payload["queries_extracted"] == 2
+    assert output.read_text().splitlines() == ["query one", "query two"]
+
+
+def test_cli_version_flag() -> None:
+    result = _run_cli(["--version"])
+    assert result.returncode == 0
+    assert __version__ in result.stdout.strip()

@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath v2 Rewrite Coding Plan (`v0.6.0` Mechanical → LLM-guided RL v2)
 
 Date: 2026-02-25

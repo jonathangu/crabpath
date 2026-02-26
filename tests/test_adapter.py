@@ -8,7 +8,7 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from crabpath import Edge, Graph, Node, OpenClawCrabPathAdapter
+from crabpath import CrabPathAgent, Edge, Graph, Node, OpenClawCrabPathAdapter
 from crabpath.feedback import auto_outcome, map_correction_to_snapshot
 
 
@@ -237,3 +237,56 @@ def test_feedback_mapping_with_delayed_correction(monkeypatch):
             auto_outcome(corrections_count=1, turns_since_fire=mapped["turns_since_fire"]) == -1.0
         )
         assert auto_outcome(corrections_count=0, turns_since_fire=5) == 0.3
+
+
+def test_adapter_instantiation_for_agent_and_alias(tmp_path):
+    for cls in (CrabPathAgent, OpenClawCrabPathAdapter):
+        adapter = cls(str(tmp_path / "graph.json"), str(tmp_path / "index.json"), embed_fn=None)
+        assert adapter.graph.node_count == 0
+        assert adapter.index.vectors == {}
+
+
+def test_query_returns_context_and_visit_order(tmp_path):
+    adapter = OpenClawCrabPathAdapter(
+        str(tmp_path / "query_graph.json"),
+        str(tmp_path / "query_index.json"),
+        embed_fn=None,
+    )
+    adapter.graph.add_node(Node(id="seed", content="start query root"))
+    adapter.graph.add_node(Node(id="mid", content="follow-up answer"))
+    adapter.graph.add_edge(Edge(source="seed", target="mid", weight=0.95))
+
+    result = adapter.query("start query root", top_k=3, max_hops=2)
+
+    assert result.nodes
+    assert result.nodes[0] == "seed"
+    assert "start query root" in result.context
+    assert result.chars == len(result.context)
+    assert result.band in {"known", "novelty_miss", "novel"}
+
+
+def test_learn_and_learn_implicit_apply_feedback(tmp_path):
+    adapter = OpenClawCrabPathAdapter(
+        str(tmp_path / "feedback_graph.json"),
+        str(tmp_path / "feedback_index.json"),
+        embed_fn=None,
+    )
+    adapter.graph.add_node(Node(id="seed", content="start feedback path"))
+    adapter.graph.add_node(Node(id="next", content="feedback follow-up"))
+    adapter.graph.add_edge(Edge(source="seed", target="next", weight=1.2))
+    adapter.save()
+
+    firing = adapter.activate({"seed": 2.0}, max_steps=3)
+    before_weight = adapter.graph.get_edge("seed", "next").weight
+    learn_result = adapter.learn(firing, outcome=1.0)
+    after_weight = adapter.graph.get_edge("seed", "next").weight
+    assert learn_result.avg_reward == 1.0
+    assert after_weight != before_weight
+
+    # Learned trajectory-based updates path
+    query_result = adapter.query("start feedback path", top_k=3, max_hops=1)
+    assert query_result.nodes
+    implicit = adapter.learn(0.4)
+    assert implicit.avg_reward == 0.4
+    assert implicit.updates or implicit.baseline >= 0.0
+    assert query_result.nodes[0] == "seed"

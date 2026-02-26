@@ -1,3 +1,5 @@
+> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+
 # CrabPath Parameter Tuning Guide
 
 This file lists the knobs currently covered by runtime autotuning.
