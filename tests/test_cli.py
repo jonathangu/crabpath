@@ -363,6 +363,80 @@ def test_query_with_route_command(tmp_path, capsys) -> None:
     assert "c" not in out["fired"]
 
 
+def test_query_route_failure_falls_back(tmp_path, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    _write_route_graph_payload(graph_path)
+    route_script = tmp_path / "route_fail.py"
+    route_script.write_text("import sys\nprint('route failed', file=sys.stderr)\nsys.exit(1)\n", encoding="utf-8")
+
+    code = main(
+        [
+            "query",
+            "deploy",
+            "--graph",
+            str(graph_path),
+            "--top",
+            "2",
+            "--route-command",
+            f"{sys.executable} {route_script}",
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    captured = capsys.readouterr()
+    stderr = captured.err
+    out = json.loads(captured.out.strip())
+    assert "Warning: route command failed" in stderr
+    assert out["fired"]
+
+
+def test_query_creates_node_when_no_results(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    _write_graph_payload(graph_path)
+    monkeypatch.setattr(cli, "_keyword_seeds", lambda *args, **_kwargs: [])
+
+    def fake_run_route_command(_command: list[str], _query_text: str, _candidates: list[dict[str, str | float]]) -> list[str]:
+        return []
+
+    def fake_run_llm_command(_command: list[str], system_prompt: str, _user_prompt: str) -> str:
+        if "A query found no relevant documents." in system_prompt:
+            return json.dumps(
+                {
+                    "should_create": True,
+                    "content": "created for missing lookup",
+                    "summary": "created summary",
+                    "reason": "nothing matched",
+                }
+            )
+        return json.dumps({"selected": []})
+
+    monkeypatch.setattr(cli, "_run_route_command", fake_run_route_command)
+    monkeypatch.setattr(cli, "_run_llm_command", fake_run_llm_command)
+
+    code = main(
+        [
+            "query",
+            "totally new query",
+            "--graph",
+            str(graph_path),
+            "--route-provider",
+            "openai",
+            "--top",
+            "2",
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["created_node_id"] is not None
+    assert out["created_node_id"] in out["fired"]
+
+    graph_payload = json.loads(graph_path.read_text(encoding="utf-8"))
+    assert out["created_node_id"] in {node["id"] for node in graph_payload["nodes"]}
+
+
 def test_query_with_route_provider(tmp_path, monkeypatch, capsys) -> None:
     graph_path = tmp_path / "graph.json"
     index_path = tmp_path / "index.json"
@@ -421,6 +495,59 @@ def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
     assert code == 0
     data = json.loads(capsys.readouterr().out.strip())
     assert data["edges"][0]["source"] == "a"
+
+
+def test_learn_auto_merge(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    payload = {
+        "graph": {
+            "nodes": [
+                {"id": "a", "content": "alpha", "summary": "", "metadata": {}},
+                {"id": "b", "content": "beta", "summary": "", "metadata": {}},
+                {"id": "c", "content": "gamma", "summary": "", "metadata": {}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "weight": 0.95, "kind": "sibling", "metadata": {}},
+                {"source": "b", "target": "a", "weight": 0.95, "kind": "sibling", "metadata": {}},
+                {"source": "a", "target": "c", "weight": 0.2, "kind": "sibling", "metadata": {}},
+            ],
+        },
+    }
+    graph_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(cli, "_auto_detect_provider", lambda: "openai")
+    monkeypatch.setattr(cli, "_run_llm_command", lambda _command, _system, _user: json.dumps({"should_merge": True}))
+
+    call_counter = {"build": 0}
+
+    def fake_build_llm_command(provider: str) -> tuple[list[str], str | None]:
+        call_counter["build"] += 1
+        return [sys.executable], None
+
+    monkeypatch.setattr(cli, "_build_llm_command", fake_build_llm_command)
+
+    code = main(
+        [
+            "learn",
+            "--graph",
+            str(graph_path),
+            "--outcome",
+            "1.0",
+            "--fired-ids",
+            "a,b",
+            "--auto-merge",
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["merges"]
+    assert out["merges"][0]["from"] == ["a", "b"]
+
+    updated = json.loads(graph_path.read_text(encoding="utf-8"))
+    graph_payload = updated["graph"] if "graph" in updated else updated
+    assert len(graph_payload["nodes"]) == 2
+    assert call_counter["build"] == 1
 
 
 def test_learn_command_uses_scores(tmp_path, capsys) -> None:

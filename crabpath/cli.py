@@ -71,6 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
     query_route_group.add_argument("--route-command")
     query_route_group.add_argument("--route-provider", choices=("openai", "ollama"))
     query.add_argument("--no-route", action="store_true", help="skip LLM routing")
+    query.add_argument("--auto-merge", action="store_true", help="auto-merge similar nodes after query")
     query.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
 
     learn = sub.add_parser("learn", help="apply outcome update")
@@ -78,6 +79,7 @@ def _build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--outcome", type=float, required=False)
     learn.add_argument("--scores", required=False)
     learn.add_argument("--fired-ids", required=True)
+    learn.add_argument("--auto-merge", action="store_true", help="auto-merge similar nodes after learning")
     learn.add_argument("--json", action="store_true")
     learn.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
 
@@ -415,7 +417,7 @@ client = OpenAI()
 req = json.loads(sys.stdin.read())
 candidates = '\\n'.join(f'- {c[\"id\"]}: {c[\"content\"][:100]}' for c in req['candidates'])
 resp = client.chat.completions.create(
-    model='gpt-5-mini',
+    model='gpt-4.1-mini',
     messages=[
         {'role': 'system', 'content': 'You are a memory router. Given a query and candidates, select which are most relevant. Return JSON: {\"selected\": [\"id1\", \"id2\"]}'},
         {'role': 'user', 'content': f'Query: {req[\"query\"]}\\n\\nCandidates:\\n{candidates}'},
@@ -469,7 +471,7 @@ from openai import OpenAI
 req = json.loads(sys.stdin.read())
 client = OpenAI()
 resp = client.chat.completions.create(
-    model='gpt-5-mini',
+    model='gpt-4.1-mini',
     messages=[
         {'role': 'system', 'content': req['system']},
         {'role': 'user', 'content': req['user']},
@@ -931,8 +933,10 @@ def cmd_query(args: argparse.Namespace) -> int:
     route_temp_script = None
     llm_command = None
     llm_temp_script = None
+    llm_fn = None
     scores: dict[str, float] = {}
     created_node_id: str | None = None
+    merges: list[dict[str, list[str]]] = []
     if args.no_route:
         if args.route_command is not None or args.route_provider is not None:
             raise SystemExit("use --no-route without --route-command or --route-provider")
@@ -952,21 +956,27 @@ def cmd_query(args: argparse.Namespace) -> int:
 
         def route_fn_impl(query_text: str | None, candidate_ids: list[str]) -> list[str]:
             payload = _build_route_candidates(graph=graph, candidate_ids=candidate_ids)
-            return _run_route_command(
-                command=route_command,
-                query_text=query_text or "",
-                candidates=payload,
-            )
+            try:
+                return _run_route_command(
+                    command=route_command,
+                    query_text=query_text or "",
+                    candidates=payload,
+                )
+            except (Exception, SystemExit) as exc:
+                print(f"Warning: route command failed ({exc}); falling back to all candidates", file=sys.stderr)
+                return candidate_ids
 
         route_fn = route_fn_impl
 
     if not args.no_route and args.route_command is None and route_provider is not None:
         llm_command, llm_temp_script = _build_llm_command(route_provider)
 
-    def llm_fn(system_prompt: str, user_prompt: str) -> str:
-        if llm_command is None:
-            raise SystemExit("no llm route command configured")
-        return _run_llm_command(llm_command, system_prompt, user_prompt)
+        def llm_fn_impl(system_prompt: str, user_prompt: str) -> str:
+            if llm_command is None:
+                raise SystemExit("no llm route command configured")
+            return _run_llm_command(llm_command, system_prompt, user_prompt)
+
+        llm_fn = llm_fn_impl
 
     try:
         result = traverse(
@@ -979,7 +989,7 @@ def cmd_query(args: argparse.Namespace) -> int:
         fired_ids = result.fired
         context = result.context
 
-        if llm_command is not None and result.fired:
+        if llm_fn is not None and result.fired:
             fired_pairs = [
                 (node_id, graph.get_node(node_id).content)
                 for node_id in result.fired
@@ -988,11 +998,21 @@ def cmd_query(args: argparse.Namespace) -> int:
             if fired_pairs:
                 scores = score_retrieval(args.text, fired_pairs, llm_fn=llm_fn)
 
-        if not fired_ids and llm_command is not None:
-            created_node_id = maybe_create_node(graph, args.text, [node_id for node_id, _ in seeds], llm_fn=llm_fn)
+        if len(fired_ids) < 2 and llm_fn is not None:
+            created_node_id = maybe_create_node(graph, args.text, fired_ids, llm_fn=llm_fn)
             if created_node_id:
+                print(f"Created node from query: {created_node_id}", file=sys.stderr)
                 fired_ids = [created_node_id]
                 context = graph.get_node(created_node_id).content if graph.get_node(created_node_id) else ""
+
+        if args.auto_merge and llm_fn is not None:
+            suggested_merges = suggest_merges(graph, llm_fn=llm_fn)[:5]
+            for source_id, target_id in suggested_merges:
+                if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
+                    continue
+                merged_id = apply_merge(graph, source_id, target_id)
+                merges.append({"from": [source_id, target_id], "to": [merged_id]})
+
     finally:
         if route_temp_script is not None and Path(route_temp_script).exists():
             Path(route_temp_script).unlink()
@@ -1004,6 +1024,8 @@ def cmd_query(args: argparse.Namespace) -> int:
 
     if created_node_id:
         _write_graph(args.graph, graph)
+    if merges:
+        _write_graph(args.graph, graph)
 
     if args.json:
         print(
@@ -1014,6 +1036,7 @@ def cmd_query(args: argparse.Namespace) -> int:
                     "context": context,
                     "scores": scores,
                     "created_node_id": created_node_id,
+                    "merges": merges,
                 }
             )
         )
@@ -1023,6 +1046,8 @@ def cmd_query(args: argparse.Namespace) -> int:
         print("\"fired\":", fired_ids)
         if scores:
             print("\"scores\":", scores)
+        if merges:
+            print("applied_merges:", merges)
         if created_node_id:
             print("created_node_id:", created_node_id)
     return 0
@@ -1047,36 +1072,67 @@ def cmd_learn(args: argparse.Namespace) -> int:
         raise SystemExit("provide either --outcome or --scores")
 
     apply_outcome(graph, fired_nodes=fired_ids, outcome=outcome)
+    merges: list[dict[str, list[str]]] = []
+    llm_temp_script = None
+    try:
+        if args.auto_merge:
+            route_provider = _auto_detect_provider()
+            if route_provider is not None:
+                print(f"Auto-detected merge provider: {route_provider}", file=sys.stderr)
+                llm_command, llm_temp_script = _build_llm_command(route_provider)
+
+                def llm_fn(system_prompt: str, user_prompt: str) -> str:
+                    if llm_command is None:
+                        raise SystemExit("no llm route command configured")
+                    return _run_llm_command(llm_command, system_prompt, user_prompt)
+
+                suggested_merges = suggest_merges(graph, llm_fn=llm_fn)[:5]
+                for source_id, target_id in suggested_merges:
+                    if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
+                        continue
+                    merged_id = apply_merge(graph, source_id, target_id)
+                    merges.append({"from": [source_id, target_id], "to": [merged_id]})
+            else:
+                print("Warning: auto-merge requested but no LLM provider was available", file=sys.stderr)
+    finally:
+        if llm_temp_script is not None and Path(llm_temp_script).exists():
+            Path(llm_temp_script).unlink()
+
     if not args.no_log:
         log_learn(fired_ids=fired_ids, outcome=outcome)
+    graph_payload = {
+        "nodes": [
+            {
+                "id": node.id,
+                "content": node.content,
+                "summary": node.summary,
+                "metadata": node.metadata,
+            }
+            for node in graph.nodes()
+        ],
+        "edges": [
+            {
+                "source": edge.source,
+                "target": edge.target,
+                "weight": edge.weight,
+                "kind": edge.kind,
+                "metadata": edge.metadata,
+            }
+            for source_edges in graph._edges.values()
+            for edge in source_edges.values()
+        ],
+    }
     payload = {
-        "graph": {
-            "nodes": [
-                {
-                    "id": node.id,
-                    "content": node.content,
-                    "summary": node.summary,
-                    "metadata": node.metadata,
-                }
-                for node in graph.nodes()
-            ],
-            "edges": [
-                {
-                    "source": edge.source,
-                    "target": edge.target,
-                    "weight": edge.weight,
-                    "kind": edge.kind,
-                    "metadata": edge.metadata,
-                }
-                for source_edges in graph._edges.values()
-                for edge in source_edges.values()
-            ],
-        },
+        **graph_payload,
+        "merges": merges,
+    }
+    graph_file_payload = {
+        "graph": graph_payload,
     }
     graph_path = _graph_path_arg(args.graph)
-    graph_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    graph_path.write_text(json.dumps(graph_file_payload, indent=2), encoding="utf-8")
     if args.json:
-        print(json.dumps(payload["graph"], indent=2))
+        print(json.dumps(payload, indent=2))
     else:
         print(f"updated {args.graph}")
     return 0
