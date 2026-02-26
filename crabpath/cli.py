@@ -24,6 +24,7 @@ from .traverse import TraversalConfig, traverse
 from .learn import apply_outcome, maybe_create_node
 from .merge import apply_merge, suggest_merges
 from .score import score_retrieval
+from ._batch import batch_or_single, batch_or_single_embed
 from .autotune import measure_health
 from .journal import log_health, log_learn, log_query, log_replay, read_journal, journal_stats
 
@@ -604,6 +605,22 @@ def _run_llm_command(command: list[str], system_prompt: str, user_prompt: str) -
     return (stdout_data or "").strip()
 
 
+def _run_llm_batch(command: list[str], requests: list[dict]) -> list[dict]:
+    responses: list[dict] = []
+    for request in requests:
+        responses.append(
+            {
+                "id": request["id"],
+                "response": _run_llm_command(
+                    command,
+                    str(request.get("system", "")),
+                    str(request.get("user", "")),
+                ),
+            }
+        )
+    return responses
+
+
 def _build_route_command(route_command: str | None, route_provider: str | None) -> tuple[list[str], str | None]:
     if route_command is None and route_provider is None:
         raise SystemExit("provide either --route-command or --route-provider for routing")
@@ -737,10 +754,26 @@ def _build_index_from_texts(
     total_batches = len(batches)
     batch_results: list[dict[str, list[float]] | None] = [None] * total_batches
     try:
+        def embed_fn(text: str) -> list[float]:
+            batch_result = _run_embedding_batch(command=command, batch=[("query", text)])
+            if "query" not in batch_result:
+                raise SystemExit("embed output missing id: query")
+            return batch_result["query"]
+
+        def embed_batch_fn(items: list[tuple[str, str]]) -> dict[str, list[float]]:
+            return _run_embedding_batch(command=command, batch=items)
+
         with ThreadPoolExecutor(max_workers=parallel) as executor:
-            futures = {}
+            futures: dict = {}
             for batch_index, batch in enumerate(batches, start=1):
-                futures[executor.submit(_run_embedding_batch, command=command, batch=batch)] = (batch_index, batch)
+                futures[
+                    executor.submit(
+                        batch_or_single_embed,
+                        texts=batch,
+                        embed_fn=embed_fn,
+                        embed_batch_fn=embed_batch_fn,
+                    )
+                ] = (batch_index, batch)
 
             for future in as_completed(futures):
                 batch_index, _batch = futures[future]
@@ -824,6 +857,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     llm_command = None
     llm_temp_script = None
+    llm_batch_fn = None
     if route_provider is not None:
         llm_command, llm_temp_script = _build_llm_command(route_provider)
         print("Using LLM for: splitting, summaries", file=sys.stderr)
@@ -871,6 +905,14 @@ def cmd_init(args: argparse.Namespace) -> int:
             raise SystemExit("LLM command is unavailable")
         return _run_llm_command(llm_command, system_prompt, user_prompt)
 
+    def llm_batch_fn_impl(requests: list[dict]) -> list[dict]:
+        if llm_command is None:
+            raise SystemExit("LLM command is unavailable")
+        return _run_llm_batch(llm_command, requests)
+
+    if route_provider is not None:
+        llm_batch_fn = llm_batch_fn_impl
+
     def summary_progress_fn(node_index: int, node_total: int) -> None:
         print(f"Summarizing {node_index}/{node_total}", file=sys.stderr)
 
@@ -881,6 +923,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         graph, texts = split_workspace(
             args.workspace,
             llm_fn=llm_fn if llm_enabled else None,
+            llm_batch_fn=llm_batch_fn if llm_enabled else None,
             should_use_llm_for_file=should_split_with_llm if llm_enabled else None,
             split_progress=split_progress_fn,
             llm_parallelism=llm_parallel,
@@ -911,6 +954,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             summaries = generate_summaries(
                 graph,
                 llm_fn=llm_fn,
+                llm_batch_fn=llm_batch_fn if llm_enabled else None,
                 llm_node_ids=summary_targets,
                 summary_progress=summary_progress_fn,
                 llm_parallelism=llm_parallel,
@@ -947,7 +991,12 @@ def cmd_init(args: argparse.Namespace) -> int:
             index.save(str(index_path))
 
         if llm_enabled:
-            connections = suggest_connections(graph=graph, llm_fn=llm_fn, max_candidates=20)
+            connections = suggest_connections(
+                graph=graph,
+                llm_fn=llm_fn,
+                llm_batch_fn=llm_batch_fn if llm_enabled else None,
+                max_candidates=20,
+            )
             apply_connections(graph=graph, connections=connections)
             _write_graph(graph_path, graph)
 
@@ -1050,6 +1099,7 @@ def cmd_query(args: argparse.Namespace) -> int:
     llm_command = None
     llm_temp_script = None
     llm_fn = None
+    llm_batch_fn = None
     scores: dict[str, float] = {}
     created_node_id: str | None = None
     merges: list[dict[str, list[str]]] = []
@@ -1092,7 +1142,13 @@ def cmd_query(args: argparse.Namespace) -> int:
                 raise SystemExit("no llm route command configured")
             return _run_llm_command(llm_command, system_prompt, user_prompt)
 
+        def llm_batch_fn_impl(requests: list[dict]) -> list[dict]:
+            if llm_command is None:
+                raise SystemExit("no llm route command configured")
+            return _run_llm_batch(llm_command, requests)
+
         llm_fn = llm_fn_impl
+        llm_batch_fn = llm_batch_fn_impl
 
     try:
         result = traverse(
@@ -1112,7 +1168,12 @@ def cmd_query(args: argparse.Namespace) -> int:
                 if graph.get_node(node_id)
             ]
             if fired_pairs:
-                scores = score_retrieval(args.text, fired_pairs, llm_fn=llm_fn)
+                scores = score_retrieval(
+                    args.text,
+                    fired_pairs,
+                    llm_fn=llm_fn,
+                    llm_batch_fn=llm_batch_fn,
+                )
 
         if len(fired_ids) < 2 and llm_fn is not None:
             created_node_id = maybe_create_node(graph, args.text, fired_ids, llm_fn=llm_fn)
@@ -1122,7 +1183,11 @@ def cmd_query(args: argparse.Namespace) -> int:
                 context = graph.get_node(created_node_id).content if graph.get_node(created_node_id) else ""
 
         if args.auto_merge and llm_fn is not None:
-            suggested_merges = suggest_merges(graph, llm_fn=llm_fn)[:5]
+            suggested_merges = suggest_merges(
+                graph,
+                llm_fn=llm_fn,
+                llm_batch_fn=llm_batch_fn,
+            )[:5]
             for source_id, target_id in suggested_merges:
                 if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
                     continue
@@ -1190,6 +1255,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
     apply_outcome(graph, fired_nodes=fired_ids, outcome=outcome)
     merges: list[dict[str, list[str]]] = []
     llm_temp_script = None
+    llm_batch_fn = None
     try:
         if args.auto_merge:
             route_provider = _auto_detect_provider()
@@ -1202,7 +1268,13 @@ def cmd_learn(args: argparse.Namespace) -> int:
                         raise SystemExit("no llm route command configured")
                     return _run_llm_command(llm_command, system_prompt, user_prompt)
 
-                suggested_merges = suggest_merges(graph, llm_fn=llm_fn)[:5]
+                def llm_batch_fn_impl(requests: list[dict]) -> list[dict]:
+                    if llm_command is None:
+                        raise SystemExit("no llm route command configured")
+                    return _run_llm_batch(llm_command, requests)
+
+                llm_batch_fn = llm_batch_fn_impl
+                suggested_merges = suggest_merges(graph, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)[:5]
                 for source_id, target_id in suggested_merges:
                     if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
                         continue
@@ -1265,16 +1337,23 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
     llm_temp_script = None
     llm_fn = None
+    llm_batch_fn = None
     if route_provider is not None:
         llm_command, llm_temp_script = _build_llm_command(route_provider)
 
         def route_aware_llm_fn(system_prompt: str, user_prompt: str) -> str:
             return _run_llm_command(llm_command, system_prompt, user_prompt)
 
+        def route_aware_llm_batch_fn(requests: list[dict]) -> list[dict]:
+            if llm_command is None:
+                raise SystemExit("no llm route command configured")
+            return _run_llm_batch(llm_command, requests)
+
         llm_fn = route_aware_llm_fn
+        llm_batch_fn = route_aware_llm_batch_fn
 
     try:
-        suggestions = suggest_merges(graph, llm_fn=llm_fn)
+        suggestions = suggest_merges(graph, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
         applied: list[dict[str, list[str]]] = []
         for source_id, target_id in suggestions:
             if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
@@ -1461,18 +1540,26 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
     llm_temp_script = None
     llm_fn = None
+    llm_batch_fn = None
     if route_provider is not None:
         llm_command, llm_temp_script = _build_llm_command(route_provider)
 
         def route_aware_llm_fn(system_prompt: str, user_prompt: str) -> str:
             return _run_llm_command(llm_command, system_prompt, user_prompt)
 
+        def route_aware_llm_batch_fn(requests: list[dict]) -> list[dict]:
+            if llm_command is None:
+                raise SystemExit("no llm route command configured")
+            return _run_llm_batch(llm_command, requests)
+
         llm_fn = route_aware_llm_fn
+        llm_batch_fn = route_aware_llm_batch_fn
 
     try:
         suggestions = suggest_connections(
             graph=graph,
             llm_fn=llm_fn,
+            llm_batch_fn=llm_batch_fn,
             max_candidates=args.max_candidates,
         )
         added = apply_connections(graph=graph, connections=suggestions)

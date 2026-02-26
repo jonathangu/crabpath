@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import fnmatch
+import json
 import os
 import re
 from collections.abc import Callable
@@ -13,6 +12,7 @@ from collections.abc import Iterable
 import threading
 from pathlib import Path
 
+from ._batch import batch_or_single
 from .graph import Edge, Graph, Node
 
 
@@ -36,6 +36,11 @@ DEFAULT_EXCLUDES = {
 }
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
+SPLIT_PROMPT = (
+    "Split this document into coherent semantic sections. Each section should be a "
+    "concept or topic. Return JSON: {\"sections\": [\"section1 text\", \"section2 text\"]}"
+)
+SUMMARY_PROMPT = 'Write a one-line summary for this node. Return JSON: {"summary": "..."}'
 
 
 def _extract_json(raw: str) -> dict | list | str:
@@ -63,27 +68,23 @@ def _first_line(text: str) -> str:
     return (text.splitlines() or [""])[0]
 
 
-def _split_with_llm(content: str, llm_fn: Callable[[str, str], str]) -> list[str]:
-    system = (
-        "Split this document into coherent semantic sections. Each section should be a "
-        "concept or topic. Return JSON: {\"sections\": [\"section1 text\", \"section2 text\"]}"
-    )
+def _extract_sections(raw: str) -> list[str]:
     try:
-        raw = llm_fn(system, content)
         payload = _extract_json(raw)
         sections = payload.get("sections") if isinstance(payload, dict) else None
         if isinstance(sections, list):
             parsed = [str(section).strip() for section in sections if str(section).strip()]
             if parsed:
                 return parsed
-    except (Exception, SystemExit):
+    except (Exception, SystemExit):  # noqa: BLE001
         pass
-    return _chunk_markdown(content)
+    return []
 
 
 def generate_summaries(
     graph: Graph,
     llm_fn: Callable[[str, str], str] | None = None,
+    llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
     llm_node_ids: set[str] | None = None,
     summary_progress: Callable[[int, int], None] | None = None,
     llm_parallelism: int = 8,
@@ -112,45 +113,40 @@ def generate_summaries(
             current = completed
         summary_progress(current, total_nodes)
 
-    def _summary_worker(node_id: str, content: str) -> str:
-        raw = llm_fn(  # type: ignore[arg-type]
-            "Write a one-line summary for this node. Return JSON: "
-            "{\"summary\": \"...\"}",
-            content,
-        )
-        payload = _extract_json(raw)
-        summary = ""
+    def _summary_worker(content: str, response: str) -> str:
+        payload = _extract_json(response)
         if isinstance(payload, dict):
             maybe_summary = payload.get("summary")
             if isinstance(maybe_summary, str):
                 summary = maybe_summary.strip()
-        if not summary:
-            summary = _first_line(content)
-        return summary
+                if summary:
+                    return summary
+        return _first_line(content)
 
+    requests: list[dict] = []
+    has_llm = llm_fn is not None or llm_batch_fn is not None
     for node in nodes:
-        use_llm = bool(llm_fn and (target_nodes is None or node.id in target_nodes))
-        if not use_llm:
+        if not has_llm or (target_nodes is not None and node.id not in target_nodes):
             summaries[node.id] = _first_line(node.content)
             _report(node.id)
             continue
+        requests.append({"id": node.id, "system": SUMMARY_PROMPT, "user": node.content})
         pending.append((node.id, node.content))
 
-    if pending:
-        with ThreadPoolExecutor(max_workers=llm_parallelism) as executor:
-            futures: dict = {}
-            for node_id, content in pending:
-                futures[executor.submit(_summary_worker, node_id, content)] = (node_id, content)
+    responses: list[dict] = []
+    if requests:
+        responses = batch_or_single(
+            requests=requests,
+            llm_fn=llm_fn,
+            llm_batch_fn=llm_batch_fn,
+            max_workers=llm_parallelism,
+        )
+    response_by_id = {str(item["id"]): str(item.get("response", "")) for item in responses}
 
-            for future in as_completed(futures):
-                node_id, content = futures[future]
-                try:
-                    summary = future.result()
-                except (Exception, SystemExit):
-                    summary = _first_line(content)
-                summaries[node_id] = summary
-                _report(node_id)
-
+    for node_id, content in pending:
+        summary = _summary_worker(content, response_by_id.get(node_id, ""))
+        summaries[node_id] = summary
+        _report(node_id)
     return summaries
 
 
@@ -271,6 +267,7 @@ def split_workspace(
     max_depth: int = 3,
     exclude: Iterable[str] | None = None,
     llm_fn: Callable[[str, str], str] | None = None,
+    llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
     should_use_llm_for_file: Callable[[str, str], bool] | None = None,
     split_progress: Callable[[int, int, str, str], None] | None = None,
     llm_parallelism: int = 8,
@@ -327,7 +324,7 @@ def split_workspace(
     for file_path, rel in candidates:
         text = file_path.read_text(encoding="utf-8")
         use_llm = False
-        if llm_fn is not None:
+        if llm_fn is not None or llm_batch_fn is not None:
             if should_use_llm_for_file is None:
                 use_llm = True
             else:
@@ -351,27 +348,34 @@ def split_workspace(
             split_count = current
         split_progress(current, total_files, relative_path, mode)
 
-    futures: dict = {}
-    with ThreadPoolExecutor(max_workers=llm_parallelism) as executor:
-        for idx, rel, text, use_llm in split_plan:
-            if not use_llm:
-                text_chunks_by_index[idx] = _chunk_markdown(text)
-                _report(rel, "heuristic")
-                continue
+    llm_requests: list[dict] = []
+    llm_request_map: dict[str, tuple[int, str, str]] = {}
+    for idx, rel, text, use_llm in split_plan:
+        if not use_llm:
+            text_chunks_by_index[idx] = _chunk_markdown(text)
+            _report(rel, "heuristic")
+            continue
+        llm_requests.append({"id": rel, "system": SPLIT_PROMPT, "user": text})
+        llm_request_map[rel] = (idx, rel, text)
 
-            futures[executor.submit(_split_with_llm, text, llm_fn)] = (idx, rel, text, use_llm)
+    response_by_id: dict[str, str] = {}
+    if llm_requests:
+        responses = batch_or_single(
+            requests=llm_requests,
+            llm_fn=llm_fn,
+            llm_batch_fn=llm_batch_fn,
+            max_workers=llm_parallelism,
+        )
+        response_by_id = {str(item["id"]): str(item.get("response", "")) for item in responses}
 
-        for future in as_completed(futures):
-            idx, rel, text, _ = futures[future]
-            try:
-                chunks = future.result()
-                mode = "llm"
-            except (Exception, SystemExit):
-                chunks = _chunk_markdown(text)
-                mode = "heuristic"
-
-            text_chunks_by_index[idx] = chunks
-            _report(rel, mode)
+    for rel, (idx, source_rel, text) in llm_request_map.items():
+        response = response_by_id.get(rel, "")
+        chunks = _extract_sections(response) if response else []
+        mode = "llm" if chunks else "heuristic"
+        if not chunks:
+            chunks = _chunk_markdown(text)
+        text_chunks_by_index[idx] = chunks
+        _report(source_rel, mode)
 
     for idx, rel, _text, _use_llm in split_plan:
         chunks = text_chunks_by_index[idx]

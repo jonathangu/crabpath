@@ -8,6 +8,7 @@ import re
 from collections.abc import Callable
 
 from .graph import Edge, Graph, Node
+from ._batch import batch_or_single
 
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
@@ -66,33 +67,55 @@ def _candidate_pairs(graph: Graph, max_content_chars: int = 1200) -> list[tuple[
             pairs.append((source_id, target_id))
     return pairs
 
-
-def suggest_merges(graph: Graph, llm_fn: Callable[[str, str], str] | None = None) -> list[tuple[str, str]]:
+def suggest_merges(
+    graph: Graph,
+    llm_fn: Callable[[str, str], str] | None = None,
+    llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
+) -> list[tuple[str, str]]:
     """Find pairs of small nodes that always co-fire and suggest merging.
 
     If llm_fn is provided, ask LLM to confirm merge makes sense.
     """
+    candidate_pairs = _candidate_pairs(graph)
     confirmed: list[tuple[str, str]] = []
-    for source_id, target_id in _candidate_pairs(graph):
-        if llm_fn is None:
-            confirmed.append((source_id, target_id))
-            continue
+    if llm_fn is None and llm_batch_fn is None:
+        return candidate_pairs.copy()
 
+    requests: list[dict] = []
+    request_index_by_pair: dict[tuple[str, str], int] = {}
+    for pair_index, (source_id, target_id) in enumerate(candidate_pairs):
         source_node = graph.get_node(source_id)
         target_node = graph.get_node(target_id)
         if source_node is None or target_node is None:
             continue
 
-        system = (
-            "You are a memory graph organizer. Given two chunks that always co-activate, "
-            'decide if they should be merged into one node. Return JSON: {"should_merge": true/false, "reason": "..."}'
+        requests.append(
+            {
+                "id": f"req_{pair_index}",
+                "system": (
+                    "You are a memory graph organizer. Given two chunks that always co-activate, "
+                    'decide if they should be merged into one node. Return JSON: {"should_merge": true/false, "reason": "..."}'
+                ),
+                "user": (
+                    f"Node A ({source_id}):\n{source_node.content}\n\n"
+                    f"Node B ({target_id}):\n{target_node.content}"
+                ),
+            }
         )
-        user = (
-            f"Node A ({source_id}):\n{source_node.content}\n\n"
-            f"Node B ({target_id}):\n{target_node.content}"
-        )
+        request_index_by_pair[(source_id, target_id)] = pair_index
+
+    responses = batch_or_single(requests=requests, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
+    response_by_id = {str(item["id"]): str(item.get("response", "")) for item in responses}
+
+    for source_id, target_id in candidate_pairs:
+        pair_index = request_index_by_pair.get((source_id, target_id))
+        if pair_index is None:
+            continue
+        response = response_by_id.get(f"req_{pair_index}", "")
+        if not response:
+            continue
         try:
-            payload = _extract_json(llm_fn(system, user))
+            payload = _extract_json(response)
             if payload is None:
                 continue
             if bool(payload.get("should_merge", False)):

@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable
 
 from .graph import Edge, Graph, Node
+from ._batch import batch_or_single
 
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
@@ -62,6 +63,7 @@ def _node_file(node: Node | None) -> str | None:
 def suggest_connections(
     graph: Graph,
     llm_fn: Callable[[str, str], str] | None = None,
+    llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
     max_candidates: int = 20,
 ) -> list[tuple[str, str, float, str]]:
     """Suggest new cross-file edges based on content overlap.
@@ -105,18 +107,19 @@ def suggest_connections(
     scored_candidates.sort(key=lambda item: (item[2], item[0], item[1]), reverse=True)
     scored_candidates = scored_candidates[:max_candidates]
 
-    suggested: list[tuple[str, str, float, str]] = []
-    for source_id, target_id, overlap in scored_candidates:
+    if llm_fn is None and llm_batch_fn is None:
+        suggested: list[tuple[str, str, float, str]] = []
+        for source_id, target_id, overlap in scored_candidates:
+            suggested.append((source_id, target_id, overlap, f"word overlap score: {overlap:.4f}"))
+        return suggested
+
+    requests: list[dict] = []
+    for idx, (source_id, target_id, overlap) in enumerate(scored_candidates):
         source_node = graph.get_node(source_id)
         target_node = graph.get_node(target_id)
-        if source_node is None or target_node is None:
-            continue
-
         source_file = _node_file(source_node) or "unknown"
         target_file = _node_file(target_node) or "unknown"
-
-        if llm_fn is None:
-            suggested.append((source_id, target_id, overlap, f"word overlap score: {overlap:.4f}"))
+        if source_node is None or target_node is None:
             continue
 
         system = (
@@ -127,9 +130,22 @@ def suggest_connections(
             f"Chunk A (from {source_file}): {source_node.content}\n\n"
             f"Chunk B (from {target_file}): {target_node.content}"
         )
+        requests.append({"id": f"req_{idx}", "system": system, "user": user})
 
+    responses = batch_or_single(requests=requests, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
+    response_by_id = {str(item["id"]): str(item.get("response", "")) for item in responses}
+
+    suggested: list[tuple[str, str, float, str]] = []
+    for idx, (source_id, target_id, overlap) in enumerate(scored_candidates):
+        source_node = graph.get_node(source_id)
+        target_node = graph.get_node(target_id)
+        if source_node is None or target_node is None:
+            continue
+        response = response_by_id.get(f"req_{idx}", "")
+        if not response:
+            continue
         try:
-            payload = _extract_json(llm_fn(system, user))
+            payload = _extract_json(response)
             if payload is None:
                 continue
             if not bool(payload.get("should_connect", False)):

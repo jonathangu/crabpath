@@ -6,6 +6,8 @@ import json
 import re
 from collections.abc import Callable
 
+from ._batch import batch_or_single
+
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
 
 
@@ -50,6 +52,7 @@ def score_retrieval(
     query: str,
     fired_nodes: list[tuple[str, str]],
     llm_fn: Callable[[str, str], str] | None = None,
+    llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
 ) -> dict[str, float]:
     """Score how useful each fired node was for the query.
 
@@ -58,7 +61,7 @@ def score_retrieval(
     if not fired_nodes:
         return {}
     defaults = {node_id: 1.0 for node_id, _ in fired_nodes}
-    if llm_fn is None:
+    if llm_fn is None and llm_batch_fn is None:
         return defaults
 
     lines = [f"- {node_id}: {(content or '').replace(chr(10), ' ')[:240]}" for node_id, content in fired_nodes]
@@ -68,7 +71,14 @@ def score_retrieval(
         'score from 0.0 (useless) to 1.0 (essential). Return JSON: {"scores": {"node_id": float}}'
     )
     try:
-        payload = _extract_json(llm_fn(system, user))
+        responses = batch_or_single(
+            [{"id": "request", "system": system, "user": user}],
+            llm_fn=llm_fn,
+            llm_batch_fn=llm_batch_fn,
+        )
+        if not responses:
+            return defaults
+        payload = _extract_json(responses[0].get("response", ""))  # type: ignore[index]
         if not isinstance(payload, dict):
             return defaults
         raw_scores = payload.get("scores", {})
