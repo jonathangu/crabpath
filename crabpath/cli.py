@@ -266,9 +266,13 @@ def _build_index_from_texts(
     return index
 
 
-def _resolve_local_embed_batch_fn() -> Callable[[list[tuple[str, str]]], dict[str, list[float]]]:
-    from .embeddings import local_embed_batch_fn
-    return local_embed_batch_fn
+def _resolve_local_embed_batch_fn() -> Callable[[list[tuple[str, str]]], dict[str, list[float]]] | None:
+    try:
+        from .embeddings import local_embed_batch_fn
+        from sentence_transformers import SentenceTransformer  # noqa: F401
+        return local_embed_batch_fn
+    except ImportError:
+        return None
 
 
 def _embed_query_text(
