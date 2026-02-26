@@ -118,7 +118,7 @@ CrabPath has three components:
 | `mitosis.py` | Recursive cell division: LLM-driven splitting, merging, neurogenesis |
 | `autotune.py` | Self-regulation with meta-learning, safety guardrails, emergency brake |
 | `router.py` | Three-tier LLM routing (reflex/habitual/dormant) |
-| `traversal.py` | Multi-hop graph traversal with depth budgets |
+| `traversal.py` | Multi-hop traversal with damped edges (`max_hops=30`, `episode_edge_damping=0.3`) |
 | `decay.py` | Exponential weight decay |
 | `embeddings.py` | Multi-provider embeddings (OpenAI, Gemini, Cohere, Ollama) |
 | `migrate.py` | Bootstrap graphs from workspace files + session log replay |

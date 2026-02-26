@@ -5,6 +5,7 @@ All notable changes to CrabPath are documented here.
 ## [1.0.0] — 2026-02-26
 
 ### Architecture
+- **Traversal defaults updated** — `MemoryController`/`TraversalConfig` production defaults now use `max_hops=30` and `episode_edge_damping=0.3`; `edge_damping` is enabled by default for all production paths and benchmark baselines are aligned accordingly.
 - **MemoryController** — single authoritative policy layer for query → retrieve → learn cycles
 - **LearningPhaseManager** — explicit two-phase learning control (Hebbian → RL transition)
 - **Inhibition module** (`inhibition.py`) — dedicated negative-edge routing with `apply_correction()`, `score_with_inhibition()`, `is_inhibited()`, and `get_inhibitory_edges()`

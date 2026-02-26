@@ -286,7 +286,7 @@ class CrabPathAgent:
         self,
         query_text: str,
         top_k: int = 8,
-        max_hops: int = 3,
+        max_hops: int = 30,
         memory_search_ids: list[str] | None = None,
         config: NeurogenesisConfig | None = None,
     ) -> QueryResult:

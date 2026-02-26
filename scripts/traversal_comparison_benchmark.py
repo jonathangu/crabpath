@@ -15,10 +15,6 @@ from typing import Any
 from crabpath import Edge, Graph, Node, MemoryController
 from crabpath.controller import ControllerConfig
 from crabpath.inhibition import inhibition_stats
-from crabpath.decay import DecayConfig
-from crabpath.inhibition import InhibitionConfig
-from crabpath.learning import LearningConfig
-from crabpath.synaptogenesis import SynaptogenesisConfig
 
 
 SEED = 2026
@@ -280,64 +276,38 @@ def main() -> None:
     sizes = QUICK_SIZES if args.quick else SIZES
     rng = random.Random(SEED)
 
-    configs = [
-        (
-            "A",
-            ControllerConfig(
-                learning=LearningConfig(),
-                synaptogenesis=SynaptogenesisConfig(),
-                inhibition=InhibitionConfig(),
-                decay=DecayConfig(),
-                max_hops=3,
-                episode_edge_damping=1.0,
-                episode_visit_penalty=0.0,
-                enable_learning=False,
-                enable_synaptogenesis=False,
-            ),
-        ),
-        (
-            "B",
-            ControllerConfig(
-                learning=LearningConfig(),
-                synaptogenesis=SynaptogenesisConfig(),
-                inhibition=InhibitionConfig(),
-                decay=DecayConfig(),
-                max_hops=30,
-                episode_edge_damping=1.0,
-                episode_visit_penalty=0.5,
-                enable_learning=False,
-                enable_synaptogenesis=False,
-            ),
-        ),
-        (
-            "C",
-            ControllerConfig(
-                learning=LearningConfig(),
-                synaptogenesis=SynaptogenesisConfig(),
-                inhibition=InhibitionConfig(),
-                decay=DecayConfig(),
-                max_hops=30,
-                episode_edge_damping=0.3,
-                episode_visit_penalty=0.0,
-                enable_learning=False,
-                enable_synaptogenesis=False,
-            ),
-        ),
-        (
-            "D",
-            ControllerConfig(
-                learning=LearningConfig(),
-                synaptogenesis=SynaptogenesisConfig(),
-                inhibition=InhibitionConfig(),
-                decay=DecayConfig(),
-                max_hops=30,
-                episode_edge_damping=0.3,
-                episode_visit_penalty=0.3,
-                enable_learning=False,
-                enable_synaptogenesis=False,
-            ),
-        ),
-    ]
+    configs = []
+
+    # Baseline A/B preserve legacy behavior for explicit comparison:
+    # A: no damping, shallow traversal (3 hops)
+    legacy_a = ControllerConfig.default()
+    legacy_a.max_hops = 3
+    legacy_a.episode_edge_damping = 1.0
+    legacy_a.episode_visit_penalty = 0.0
+    legacy_a.enable_learning = True
+    legacy_a.enable_synaptogenesis = False
+    configs.append(("A", legacy_a))
+
+    # B: no damping, visit-penalty path selection
+    legacy_b = ControllerConfig.default()
+    legacy_b.episode_edge_damping = 1.0
+    legacy_b.episode_visit_penalty = 0.5
+    legacy_b.enable_learning = True
+    legacy_b.enable_synaptogenesis = False
+    configs.append(("B", legacy_b))
+
+    # C/D use current production defaults (max_hops=30, episode_edge_damping=0.3),
+    # with optional visit penalty.
+    modern_c = ControllerConfig.default()
+    modern_c.enable_learning = True
+    modern_c.enable_synaptogenesis = False
+    configs.append(("C", modern_c))
+
+    modern_d = ControllerConfig.default()
+    modern_d.episode_visit_penalty = 0.3
+    modern_d.enable_learning = True
+    modern_d.enable_synaptogenesis = False
+    configs.append(("D", modern_d))
 
     rows: list[dict[str, float | int | str]] = []
     for size in sizes:

@@ -41,7 +41,7 @@ def activate(
     seeds: dict[str, float],
     *,
     max_steps: int = 3,
-    edge_damping: float = 1.0,
+    edge_damping: float = 0.3,
     decay: float = 0.1,
     top_k: int = 10,
     reset: bool = True,
