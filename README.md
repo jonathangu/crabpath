@@ -19,15 +19,19 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 | External benchmark (HotpotQA) | BM25 dominates cold-start IR; CrabPath learns (1948 edge updates) but topic diversity limits transfer |
 | Recurring-topic benchmark (200 queries) | CrabPath R@2: 0.02→0.07 vs BM25 flat 0.27 |
 | Sparsity crossover benchmark | Synthetic clusters: Phase2 Recall@3 crossover at ~50 nodes in sparse regimes (edge_ratio 0.1/0.05) |
-| Tests | 327, 0 lint errors |
+| Tests | 360, 0 lint errors |
 | Dependencies | Zero (stdlib only) |
 
 ## Install
 
 ```bash
-pip install crabpath   # or: pip install .
-pip install crabpath[embeddings]  # optional: OpenAI/Gemini/Cohere embedding providers
+pip install crabpath
 ```
+
+Requires Python 3.10+. Zero dependencies. Embeddings require one of:
+- `OPENAI_API_KEY` — OpenAI text-embedding-3-small (~$0.02 for 200 nodes)
+- `GEMINI_API_KEY` — Gemini text-embedding-004 (free tier)
+- Local [Ollama](https://ollama.com) — `ollama pull nomic-embed-text` (free, local)
 
 ## Quick Start
 
@@ -321,26 +325,41 @@ Five phenomena observed in production:
 4. **Self-Regulation** — autotuner homeostasis prevents drift
 5. **Individuation** — same files, different graph shapes based on usage patterns
 
-## Getting Started (Safe Mode)
+## Getting Started
 
-Zero risk, zero behavior changes:
+Three commands, ~3 seconds total:
 
 ```bash
-# 1. Bootstrap (read-only — does NOT modify your workspace)
-crabpath migrate --workspace ~/.openclaw/workspace \
-  --output-graph graph.json --output-embeddings embed.json
+# 1. Install
+pip install crabpath
 
-# 2. Check health
-crabpath health --graph graph.json
+# 2. Bootstrap graph + embeddings + replay session history
+crabpath init --workspace ~/.openclaw/workspace \
+  --sessions ~/.openclaw/agents/main/sessions/
 
-# 3. Shadow mode (run alongside, never modifies responses)
-crabpath query "your query" --graph graph.json --index embed.json
-
-# 4. Track evolution
-crabpath evolve --graph graph.json --snapshots evolution.jsonl --report
+# 3. Wire into your agent (writes integration block to AGENTS.md)
+crabpath install-hook --agent-workspace ~/.openclaw/workspace
 ```
 
-Kill switch: delete `graph.json`. All state is in that one file.
+That's it. Your agent now has a memory graph at `~/.crabpath/graph.json` with semantic embeddings.
+
+```bash
+# Query the graph
+crabpath query "how do I deploy" --graph ~/.crabpath/graph.json \
+  --index ~/.crabpath/embed.json --json
+
+# Check health
+crabpath health --graph ~/.crabpath/graph.json \
+  --query-stats ~/.crabpath/graph.stats.json
+
+# Track evolution over time
+crabpath evolve --graph ~/.crabpath/graph.json \
+  --snapshots ~/.crabpath/evolution.jsonl --report
+```
+
+**Kill switch:** `pip uninstall crabpath && rm -rf ~/.crabpath` — all state is in that one directory.
+
+**Without an embedding provider:** `crabpath init --no-embeddings` falls back to keyword routing (less accurate, but works with zero API keys).
 
 ## Reproducibility
 
@@ -359,11 +378,10 @@ python scripts/phase_transition_plot.py
 
 ## Requirements
 
-- Python 3.10+
-- Zero dependencies (stdlib only)
-- Optional: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or local Ollama for semantic embeddings
-- **Recommended LLM for routing: GPT-5-mini** — the router emits tiny JSON decisions (`{"target": "node_id", "confidence": 0.8}`), so use the cheapest model that follows instructions. This is already the default in `RouterConfig`.
-- Without any provider, CrabPath falls back to weight-only heuristic routing (no LLM needed)
+- **Python 3.10+** (macOS ships 3.9 — `brew install python@3.12` if needed)
+- **Zero dependencies** (stdlib only)
+- **Embeddings:** `OPENAI_API_KEY`, `GEMINI_API_KEY`, or local Ollama (see Install above)
+- **LLM routing (optional):** GPT-5-mini recommended — the router emits tiny JSON decisions, so use the cheapest model that follows instructions. This is the default in `RouterConfig`. Without an LLM, CrabPath uses weight-only heuristic routing.
 
 ## The Name
 
