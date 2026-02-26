@@ -107,6 +107,15 @@ python scripts/phase_transition_plot.py
 # Sparsity-scale crossover experiment
 python scripts/sparsity_scale_experiment.py
 
+# NIAH (multi-needle) + scaling curves
+python scripts/niah_scaling_benchmark.py
+
+# Context utilization + noise sensitivity + temporal drift
+python scripts/context_noise_drift_benchmark.py
+
+# Downstream accuracy + RULER multi-fact + NarrativeQA/MS MARCO stubs
+python scripts/downstream_accuracy_benchmark.py
+
 # Deploy pipeline simulation
 python experiments/run_deploy_sim.py
 
