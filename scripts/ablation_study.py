@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import random
+import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -161,6 +164,7 @@ class QuerySpec:
 class ArmConfig:
     name: str
     use_learning: bool
+    use_graph_routing: bool = True
     learning_discount: float = 1.0
     allow_inhibition: bool = True
     enable_synaptogenesis: bool = True
@@ -278,6 +282,66 @@ def _custom_router(
     del query
     top_count = min(max(1, top_n), len(candidates))
     return [node_id for node_id, _, _ in candidates[:top_count]]
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9]+", text.lower())
+
+
+def _bm25_score(
+    query: str,
+    nodes: list,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> list[tuple[str, float]]:
+    """Pure BM25-style retrieval over node contents."""
+    query_terms = _tokenize(query)
+    if not query_terms or not nodes:
+        return []
+
+    query_counts: dict[str, int] = {}
+    for term in query_terms:
+        query_counts[term] = query_counts.get(term, 0) + 1
+
+    doc_term_freq: list[tuple[str, Counter[str], int]] = []
+    doc_freq: Counter[str] = Counter()
+    doc_lengths: list[int] = []
+
+    for node in nodes:
+        tokens = _tokenize((node.content or ""))
+        length = len(tokens)
+        doc_lengths.append(length)
+        term_freq = Counter(tokens)
+        doc_term_freq.append((node.id, term_freq, length))
+        for term in set(term_freq.keys()):
+            doc_freq[term] += 1
+
+    doc_count = len(nodes)
+    if doc_count == 0:
+        return []
+
+    avg_doc_len = sum(doc_lengths) / doc_count
+    if avg_doc_len <= 0.0:
+        avg_doc_len = 1.0
+
+    scores: list[tuple[str, float]] = []
+    for node_id, term_freq, doc_len in doc_term_freq:
+        score = 0.0
+        doc_len_norm = doc_len / avg_doc_len if avg_doc_len else 0.0
+
+        for term, qtf in query_counts.items():
+            tf = term_freq.get(term, 0)
+            if tf == 0:
+                continue
+
+            df = doc_freq[term]
+            idf = math.log((doc_count - df + 0.5) / (df + 0.5) + 1.0)
+            score += qtf * idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc_len_norm)))
+
+        scores.append((node_id, score))
+
+    scores.sort(key=lambda kv: kv[1], reverse=True)
+    return scores
 
 
 def _create_initial_edges(graph: Graph) -> None:
@@ -535,20 +599,25 @@ def run_arm(
     query_results: list[dict[str, object]] = []
 
     for qi, query in enumerate(queries, start=1):
-        candidates = _build_candidates(
-            graph,
-            query.text,
-            use_edge_weights=cfg.enable_synaptogenesis,
-            min_overlap=(0 if cfg.use_learning else 2),
-            min_score=(0.0 if cfg.use_learning else 0.4),
-        )
-        if cfg.use_learning:
-            top_n = 1 if cfg.learning_discount == 0.0 else 5
-        elif cfg.enable_synaptogenesis:
-            top_n = 3
+        if not cfg.use_graph_routing:
+            scores = _bm25_score(query.text, list(graph.nodes()))
+            candidates = []
+            selected_nodes = [node_id for node_id, _ in scores[:5]]
         else:
-            top_n = 3
-        selected_nodes = _custom_router(query.text, candidates, top_n=top_n)
+            candidates = _build_candidates(
+                graph,
+                query.text,
+                use_edge_weights=cfg.enable_synaptogenesis,
+                min_overlap=(0 if cfg.use_learning else 2),
+                min_score=(0.0 if cfg.use_learning else 0.4),
+            )
+            if cfg.use_learning:
+                top_n = 1 if cfg.learning_discount == 0.0 else 5
+            elif cfg.enable_synaptogenesis:
+                top_n = 3
+            else:
+                top_n = 3
+            selected_nodes = _custom_router(query.text, candidates, top_n=top_n)
 
         score = _query_accuracy(selected_nodes, query.expected_nodes)
         total_accuracy += score
@@ -713,6 +782,15 @@ def main() -> None:
 
     arm_configs = [
         ArmConfig(
+            name="Arm 0: BM25 Baseline",
+            use_learning=False,
+            use_graph_routing=False,
+            allow_inhibition=False,
+            enable_synaptogenesis=False,
+            enable_autotune=False,
+            enable_neurogenesis=False,
+        ),
+        ArmConfig(
             name="Arm 1",
             use_learning=True,
             learning_discount=1.0,
@@ -790,17 +868,25 @@ def main() -> None:
         mean, lower, upper = arm_cis[result.name]
         print(f"{result.name}: {mean:.3f} [{lower:.3f}, {upper:.3f}]")
 
+    by_name = {result.name: result for result in results}
+
+    arm_1_vs_0 = paired_bootstrap_test(
+        by_name["Arm 1"].per_query_scores,
+        by_name["Arm 0: BM25 Baseline"].per_query_scores,
+        seed=SEED,
+    )
     arm_1_vs_3 = paired_bootstrap_test(
-        results[0].per_query_scores,
-        results[2].per_query_scores,
+        by_name["Arm 1"].per_query_scores,
+        by_name["Arm 3"].per_query_scores,
         seed=SEED,
     )
     arm_1_vs_2 = paired_bootstrap_test(
-        results[0].per_query_scores,
-        results[1].per_query_scores,
+        by_name["Arm 1"].per_query_scores,
+        by_name["Arm 2"].per_query_scores,
         seed=SEED,
     )
 
+    print(f"Paired test Arm 1 vs Arm 0: mean diff={arm_1_vs_0[0]:.6f}, p-value={arm_1_vs_0[1]:.6f}")
     print(f"Paired test Arm 1 vs Arm 3: mean diff={arm_1_vs_3[0]:.6f}, p-value={arm_1_vs_3[1]:.6f}")
     print(f"Paired test Arm 1 vs Arm 2: mean diff={arm_1_vs_2[0]:.6f}, p-value={arm_1_vs_2[1]:.6f}")
     print()
@@ -808,6 +894,10 @@ def main() -> None:
 
     out_path = Path("scripts/ablation_results.json")
     paired_tests = {
+        "arm_1_vs_0": {
+            "mean_diff": arm_1_vs_0[0],
+            "p_value": arm_1_vs_0[1],
+        },
         "arm_1_vs_3": {
             "mean_diff": arm_1_vs_3[0],
             "p_value": arm_1_vs_3[1],
