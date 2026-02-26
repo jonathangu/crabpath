@@ -142,7 +142,7 @@ def _format_metric_value(metric: str, value: float | None) -> str:
 
 def _build_health_report_lines(
     graph: Graph,
-    health: dict[str, Any],
+    health: Any,
     has_query_stats: bool,
     *,
     with_status: bool = False,
@@ -218,7 +218,7 @@ def cmd_health(args: argparse.Namespace) -> dict[str, Any] | str:
     return "\n".join(
         _build_health_report_lines(
             graph,
-            dataclasses.asdict(health),
+            health,
             has_query_stats,
             with_status=True,
         )
