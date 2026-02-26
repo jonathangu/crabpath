@@ -4,9 +4,6 @@ version = "6.0.0"
 description = "Memory graph for AI agents that learns what to retrieve — and what to suppress."
 requires-python = ">=3.10"
 dependencies = []
-
-[project.optional-dependencies]
-embeddings = ["sentence-transformers>=2.0"]
 license = {text = "Apache-2.0"}
 authors = [{name = "Jonathan Gu", email = "jonathangu@gmail.com"}]
 readme = "README.md"
@@ -18,6 +15,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
 ]
+
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=2.0"]
 
 [project.scripts]
 crabpath = "crabpath.cli:main"
