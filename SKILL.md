@@ -2,6 +2,16 @@
 
 CrabPath is a memory graph for AI agents with migration, query, and graph maintenance operations.
 
+## Requirements
+
+- **Python 3.10+** (macOS ships 3.9 — run `brew install python@3.12` if needed)
+- **Virtual environment recommended** on modern macOS (PEP 668):
+  ```bash
+  python3.12 -m venv ~/.crabpath-env && source ~/.crabpath-env/bin/activate
+  ```
+- Zero pip dependencies (pure stdlib)
+- Optional: `OPENAI_API_KEY` for semantic embeddings
+
 ## Safe Mode (ClawHub users)
 
 If you're using ClawHub and want to try CrabPath without risk:
@@ -9,6 +19,9 @@ If you're using ClawHub and want to try CrabPath without risk:
 ### Step 1: Install
 
 ```bash
+# Activate your venv first if needed
+source ~/.crabpath-env/bin/activate
+
 pip install crabpath
 # or clone: git clone https://github.com/jonathangu/crabpath
 ```
@@ -24,10 +37,14 @@ This reads your files and creates a graph. It does NOT modify your workspace.
 ### Step 3: Check Health
 
 ```bash
+# Structural health (always works)
 crabpath health --graph graph.json
+
+# Full health with query stats (after replay)
+crabpath health --graph graph.json --query-stats graph.stats.json
 ```
 
-See what the graph looks like. All 8 metrics with ✅/❌.
+Shows tier distribution, cross-file edges, orphan nodes. After replay, also shows query-dependent metrics.
 
 ### Step 4: Shadow Mode (safe — runs alongside, never modifies responses)
 
@@ -45,10 +62,13 @@ CrabPath NEVER modifies your agent's responses in shadow mode.
 ### Step 5: Replay History (optional, accelerates learning)
 
 ```bash
-crabpath migrate --workspace ~/.openclaw/workspace --session-logs session.jsonl --output-graph graph.json
+# Pass a directory — CrabPath auto-finds all *.jsonl files
+crabpath migrate --workspace ~/.openclaw/workspace \
+  --session-logs ~/.openclaw/agents/main/sessions/ \
+  --output-graph graph.json --verbose
 ```
 
-Feed historical queries to warm up the graph faster.
+Feed historical queries to warm up the graph faster. Supports OpenClaw session format natively, flat JSONL, and plain text. Pass a directory or individual files.
 
 ### Step 6: Track Evolution
 

@@ -1,84 +1,210 @@
-> **Note:** This design doc is historical. The implementation lives in crabpath/*.py. See ARCHITECTURE_REVIEW.md for current architecture.
+# CrabPath Playbook: Install → Shadow → Active
 
-# CrabPath Playbook: from install to active mode
+## Prerequisites
 
-## Quick Start (5 minutes)
+- **Python 3.10+** required (macOS ships 3.9 — you need a newer version)
+- **No pip dependencies** — CrabPath is pure stdlib Python
+- Optional: `OPENAI_API_KEY` for semantic embeddings (better retrieval, not required)
 
-1. Install
-   - `pip install crabpath`
-2. Bootstrap once
-   - `crabpath migrate --workspace ~/.openclaw/workspace --output-graph graph.json`
-3. Health check
-   - `crabpath health --graph graph.json`
-4. Start shadow mode
-   - See the **Shadow Mode** section below, then run your hook with:
-     - `tail -f ~/.crabpath/shadow.jsonl`
+### macOS setup (if you don't have Python 3.10+)
 
-## Shadow Mode
+```bash
+# Check your version
+python3 --version
 
-- What it does
-  - Runs in parallel with your normal agent behavior.
-  - Only suggests context and telemetry.
-  - Never modifies responses.
-- How to enable it
-  - Add this block to `AGENTS.md` (or agent bootstrap prompt):
-    - `Before answering, run CrabPath query in shadow and compare suggested context before responding.`
-    - `Never apply CrabPath output directly to the user response unless explicitly approved.`
-  - Keep your normal static context loaders in place.
-- Shadow hook script pattern
-  - Save as `~/.bin/zsh.001/query` (executable) and source it where your shell reads hook scripts.
-  - Pattern:
-    - Read the current user message into `$CRABPATH_QUERY`.
-    - If `~/.crabpath-shadow-disabled` exists, skip logging.
-    - Otherwise call:
-      - `crabpath query --graph "$CP_GRAPH" --index "$CP_INDEX" --top 12 --query "$CRABPATH_QUERY" --json`
-    - Persist a tiny trail in `~/.crabpath/shadow.jsonl` for analysis.
-- Logging
-  - Default log: `~/.crabpath/shadow.jsonl`
-  - Read latest entries:
-    - `python - <<'PY'`
-    - `from crabpath import ShadowLog`
-    - `print(ShadowLog().tail(10))`
-    - `PY`
-  - Useful fields:
-    - `selected_node_ids`, `selected_node_snippets`
-    - `retrieval_scores`, `reward`, `reward_source`
-    - `trajectory_edges`, `tier_snapshot`, `proto_edge_count`
-- Cost
-  - Scoring path: `~/bin/zsh.001/query` (LLM-backed retrieval scoring path).
-  - Free path: no score flag / no API call variant.
+# If < 3.10, install via Homebrew
+brew install python@3.12
+```
 
-## Graduating to Active Mode
+### Create a virtual environment (recommended)
 
-- Switch when:
-  - You see stable picks across N recent queries.
-  - Health checks trend green and no major regressions.
-  - Shadow log shows useful retrieval overlap with agent success cases.
-- Then:
-  - Use CrabPath output as supplementary context.
-  - Keep static loading as fallback until you confirm steady behavior.
-  - Continue to call `crabpath health` daily and review shadow logs weekly.
+Modern Homebrew Python refuses bare `pip install` (PEP 668). Use a venv:
 
-## Monitoring
+```bash
+python3.12 -m venv ~/.crabpath-env
+source ~/.crabpath-env/bin/activate
+```
 
-- `crabpath health --graph graph.json`
-  - Inspect all 8 health metrics.
-- `crabpath evolve --graph graph.json --snapshots evolution.jsonl --report`
-  - Track structural drift, pruning, and tier shifts over time.
-- Shadow log
-  - Check what was retrieved, what was scored, and why each pick was followed.
-  - Use `ShadowLog().summary(last_n=50)` to watch:
-    - average selected nodes
-    - average reward
-    - tier trends
+Add the activate line to your shell profile if you want it persistent:
+```bash
+echo 'source ~/.crabpath-env/bin/activate' >> ~/.zshrc
+```
+
+## Step 1: Install (1 minute)
+
+```bash
+pip install crabpath
+```
+
+Or from source:
+```bash
+git clone https://github.com/jonathangu/crabpath
+cd crabpath
+pip install -e .
+```
+
+Verify:
+```bash
+crabpath --version
+```
+
+## Step 2: Bootstrap your graph (1 minute)
+
+```bash
+crabpath migrate \
+  --workspace ~/.openclaw/workspace \
+  --output-graph graph.json \
+  --output-embeddings embed.json \
+  --verbose
+```
+
+This reads your workspace files and creates a memory graph. **It does NOT modify your workspace.**
+
+Expected output:
+```
+📁 Gathered 8 files (42,150 chars)
+🦀 Bootstrap: 117 nodes, 89 edges
+✅ Migration complete: 117 nodes, 89 edges
+   Tiers: {'dormant': 62, 'habitual': 18, 'reflex': 9}
+```
+
+## Step 3: Replay session history (2 minutes, optional but recommended)
+
+Feed your existing OpenClaw sessions to warm up the graph:
+
+```bash
+# Point at your sessions DIRECTORY — CrabPath auto-globs *.jsonl
+crabpath migrate \
+  --workspace ~/.openclaw/workspace \
+  --session-logs ~/.openclaw/agents/main/sessions/ \
+  --output-graph graph.json \
+  --output-embeddings embed.json \
+  --verbose
+```
+
+**Supported session formats:**
+- OpenClaw sessions: `{"type":"message","message":{"role":"user","content":[{"type":"text","text":"..."}]}}` — parsed natively
+- Flat JSONL: `{"role":"user","content":"..."}` — also works
+- Plain text: one query per line — also works
+- Directories: pass a directory and CrabPath auto-finds all `*.jsonl` files
+
+After replay, CrabPath saves a `graph.stats.json` alongside your graph with query statistics for the health check.
+
+## Step 4: Health check
+
+```bash
+# Basic structural health (always works)
+crabpath health --graph graph.json
+
+# Full health with query stats (after replay)
+crabpath health --graph graph.json --query-stats graph.stats.json
+```
+
+**Without `--query-stats`:** Shows structural metrics — tier distribution, cross-file edges, orphan nodes. These always work, even right after bootstrap.
+
+**With `--query-stats`:** Also shows query-dependent metrics — avg nodes fired, context compression, promotion rate.
+
+## Step 5: Shadow mode (safe — never modifies responses)
+
+Shadow mode runs CrabPath alongside your agent. It logs what it *would* retrieve but doesn't change anything.
+
+### For OpenClaw users
+
+Add this to your `AGENTS.md`:
+
+```text
+## CrabPath Shadow (optional context check)
+Before answering, run CrabPath query in shadow mode and compare suggested context.
+Never apply CrabPath output directly to the user response unless explicitly approved.
+```
+
+Then query manually or via the MCP server:
+
+```bash
+# CLI query
+crabpath query "how do I deploy" \
+  --graph graph.json \
+  --embeddings embed.json \
+  --top 8
+
+# Or start the MCP server for tool-based access
+python -m crabpath.mcp_server --graph graph.json --embeddings embed.json
+```
+
+### Shadow logging
+
+Queries are logged to `~/.crabpath/shadow.jsonl` when configured. Review with:
+
+```bash
+tail -f ~/.crabpath/shadow.jsonl
+```
+
+Or inspect programmatically:
+```python
+from crabpath import ShadowLog
+print(ShadowLog().tail(10))
+```
+
+## Step 6: Graduate to active mode
+
+Switch when:
+- Shadow picks are stable and relevant across recent queries
+- Health check shows green on structural metrics
+- You've compared CrabPath retrieval with your static context loading
+
+Then use CrabPath output as supplementary context. Keep static loading as fallback.
+
+## Step 7: Monitor
+
+```bash
+# Health check (run daily)
+crabpath health --graph graph.json --query-stats graph.stats.json
+
+# Evolution tracking (weekly)
+crabpath evolve --graph graph.json --snapshots evolution.jsonl --report
+```
+
+## Uninstall
+
+CrabPath is fully self-contained. To remove:
+
+```bash
+# Remove the package
+pip uninstall crabpath
+
+# Remove your graph data (if you want a clean slate)
+rm graph.json graph.stats.json embed.json evolution.jsonl
+
+# Remove shadow logs
+rm -rf ~/.crabpath/
+
+# Remove the venv (if you created one)
+rm -rf ~/.crabpath-env
+```
+
+No system files, no daemons, no config outside your working directory.
 
 ## Troubleshooting
 
-- Brain death (too aggressive decay)
-  - Autotuner handles it via `crabpath evolve` + config suggestions.
-  - Watch for reflex/habitual collapse and high `dormant_pct`.
-- No cross-file edges
-  - Lower promotion threshold (or run more queries so co-firing can promote edges).
-- Kill switch
-  - `rm graph.json` to remove current memory graph.
-  - `touch ~/.crabpath-shadow-disabled` to stop shadow scoring immediately.
+### "pip install fails with externally-managed-environment"
+You need a virtual environment. See the Prerequisites section above.
+
+### "command not found: crabpath"
+If using a venv, make sure it's activated: `source ~/.crabpath-env/bin/activate`
+
+### "replay: null" or 0 queries replayed
+- Make sure you're passing a **directory** or individual `.jsonl` **files**, not a bare path
+- Check that the directory contains `.jsonl` files: `ls ~/.openclaw/agents/main/sessions/*.jsonl`
+- CrabPath now warns if a directory has no parseable files
+
+### Health check shows "n/a (collect query stats)"
+Pass `--query-stats graph.stats.json` (generated automatically after replay). Without it, only structural metrics are shown — which is fine for a fresh graph.
+
+### Brain death (all edges dormant)
+Run `crabpath evolve --graph graph.json --snapshots evolution.jsonl --report` to diagnose. Usually means decay is too aggressive — the autotuner will suggest config changes.
+
+### Kill switch
+```bash
+rm graph.json  # removes current memory graph
+touch ~/.crabpath-shadow-disabled  # stops shadow scoring immediately
+```

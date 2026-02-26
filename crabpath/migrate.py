@@ -327,6 +327,23 @@ def parse_session_logs(
     for path in log_paths:
         p = Path(path).expanduser()
         if not p.exists():
+            logger.warning("Session log path does not exist: %s", p)
+            continue
+
+        # Auto-glob directories for *.jsonl files
+        if p.is_dir():
+            jsonl_files = sorted(p.glob("*.jsonl"))
+            if not jsonl_files:
+                logger.warning("No .jsonl files found in directory: %s", p)
+                continue
+            # Recurse with the individual files
+            dir_queries = parse_session_logs(
+                [str(f) for f in jsonl_files],
+                max_queries=max_queries - len(queries),
+            )
+            queries.extend(dir_queries)
+            if len(queries) >= max_queries:
+                break
             continue
 
         try:
@@ -412,6 +429,8 @@ def replay_queries(
     total_promotions = 0
     total_reinforcements = 0
     total_skips = 0
+    total_nodes_selected = 0
+    total_context_chars = 0
 
     for qi, query in enumerate(queries, 1):
         # Build candidates from all nodes
@@ -435,6 +454,13 @@ def replay_queries(
 
         # Route
         selected = router_fn(query, candidates)
+        total_nodes_selected += len(selected)
+        if selected:
+            total_context_chars += sum(
+                len(graph.get_node(nid).content)
+                for nid in selected
+                if graph.get_node(nid) is not None
+            )
 
         # Co-firing
         if len(selected) >= 2:
@@ -459,6 +485,10 @@ def replay_queries(
         "promotions": total_promotions,
         "reinforcements": total_reinforcements,
         "skips": total_skips,
+        "avg_nodes_fired_per_query": (
+            total_nodes_selected / len(queries) if queries else 0
+        ),
+        "avg_context_chars": total_context_chars / len(queries) if queries else 0,
     }
 
 
@@ -640,6 +670,13 @@ def migrate(
             "mitosis": mit_state,
             "synapse": syn_state,
         },
+        "query_stats": {
+            "avg_nodes_fired_per_query": replay_info.get("avg_nodes_fired_per_query", 0),
+            "avg_context_chars": replay_info.get("avg_context_chars", 0),
+            "queries_replayed": replay_info.get("queries_replayed", 0),
+        }
+        if replay_info
+        else None,
     }
 
     if verbose:

@@ -752,6 +752,13 @@ def cmd_migrate(args: argparse.Namespace) -> dict[str, Any]:
 
     graph_path = args.output_graph
     graph.save(graph_path)
+    verbose = getattr(args, "verbose", False)
+    if info.get("query_stats"):
+        stats_path = str(Path(args.output_graph).with_suffix(".stats.json"))
+        with open(stats_path, "w") as f:
+            json.dump(info["query_stats"], f, indent=2)
+        if verbose:
+            print(f"📊 Query stats saved to {stats_path}")
 
     embeddings_path = args.output_embeddings
     if embeddings_path:
