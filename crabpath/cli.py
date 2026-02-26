@@ -807,17 +807,26 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     graph_path = data_dir / "graph.json"
     embed_path = data_dir / "embed.json"
 
-    try:
-        embed_fn = _safe_embed_fn()
-        embeddings = EmbeddingIndex()
-        embed_callback = None
-        if embed_fn is not None:
+    session_logs = [args.sessions] if args.sessions else None
+    stats_path = data_dir / "graph.stats.json"
 
-            def embed_callback(node_id: str, content: str) -> None:
-                embeddings.upsert(node_id, content, embed_fn=embed_fn)
+    try:
+        if args.no_embeddings:
+            embed_fn = None
+            embed_callback = None
+            embeddings = None
+        else:
+            embed_fn = _safe_embed_fn()
+            embeddings = EmbeddingIndex()
+            embed_callback = None
+            if embed_fn is not None:
+
+                def embed_callback(node_id: str, content: str) -> None:
+                    embeddings.upsert(node_id, content, embed_fn=embed_fn)
 
         graph, info = migrate(
             workspace_dir=workspace_dir,
+            session_logs=session_logs,
             config=MigrateConfig(),
             embed_callback=embed_callback,
             verbose=False,
@@ -826,8 +835,14 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
             info = dict(info)
             info.pop("states", None)
 
+        query_stats = info.get("query_stats")
+        if query_stats is not None:
+            with open(stats_path, "w", encoding="utf-8") as f:
+                json.dump(query_stats, f, indent=2)
+
         graph.save(str(graph_path))
-        embeddings.save(str(embed_path))
+        if embeddings is not None:
+            embeddings.save(str(embed_path))
 
         health = measure_health(graph, MitosisState(), {})
         health_payload = _build_health_payload(
@@ -840,12 +855,22 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
             False,
         )
 
+        next_steps = [
+            f"crabpath query '<query>' --graph {graph_path}",
+            f"crabpath health --graph {graph_path} --json",
+        ]
+        if query_stats is not None:
+            next_steps.append(
+                f"crabpath health --graph {graph_path} --query-stats {stats_path} --json"
+            )
+
         return {
             "ok": True,
             "data_dir": str(data_dir),
             "workspace": str(workspace_dir),
             "graph_path": str(graph_path),
-            "embeddings_path": str(embed_path),
+            "embeddings_path": str(embed_path) if embeddings is not None else None,
+            "stats_path": str(stats_path) if query_stats is not None else None,
             "migration": info,
             "health": health_payload["metrics"],
             "summary": {
@@ -853,14 +878,59 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
                 "edges": graph.edge_count,
                 "files": info.get("bootstrap", {}).get("files", 0),
             },
-            "next_steps": [
-                f"crabpath query '<query>' --graph {graph_path}",
-                f"crabpath health --graph {graph_path} --json",
-            ],
+            "next_steps": next_steps,
         }
     finally:
         if temp_workspace is not None:
             shutil.rmtree(temp_workspace, ignore_errors=True)
+
+
+def cmd_install_hook(args: argparse.Namespace) -> dict[str, Any]:
+    data_dir = Path(args.data_dir).expanduser().resolve()
+    graph_path = data_dir / "graph.json"
+    if not graph_path.exists():
+        raise CLIError("No CrabPath graph found. Run crabpath init first.")
+
+    agents_path = (
+        Path(args.agent_workspace).expanduser().resolve() / "AGENTS.md"
+    )
+    if not agents_path.exists():
+        raise CLIError(f"AGENTS.md not found: {agents_path}")
+
+    existing = agents_path.read_text(encoding="utf-8")
+    if "CrabPath" in existing:
+        return {
+            "ok": True,
+            "agents_md": str(agents_path),
+            "already_installed": True,
+            "block_added": False,
+            "data_dir": str(data_dir),
+        }
+
+    block = (
+        "\n## CrabPath Memory Graph (auto-installed)\n\n"
+        "Before answering questions about prior work, context, or decisions, query the CrabPath memory graph:\n"
+        "```bash\n"
+        f"crabpath query '<summary of user message>' --graph {graph_path} --top 8 --json\n"
+        "```\n"
+        "Use the returned context to supplement your memory files. CrabPath runs in shadow mode — it suggests context but never modifies your responses directly.\n\n"
+        f"To check graph health: `crabpath health --graph {graph_path}`\n"
+        "To remove: delete this section from AGENTS.md and run `pip uninstall crabpath`\n"
+    )
+
+    if not args.dry_run:
+        with agents_path.open("a", encoding="utf-8") as f:
+            f.write(block)
+        block_added = True
+    else:
+        block_added = False
+
+    return {
+        "ok": True,
+        "agents_md": str(agents_path),
+        "block_added": block_added,
+        "data_dir": str(data_dir),
+    }
 
 
 def cmd_extract_sessions(args: argparse.Namespace) -> dict[str, Any]:
@@ -1087,8 +1157,29 @@ def _build_parser() -> JSONArgumentParser:
     init.add_argument("--workspace", default=DEFAULT_INIT_WORKSPACE_PATH)
     init.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
     init.add_argument("--example", action="store_true", default=False)
+    init.add_argument(
+        "--sessions",
+        default=None,
+        help="Session logs directory or files for replay (auto-globs *.jsonl from directories)",
+    )
+    init.add_argument(
+        "--no-embeddings",
+        action="store_true",
+        default=False,
+        help="Skip embedding generation (use keyword-based routing instead)",
+    )
     _add_json_flag(init)
     init.set_defaults(func=cmd_init)
+
+    hook = subparsers.add_parser(
+        "install-hook",
+        help="Install CrabPath integration into an agent workspace",
+    )
+    hook.add_argument("--agent-workspace", required=True, help="Path to agent workspace directory")
+    hook.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
+    hook.add_argument("--dry-run", action="store_true", default=False)
+    _add_json_flag(hook)
+    hook.set_defaults(func=cmd_install_hook)
 
     explain = subparsers.add_parser("explain", help="Explain MemoryController routing for a query")
     explain.add_argument("query")
