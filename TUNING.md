@@ -25,3 +25,12 @@ This file lists the knobs currently covered by runtime autotuning.
 | `max_outgoing` (`SynaptogenesisConfig.max_outgoing`) | Workspace-derived default | Structural limit; not autotuned. |
 
 `self_tune()` flow: `measure_health()` → `autotune()` → `apply_adjustments()`.
+
+## LLM model rule
+
+**All CrabPath LLM calls must use a non-reasoning model (e.g. `gpt-4o-mini`).**
+
+Every internal LLM task is classification — routing, scoring, splitting, merging, neurogenesis.
+None require chain-of-thought. Reasoning models (gpt-5-mini, o-series) waste tokens on
+internal thinking that produces identical outputs 3× slower. The whole architecture assumes
+"one cheap, fast LLM." Don't upgrade the helper model — it makes things worse.
