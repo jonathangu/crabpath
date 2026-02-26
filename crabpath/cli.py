@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .graph import Edge, Graph, Node
 from .index import VectorIndex
+from .connect import apply_connections, suggest_connections
 from .replay import extract_queries, extract_queries_from_dir, replay_queries
 from .split import generate_summaries, split_workspace
 from .traverse import TraversalConfig, traverse
@@ -79,6 +80,12 @@ def _build_parser() -> argparse.ArgumentParser:
     merge.add_argument("--route-provider", choices=("openai", "ollama"))
     merge.add_argument("--json", action="store_true")
     merge.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
+
+    connect = sub.add_parser("connect", help="suggest and apply cross-file edges")
+    connect.add_argument("--graph", required=True)
+    connect.add_argument("--route-provider", choices=("openai", "ollama"))
+    connect.add_argument("--max-candidates", type=int, default=20)
+    connect.add_argument("--json", action="store_true")
 
     replay = sub.add_parser("replay", help="warm up graph from historical sessions")
     replay.add_argument("--graph", required=True)
@@ -671,6 +678,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         if args.sessions is not None:
             queries = _load_session_queries(args.sessions)
             replay_queries(graph=graph, queries=queries)
+        if llm_command is not None:
+            connections = suggest_connections(graph=graph, llm_fn=llm_fn, max_candidates=20)
+            apply_connections(graph=graph, connections=connections)
 
         graph_path = output_dir / "graph.json"
         texts_path = output_dir / "texts.json"
@@ -1141,7 +1151,57 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_embed(args)
     if args.command == "merge":
         return cmd_merge(args)
+    if args.command == "connect":
+        return cmd_connect(args)
     return 1
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    graph = _load_graph(args.graph)
+
+    route_provider = args.route_provider
+    if route_provider is None:
+        route_provider = _auto_detect_provider()
+        if route_provider:
+            print(f"Auto-detected connect provider: {route_provider}", file=sys.stderr)
+
+    llm_temp_script = None
+    llm_fn = None
+    if route_provider is not None:
+        llm_command, llm_temp_script = _build_llm_command(route_provider)
+
+        def route_aware_llm_fn(system_prompt: str, user_prompt: str) -> str:
+            return _run_llm_command(llm_command, system_prompt, user_prompt)
+
+        llm_fn = route_aware_llm_fn
+
+    try:
+        suggestions = suggest_connections(
+            graph=graph,
+            llm_fn=llm_fn,
+            max_candidates=args.max_candidates,
+        )
+        added = apply_connections(graph=graph, connections=suggestions)
+    finally:
+        if llm_temp_script is not None and Path(llm_temp_script).exists():
+            Path(llm_temp_script).unlink()
+
+    _write_graph(args.graph, graph)
+    payload = {
+        "suggestions": [
+            {"source_id": source_id, "target_id": target_id, "weight": weight, "reason": reason}
+            for source_id, target_id, weight, reason in suggestions
+        ],
+        "added": added,
+    }
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        print(f"Suggested connections: {len(suggestions)}")
+        print(f"Added edges: {added}")
+        for item in suggestions:
+            print(f"{item[0]} -> {item[1]} ({item[2]:.4f})")
+    return 0
 
 
 if __name__ == "__main__":
