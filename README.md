@@ -362,7 +362,8 @@ python scripts/phase_transition_plot.py
 - Python 3.10+
 - Zero dependencies (stdlib only)
 - Optional: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or local Ollama for semantic embeddings
-- Without any provider, CrabPath falls back to keyword-based routing
+- **Recommended LLM for routing: GPT-5-mini** — the router emits tiny JSON decisions (`{"target": "node_id", "confidence": 0.8}`), so use the cheapest model that follows instructions. This is already the default in `RouterConfig`.
+- Without any provider, CrabPath falls back to weight-only heuristic routing (no LLM needed)
 
 ## The Name
 

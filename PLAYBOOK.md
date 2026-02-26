@@ -5,6 +5,7 @@
 - **Python 3.10+** required (macOS ships 3.9 — you need a newer version)
 - **No pip dependencies** — CrabPath is pure stdlib Python
 - Optional: `OPENAI_API_KEY` for semantic embeddings (better retrieval, not required)
+- **Recommended model for LLM routing: GPT-5-mini** — cheap, fast, good enough for the router's JSON selection task. Set via `RouterConfig(model="gpt-5-mini")` (this is already the default)
 
 ### macOS setup (if you don't have Python 3.10+)
 

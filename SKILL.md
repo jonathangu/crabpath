@@ -11,6 +11,7 @@ CrabPath is a memory graph for AI agents with migration, query, and graph mainte
   ```
 - Zero pip dependencies (pure stdlib)
 - Optional: `OPENAI_API_KEY` for semantic embeddings
+- **Recommended LLM for routing: GPT-5-mini** — the router only outputs tiny JSON decisions; use the cheapest model that follows instructions. This is already the default.
 
 ## Safe Mode (ClawHub users)
 
