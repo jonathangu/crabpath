@@ -40,6 +40,11 @@ def _build_parser() -> argparse.ArgumentParser:
     embed_init_group.add_argument("--embed-command")
     embed_init_group.add_argument("--embed-provider", choices=("openai", "ollama"))
     init.add_argument("--route-provider", choices=("openai", "ollama"))
+    init.add_argument("--llm-split", choices=("auto", "always", "never"), default="auto")
+    init.add_argument("--llm-split-max-files", type=int, default=30)
+    init.add_argument("--llm-split-min-chars", type=int, default=4000)
+    init.add_argument("--llm-summary", choices=("auto", "always", "never"), default="auto")
+    init.add_argument("--llm-summary-max-nodes", type=int, default=200)
     init.add_argument("--no-embed", action="store_true", help="skip embedding during init")
     init.add_argument("--no-route", action="store_true", help="skip route provider detection during init")
     init.add_argument("--json", action="store_true")
@@ -58,6 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     query.add_argument("--graph", required=True)
     query.add_argument("--index", required=False)
     query.add_argument("--top", type=int, default=10)
+    query.add_argument("--no-embed-query", action="store_true", help="skip automatic query embedding when --index is provided")
     query.add_argument("--json", action="store_true")
     query.add_argument("--query-vector", nargs="+", required=False)
     query.add_argument("--query-vector-stdin", action="store_true")
@@ -229,14 +235,56 @@ def _auto_detect_provider(check_env_only: bool = False) -> str | None:
     if check_env_only:
         return None
 
-    env_file = Path.home() / ".env"
-    if env_file.exists():
+    def _strip_inline_comment(value: str) -> str:
+        in_single = False
+        in_double = False
+        escaped = False
+        for idx, char in enumerate(value):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\" and not in_single:
+                escaped = True
+                continue
+            if char == "'" and not in_double:
+                in_single = not in_single
+                continue
+            if char == '"' and not in_single:
+                in_double = not in_double
+                continue
+            if char == "#" and not in_single and not in_double:
+                return value[:idx].rstrip()
+        return value
+
+    env_candidates = [
+        ".env",
+        ".zshrc",
+        ".zprofile",
+        ".bash_profile",
+        ".bashrc",
+    ]
+    home = Path.home()
+    for filename in env_candidates:
+        env_file = home / filename
+        if not env_file.exists():
+            continue
         for line in env_file.read_text(encoding="utf-8").splitlines():
-            if line.strip().startswith("OPENAI_API_KEY="):
-                value = line.split("=", 1)[1].strip().strip('"').strip("'")
-                if value:
-                    os.environ["OPENAI_API_KEY"] = value
-                    return "openai"
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+
+            if not line.startswith("OPENAI_API_KEY="):
+                continue
+
+            raw_value = line.split("=", 1)[1].strip()
+            raw_value = _strip_inline_comment(raw_value).strip()
+            value = raw_value.strip().strip('"').strip("'").strip()
+            if value:
+                os.environ["OPENAI_API_KEY"] = value
+                return "openai"
 
     try:
         result = subprocess.run(
@@ -620,6 +668,22 @@ def _build_index_from_texts(
     return index
 
 
+def _embed_query_text(
+    query_text: str,
+    embed_command: str | None,
+    embed_provider: str | None,
+) -> list[float]:
+    command, temp_script = _build_embed_command(embed_command=embed_command, embed_provider=embed_provider)
+    try:
+        results = _run_embedding_batch(command=command, batch=[("query", query_text)])
+        if "query" not in results:
+            raise SystemExit("query embedding response missing query id")
+        return results["query"]
+    finally:
+        if temp_script is not None and Path(temp_script).exists():
+            Path(temp_script).unlink()
+
+
 def _keyword_seeds(graph: Graph, text: str, top_k: int) -> list[tuple[str, float]]:
     query_tokens = _tokenize_text(text)
     if not query_tokens or top_k <= 0:
@@ -662,69 +726,122 @@ def cmd_init(args: argparse.Namespace) -> int:
         llm_command, llm_temp_script = _build_llm_command(route_provider)
         print("Using LLM for: splitting, summaries", file=sys.stderr)
 
+    if args.llm_split_max_files < 0:
+        raise SystemExit("--llm-split-max-files must be >= 0")
+    if args.llm_split_min_chars < 0:
+        raise SystemExit("--llm-split-min-chars must be >= 0")
+    if args.llm_summary_max_nodes < 0:
+        raise SystemExit("--llm-summary-max-nodes must be >= 0")
+
+    llm_enabled = route_provider is not None
+
+    split_counter = {"count": 0}
+
+    def should_split_with_llm(relative_path: str, content: str) -> bool:
+        if not llm_enabled:
+            return False
+        if args.llm_split == "never":
+            return False
+        if args.llm_split == "always":
+            return True
+        if args.llm_split == "auto":
+            if args.llm_split_max_files <= 0:
+                return False
+            if len(content) < args.llm_split_min_chars:
+                return False
+            header_count = sum(1 for line in content.splitlines() if line.startswith("## "))
+            if header_count > 1:
+                return False
+            if split_counter["count"] >= args.llm_split_max_files:
+                return False
+            split_counter["count"] += 1
+            return True
+        return False
+
+    def split_progress_fn(file_index: int, file_total: int, rel_path: str, mode: str) -> None:
+        print(f"Splitting {file_index}/{file_total} ({mode}): {rel_path}", file=sys.stderr)
+
     def llm_fn(system_prompt: str, user_prompt: str) -> str:
         if llm_command is None:
             raise SystemExit("LLM command is unavailable")
         return _run_llm_command(llm_command, system_prompt, user_prompt)
 
+    def summary_progress_fn(node_index: int, node_total: int) -> None:
+        print(f"Summarizing {node_index}/{node_total}", file=sys.stderr)
+
+    graph_path = output_dir / "graph.json"
+    texts_path = output_dir / "texts.json"
+
     try:
-        graph, texts = split_workspace(args.workspace, llm_fn=llm_fn if llm_command else None)
-        if llm_command is not None:
-            summaries = generate_summaries(graph, llm_fn=llm_fn)
-            for node_id, summary in summaries.items():
-                node = graph.get_node(node_id)
-                if node is not None:
-                    node.summary = summary
+        graph, texts = split_workspace(
+            args.workspace,
+            llm_fn=llm_fn if llm_enabled else None,
+            should_use_llm_for_file=should_split_with_llm if llm_enabled else None,
+            split_progress=split_progress_fn,
+        )
+
         if args.sessions is not None:
             queries = _load_session_queries(args.sessions)
             replay_queries(graph=graph, queries=queries)
-        if llm_command is not None:
-            connections = suggest_connections(graph=graph, llm_fn=llm_fn, max_candidates=20)
-            apply_connections(graph=graph, connections=connections)
 
-        graph_path = output_dir / "graph.json"
-        texts_path = output_dir / "texts.json"
         _write_graph(graph_path, graph)
         texts_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
+
+        if args.llm_summary != "never" and llm_enabled:
+            nodes = graph.nodes()
+            if args.llm_summary == "auto":
+                if args.llm_summary_max_nodes == 0:
+                    summary_targets = set()
+                else:
+                    summary_targets = {
+                        node.id
+                        for node in sorted(nodes, key=lambda node: len(node.content), reverse=True)[
+                            : args.llm_summary_max_nodes
+                        ]
+                    }
+            else:
+                summary_targets = None
+
+            summaries = generate_summaries(graph, llm_fn=llm_fn, llm_node_ids=summary_targets)
+            for index, node in enumerate(graph.nodes(), start=1):
+                summary_progress_fn(index, len(graph.nodes()))
+                node_summary = summaries.get(node.id)
+                if node_summary is not None:
+                    node.summary = node_summary
+
+        if args.no_embed:
+            if args.embed_command is not None or args.embed_provider is not None:
+                raise SystemExit("use --no-embed without --embed-command or --embed-provider")
+            embed_provider = None
+            embed_command = None
+        elif args.embed_command is not None or args.embed_provider is not None:
+            embed_command = args.embed_command
+            embed_provider = args.embed_provider
+        else:
+            embed_provider = _auto_detect_provider()
+            embed_command = None
+            if embed_provider:
+                print(f"Auto-detected embedding provider: {embed_provider}")
+            else:
+                print("Warning: no embedding provider detected, continuing without embeddings")
+
+        if args.embed_command is not None or embed_provider is not None:
+            index = _build_index_from_texts(
+                texts=texts,
+                embed_command=embed_command,
+                embed_provider=embed_provider,
+            )
+            index_path = output_dir / "index.json"
+            index.save(str(index_path))
+
+        if llm_enabled:
+            connections = suggest_connections(graph=graph, llm_fn=llm_fn, max_candidates=20)
+            apply_connections(graph=graph, connections=connections)
+            _write_graph(graph_path, graph)
+
     finally:
         if llm_temp_script is not None and Path(llm_temp_script).exists():
             Path(llm_temp_script).unlink()
-
-    if args.no_embed:
-        if args.embed_command is not None or args.embed_provider is not None:
-            raise SystemExit("use --no-embed without --embed-command or --embed-provider")
-        embed_provider = None
-        embed_command = None
-    elif args.embed_command is not None or args.embed_provider is not None:
-        embed_command = args.embed_command
-        embed_provider = args.embed_provider
-    else:
-        embed_provider = _auto_detect_provider()
-        embed_command = None
-        if embed_provider:
-            print(f"Auto-detected embedding provider: {embed_provider}")
-        else:
-            print("Warning: no embedding provider detected, continuing without embeddings")
-
-    if args.no_route:
-        if args.route_provider is not None:
-            raise SystemExit("use --no-route without --route-provider")
-        route_provider = None
-    elif args.route_provider is not None:
-        route_provider = args.route_provider
-    else:
-        route_provider = _auto_detect_provider()
-        if route_provider:
-            print(f"Auto-detected routing provider: {route_provider}")
-
-    if args.embed_command is not None or embed_provider is not None:
-        index = _build_index_from_texts(
-            texts=texts,
-            embed_command=embed_command,
-            embed_provider=embed_provider,
-        )
-        index_path = output_dir / "index.json"
-        index.save(str(index_path))
 
     if args.json:
         payload = {"graph": str(graph_path), "texts": str(texts_path)}
@@ -791,6 +908,11 @@ def cmd_query(args: argparse.Namespace) -> int:
     else:
         query_vec = None
         index_path = args.index
+
+    if query_vec is None and index_path and not args.no_embed_query:
+        embed_provider = _auto_detect_provider()
+        if embed_provider is not None:
+            query_vec = _embed_query_text(args.text, embed_command=None, embed_provider=embed_provider)
 
     if query_vec is not None:
         if not index_path:

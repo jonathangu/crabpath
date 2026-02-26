@@ -79,14 +79,20 @@ def _split_with_llm(content: str, llm_fn: Callable[[str, str], str]) -> list[str
     return _chunk_markdown(content)
 
 
-def generate_summaries(graph: Graph, llm_fn: Callable[[str, str], str] | None = None) -> dict[str, str]:
+def generate_summaries(
+    graph: Graph,
+    llm_fn: Callable[[str, str], str] | None = None,
+    llm_node_ids: set[str] | None = None,
+) -> dict[str, str]:
     """Generate one-line summaries for each node.
 
     If no LLM callback is provided, fall back to the first content line.
     """
     summaries: dict[str, str] = {}
+    target_nodes = set(llm_node_ids) if llm_node_ids is not None else None
     for node in graph.nodes():
-        if llm_fn is None:
+        use_llm = bool(llm_fn and (target_nodes is None or node.id in target_nodes))
+        if not use_llm:
             summaries[node.id] = _first_line(node.content)
             continue
 
@@ -230,6 +236,8 @@ def split_workspace(
     max_depth: int = 3,
     exclude: Iterable[str] | None = None,
     llm_fn: Callable[[str, str], str] | None = None,
+    should_use_llm_for_file: Callable[[str, str], bool] | None = None,
+    split_progress: Callable[[int, int, str, str], None] | None = None,
 ) -> tuple[Graph, dict[str, str]]:
     """Read markdown files from workspace and convert them into a graph.
 
@@ -252,6 +260,7 @@ def split_workspace(
     graph = Graph()
     texts: dict[str, str] = {}
 
+    candidates: list[tuple[Path, str]] = []
     for dir_path, dir_names, file_names in os.walk(workspace):
         rel_dir = Path(dir_path).resolve().relative_to(workspace.resolve())
         depth = len(rel_dir.parts)
@@ -269,35 +278,52 @@ def split_workspace(
         for filename in sorted(file_names):
             rel = (rel_dir / filename).as_posix() if rel_dir.parts else filename
             file_path = Path(dir_path) / filename
-            if not file_path.is_file():
-                continue
-            if not file_path.suffix.lower() == ".md":
+            if not file_path.is_file() or file_path.suffix.lower() != ".md":
                 continue
             if _should_skip_path(rel, excludes, gitignore_patterns):
                 continue
+            candidates.append((file_path, rel))
 
-            text = file_path.read_text(encoding="utf-8")
-            chunks = _split_with_llm(text, llm_fn) if llm_fn is not None else _chunk_markdown(text)
+    total_files = len(candidates)
+    for idx, (file_path, rel) in enumerate(candidates, start=1):
+        text = file_path.read_text(encoding="utf-8")
+        use_llm = False
+        if llm_fn is not None:
+            if should_use_llm_for_file is None:
+                use_llm = True
+            else:
+                try:
+                    use_llm = bool(should_use_llm_for_file(rel, text))
+                except Exception:
+                    use_llm = False
 
-            node_ids: list[str] = []
-            for idx, chunk in enumerate(chunks):
-                if not chunk.strip():
-                    continue
-                node_id = f"{rel}::{idx}"
-                summary = chunk.splitlines()[0] if chunk.splitlines() else ""
-                node = Node(
-                    id=node_id,
-                    content=chunk,
-                    summary=summary,
-                    metadata={"file": rel, "chunk": idx, "kind": "markdown"},
-                )
-                graph.add_node(node)
-                texts[node_id] = chunk
-                node_ids.append(node_id)
+        if split_progress is not None:
+            split_progress(idx, total_files, rel, "llm" if use_llm else "heuristic")
 
-            for source_offset, (source_id, target_id) in enumerate(zip(node_ids, node_ids[1:])):
-                weight = _sibling_weight(rel, source_offset)
-                graph.add_edge(Edge(source=source_id, target=target_id, weight=weight, kind="sibling"))
-                graph.add_edge(Edge(source=target_id, target=source_id, weight=weight, kind="sibling"))
+        if use_llm:
+            chunks = _split_with_llm(text, llm_fn)
+        else:
+            chunks = _chunk_markdown(text)
+
+        node_ids: list[str] = []
+        for chunk_index, chunk in enumerate(chunks):
+            if not chunk.strip():
+                continue
+            node_id = f"{rel}::{chunk_index}"
+            summary = chunk.splitlines()[0] if chunk.splitlines() else ""
+            node = Node(
+                id=node_id,
+                content=chunk,
+                summary=summary,
+                metadata={"file": rel, "chunk": chunk_index, "kind": "markdown"},
+            )
+            graph.add_node(node)
+            texts[node_id] = chunk
+            node_ids.append(node_id)
+
+        for source_offset, (source_id, target_id) in enumerate(zip(node_ids, node_ids[1:])):
+            weight = _sibling_weight(rel, source_offset)
+            graph.add_edge(Edge(source=source_id, target=target_id, weight=weight, kind="sibling"))
+            graph.add_edge(Edge(source=target_id, target=source_id, weight=weight, kind="sibling"))
 
     return graph, texts

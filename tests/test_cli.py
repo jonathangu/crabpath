@@ -143,6 +143,31 @@ def test_auto_detect_openai_from_env(monkeypatch) -> None:
     assert cli._auto_detect_provider() == "openai"
 
 
+def test_auto_detect_openai_from_dotfile(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("CRABPATH_NO_AUTO_DETECT", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".zshrc").write_text(
+        '  # shell comments ignored\n'
+        'export OPENAI_API_KEY="  sk-zshrc  "\n'
+        'UNRELATED=ignore\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+    monkeypatch.setattr(
+        cli.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConnectionError()),
+    )
+
+    assert cli._auto_detect_provider() == "openai"
+    assert os.getenv("OPENAI_API_KEY") == "sk-zshrc"
+
+
 def test_auto_detect_none(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("CRABPATH_NO_AUTO_DETECT", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -225,6 +250,43 @@ def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
     out = json.loads(capsys.readouterr().out.strip())
     assert out["fired"]
     assert "a" in out["fired"]
+
+
+def test_query_auto_embeds_query_vector_from_index(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    index_path = tmp_path / "index.json"
+    _write_graph_payload(graph_path)
+    _write_index(index_path)
+
+    embed_script = tmp_path / "query_embed.py"
+    embed_script.write_text(
+        "import json\nimport sys\n\nfor line in sys.stdin:\n    payload = json.loads(line)\n    if payload.get('id') == 'query':\n        print(json.dumps({'id': 'query', 'embedding': [1, 0]}))\n",
+        encoding="utf-8",
+    )
+
+    def fake_build_embed_command(embed_command: str | None, embed_provider: str | None):
+        return [sys.executable, str(embed_script)], None
+
+    monkeypatch.setattr(cli, "_auto_detect_provider", lambda: "openai")
+    monkeypatch.setattr(cli, "_build_embed_command", fake_build_embed_command)
+
+    code = main(
+        [
+            "query",
+            "seed",
+            "--graph",
+            str(graph_path),
+            "--index",
+            str(index_path),
+            "--no-route",
+            "--top",
+            "1",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fired"][0] == "a"
 
 
 def test_query_command_error_on_missing_graph(tmp_path) -> None:
@@ -498,6 +560,85 @@ def test_init_with_auto_route_provider_message_when_detected(tmp_path, monkeypat
     )
     assert code == 0
     assert "Using LLM for: splitting, summaries" in capsys.readouterr().err
+
+
+def test_init_bounded_llm_calls_are_limited(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    for index in range(5):
+        (workspace / f"file_{index}.md").write_text(
+            f"token{index} token{index} token{index} token{index} token{index}",
+            encoding="utf-8",
+        )
+
+    output = tmp_path / "out"
+
+    call_count = {"split": 0, "summary": 0}
+
+    def fake_run_llm(_command: list[str], system_prompt: str, _user_prompt: str) -> str:
+        if "Split this document into coherent semantic sections." in system_prompt:
+            call_count["split"] += 1
+            return json.dumps({"sections": ["section"]})
+        if "Write a one-line summary for this node." in system_prompt:
+            call_count["summary"] += 1
+            return json.dumps({"summary": "summary"})
+        return json.dumps({})
+
+    monkeypatch.setattr(cli, "_run_llm_command", fake_run_llm)
+
+    code = main(
+        [
+            "init",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(output),
+            "--route-provider",
+            "openai",
+            "--llm-split",
+            "auto",
+            "--llm-split-max-files",
+            "2",
+            "--llm-split-min-chars",
+            "10",
+            "--llm-summary",
+            "auto",
+            "--llm-summary-max-nodes",
+            "3",
+            "--no-embed",
+        ]
+    )
+
+    assert code == 0
+    assert call_count["split"] <= 2
+    assert call_count["summary"] <= 3
+
+
+def test_init_graph_texts_written_even_when_embedding_fails(tmp_path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("single paragraph", encoding="utf-8")
+    output = tmp_path / "out"
+    embed_script = tmp_path / "embed_fail.py"
+    embed_script.write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "init",
+                "--workspace",
+                str(workspace),
+                "--output",
+                str(output),
+                "--no-route",
+                "--embed-command",
+                f"{sys.executable} {embed_script}",
+            ]
+        )
+
+    assert (output / "graph.json").exists()
+    assert (output / "texts.json").exists()
+    assert not (output / "index.json").exists()
 
 
 def test_init_output_flag_writes_path(tmp_path) -> None:
