@@ -827,17 +827,12 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
                     "To skip embeddings (keyword-only routing): crabpath init --no-embeddings"
                 ) from exc
             embeddings = EmbeddingIndex()
-            embed_callback = None
-            if embed_fn is not None:
-
-                def embed_callback(node_id: str, content: str) -> None:
-                    embeddings.upsert(node_id, content, embed_fn=embed_fn)
 
         graph, info = migrate(
             workspace_dir=workspace_dir,
             session_logs=session_logs,
             config=MigrateConfig(),
-            embed_callback=embed_callback,
+            embed_callback=None,
             verbose=False,
         )
         if "states" in info:
@@ -850,7 +845,10 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
                 json.dump(query_stats, f, indent=2)
 
         graph.save(str(graph_path))
-        if embeddings is not None:
+
+        # Batch-embed all nodes at once (much faster than per-node upsert)
+        if embeddings is not None and embed_fn is not None:
+            embeddings.build(graph, embed_fn)
             embeddings.save(str(embed_path))
 
         health = measure_health(graph, MitosisState(), {})
