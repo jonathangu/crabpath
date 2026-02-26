@@ -22,6 +22,8 @@ This file lists the knobs currently covered by runtime autotuning.
 | `dormant_threshold` (`SynaptogenesisConfig.dormant_threshold`) | `0.1` | Fixed tier boundary for dormant visibility. |
 | `reflex_threshold` (`SynaptogenesisConfig.reflex_threshold`) | `0.9` | Fixed tier boundary for reflex (auto-follow) edges. |
 | `sibling_weight` (`MitosisConfig.sibling_weight`) | `0.25` | Start low — edges earn weight through co-firing. |
+| `sibling_jitter` (`MitosisConfig.sibling_jitter`) | `0.1` | Deterministic ±jitter on sibling init to break uniform softmax deadlock. |
+| `temperature` (`LearningConfig.temperature`) | `0.5` | Softmax temperature for PG updates. Lower = sharper gradients from similar weights. |
 | `max_outgoing` (`SynaptogenesisConfig.max_outgoing`) | Workspace-derived default | Structural limit; not autotuned. |
 
 `self_tune()` flow: `measure_health()` → `autotune()` → `apply_adjustments()`.
