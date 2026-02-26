@@ -30,10 +30,14 @@ pip install crabpath
 ### Step 2: Bootstrap (zero risk — read-only)
 
 ```bash
-crabpath migrate --workspace ~/.openclaw/workspace --output-graph graph.json --output-embeddings embed.json
+# Requires OPENAI_API_KEY, GEMINI_API_KEY, or local Ollama for embeddings
+crabpath init --workspace ~/.openclaw/workspace \
+  --sessions ~/.openclaw/agents/main/sessions/
 ```
 
-This reads your files and creates a graph. It does NOT modify your workspace.
+This reads your files, creates a graph with embeddings, and replays session history. It does NOT modify your workspace.
+
+Without an embedding provider, use `--no-embeddings` (keyword-only routing, less accurate).
 
 ### Step 3: Check Health
 

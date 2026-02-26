@@ -49,49 +49,43 @@ Verify:
 crabpath --version
 ```
 
-## Step 2: Bootstrap your graph (1 minute)
+## Step 2: Bootstrap your graph (1-3 minutes)
 
 ```bash
-crabpath migrate \
+# Embeddings are ON by default — requires OPENAI_API_KEY, GEMINI_API_KEY, or local Ollama
+crabpath init \
   --workspace ~/.openclaw/workspace \
-  --output-graph graph.json \
-  --output-embeddings embed.json \
-  --verbose
+  --sessions ~/.openclaw/agents/main/sessions/
 ```
 
-This reads your workspace files and creates a memory graph. **It does NOT modify your workspace.**
+This does everything in one command:
+1. Reads your workspace files → creates nodes
+2. Splits large files into coherent chunks
+3. Replays session history to warm up edges
+4. Generates embeddings for semantic retrieval
+5. Saves graph, embeddings, and query stats to `~/.crabpath/`
 
-Expected output:
-```
-📁 Gathered 8 files (42,150 chars)
-🦀 Bootstrap: 117 nodes, 89 edges
-✅ Migration complete: 117 nodes, 89 edges
-   Tiers: {'dormant': 62, 'habitual': 18, 'reflex': 9}
-```
+**It does NOT modify your workspace.**
 
-## Step 3: Replay session history (2 minutes, optional but recommended)
+**Embedding providers** (checked in order):
+- `OPENAI_API_KEY` → OpenAI text-embedding-3-small (recommended, ~$0.02 for 200 nodes)
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY` → Gemini text-embedding-004 (free tier available)
+- Local Ollama → nomic-embed-text (free, runs on your machine)
 
-Feed your existing OpenClaw sessions to warm up the graph:
+If no provider is found, `init` will error with setup instructions.
 
+**Fallback** (keyword-only routing, no API needed):
 ```bash
-# Point at your sessions DIRECTORY — CrabPath auto-globs *.jsonl
-crabpath migrate \
-  --workspace ~/.openclaw/workspace \
-  --session-logs ~/.openclaw/agents/main/sessions/ \
-  --output-graph graph.json \
-  --output-embeddings embed.json \
-  --verbose
+crabpath init --workspace ~/.openclaw/workspace --no-embeddings
 ```
 
-**Supported session formats:**
-- OpenClaw sessions: `{"type":"message","message":{"role":"user","content":[{"type":"text","text":"..."}]}}` — parsed natively
+**Session replay** supports:
+- OpenClaw sessions: `{"type":"message","message":{"role":"user","content":[...]}}` — parsed natively
 - Flat JSONL: `{"role":"user","content":"..."}` — also works
 - Plain text: one query per line — also works
 - Directories: pass a directory and CrabPath auto-finds all `*.jsonl` files
 
-After replay, CrabPath saves a `graph.stats.json` alongside your graph with query statistics for the health check.
-
-## Step 4: Health check
+## Step 3: Health check
 
 ```bash
 # Basic structural health (always works)
@@ -105,7 +99,7 @@ crabpath health --graph graph.json --query-stats graph.stats.json
 
 **With `--query-stats`:** Also shows query-dependent metrics — avg nodes fired, context compression, promotion rate.
 
-## Step 5: Shadow mode (safe — never modifies responses)
+## Step 4: Shadow mode (safe — never modifies responses)
 
 Shadow mode runs CrabPath alongside your agent. It logs what it *would* retrieve but doesn't change anything.
 
@@ -146,7 +140,7 @@ from crabpath import ShadowLog
 print(ShadowLog().tail(10))
 ```
 
-## Step 6: Graduate to active mode
+## Step 5: Graduate to active mode
 
 Switch when:
 - Shadow picks are stable and relevant across recent queries
@@ -155,7 +149,7 @@ Switch when:
 
 Then use CrabPath output as supplementary context. Keep static loading as fallback.
 
-## Step 7: Monitor
+## Step 6: Monitor
 
 ```bash
 # Health check (run daily)

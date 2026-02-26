@@ -816,7 +816,16 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
             embed_callback = None
             embeddings = None
         else:
-            embed_fn = _safe_embed_fn()
+            try:
+                embed_fn = auto_embed()
+            except RuntimeError as exc:
+                raise CLIError(
+                    f"No embedding provider found. {exc}\n\n"
+                    "Embeddings are strongly recommended for accurate retrieval.\n"
+                    "Set one of: OPENAI_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY\n"
+                    "Or run Ollama locally: ollama pull nomic-embed-text\n\n"
+                    "To skip embeddings (keyword-only routing): crabpath init --no-embeddings"
+                ) from exc
             embeddings = EmbeddingIndex()
             embed_callback = None
             if embed_fn is not None:

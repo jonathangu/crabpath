@@ -247,13 +247,13 @@ def test_init_query_explain_learn_health_cycle(tmp_path: Path) -> None:
             str(workspace),
             "--data-dir",
             str(data_dir),
+            "--no-embeddings",
         ],
         env={"OPENAI_API_KEY": ""},
     )
     assert init.returncode == 0
     payload = _load_json_output(init.stdout)
     graph_path = Path(payload["graph_path"])
-    index_path = Path(payload["embeddings_path"])
     assert graph_path.exists()
 
     query = _run_cli(
@@ -262,8 +262,6 @@ def test_init_query_explain_learn_health_cycle(tmp_path: Path) -> None:
             "How do we do rollback during deployment?",
             "--graph",
             str(graph_path),
-            "--index",
-            str(index_path),
             "--explain",
         ],
         env={"OPENAI_API_KEY": ""},
@@ -643,16 +641,14 @@ def test_query_command_with_explain(tmp_path: Path) -> None:
 def test_init_example_command(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     result = _run_cli(
-        ["init", "--example", "--data-dir", str(data_dir)], env={"OPENAI_API_KEY": ""}
+        ["init", "--example", "--no-embeddings", "--data-dir", str(data_dir)], env={"OPENAI_API_KEY": ""}
     )
     assert result.returncode == 0
 
     payload = _load_json_output(result.stdout)
     assert payload["ok"] is True
     assert payload["graph_path"] == str(data_dir / "graph.json")
-    assert payload["embeddings_path"] == str(data_dir / "embed.json")
     assert Path(payload["graph_path"]).exists()
-    assert Path(payload["embeddings_path"]).exists()
     assert payload["next_steps"]
 
 
