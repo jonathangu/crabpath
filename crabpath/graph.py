@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-
 SCHEMA_VERSION = 1
 
 
@@ -698,7 +697,8 @@ class Graph:
             data = cls._migrate_v0_to_v1(data)
         elif schema_version > SCHEMA_VERSION:
             raise ValueError(
-                f"Graph was saved with CrabPath v{schema_version}, you have v{SCHEMA_VERSION}. Please upgrade."
+                f"Graph was saved with CrabPath v{schema_version}, you have v{SCHEMA_VERSION}. "
+                "Please upgrade."
             )
 
         return cls.from_dict(data)

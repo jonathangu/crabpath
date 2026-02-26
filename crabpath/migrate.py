@@ -222,11 +222,13 @@ def parse_session_logs(
                             elif isinstance(message, str):
                                 try:
                                     message_payload = json.loads(message)
-                                except json.JSONDecodeError as exc:
+                                except json.JSONDecodeError:
                                     try:
                                         message_payload = ast.literal_eval(message)
                                     except (ValueError, SyntaxError) as inner_exc:
-                                        raise ValueError("Unable to decode OpenClaw message payload") from inner_exc
+                                        raise ValueError(
+                                            "Unable to decode OpenClaw message payload"
+                                        ) from inner_exc
                                 if not isinstance(message_payload, dict):
                                     raise ValueError("OpenClaw message payload must be a dict")
                                 query = _extract_query_from_record(message_payload)

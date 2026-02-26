@@ -9,18 +9,28 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from ._structural_utils import count_cross_file_edges
-from .autotune import HEALTH_TARGETS, measure_health
+from ._io import (
+    build_firing,
+    build_health_rows,
+    build_snapshot,
+    graph_stats,
+    load_graph,
+    load_index,
+    load_mitosis_state,
+    load_query_stats,
+    load_snapshot_rows,
+    run_query,
+    split_csv,
+)
+from .autotune import measure_health
 from .embeddings import EmbeddingIndex, openai_embed
 from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .graph import Edge, Graph
-from .legacy.activation import Firing, activate
 from .legacy.activation import learn as _learn
 from .lifecycle_sim import SimConfig, run_simulation, workspace_scenario
 from .migrate import MigrateConfig, fallback_llm_split
 from .migrate import migrate as run_migration
 from .mitosis import MitosisConfig, MitosisState, split_node
-from .synaptogenesis import edge_tier_stats
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -46,60 +56,31 @@ def _result(req_id: Any, result: dict[str, Any]) -> None:
 
 
 def _load_graph(path: str) -> Graph:
-    file_path = Path(path)
-    if not file_path.exists():
-        raise ValueError(f"graph file not found: {path}")
-    return Graph.load(path)
+    try:
+        return load_graph(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _load_index(path: str) -> EmbeddingIndex:
-    file_path = Path(path)
-    if not file_path.exists():
-        return EmbeddingIndex()
-    return EmbeddingIndex.load(path)
+    try:
+        return load_index(path)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _load_query_stats(path: str | None) -> tuple[dict[str, Any], bool]:
-    if path is None:
-        return {}, False
-
-    file_path = Path(path)
-    if not file_path.exists():
-        raise ValueError(f"query-stats file not found: {path}")
-
     try:
-        raw = file_path.read_text(encoding="utf-8")
-        stats = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"failed to load query-stats: {path}: {exc}") from exc
-
-    if not isinstance(stats, dict):
-        raise ValueError(f"query-stats must be a JSON object: {path}")
-    return stats, True
+        return load_query_stats(path), path is not None
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _load_mitosis_state(path: str | None) -> MitosisState:
-    if path is None:
-        return MitosisState()
-
-    file_path = Path(path)
-    if not file_path.exists():
-        raise ValueError(f"mitosis-state file not found: {path}")
-
     try:
-        raw = file_path.read_text(encoding="utf-8")
-        state_data = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"failed to load mitosis-state: {path}: {exc}") from exc
-
-    if not isinstance(state_data, dict):
-        raise ValueError(f"mitosis-state must be a JSON object: {path}")
-
-    return MitosisState(
-        families=state_data.get("families", {}),
-        generations=state_data.get("generations", {}),
-        chunk_to_parent=state_data.get("chunk_to_parent", {}),
-    )
+        return load_mitosis_state(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _safe_openai_embed_fn() -> Callable[[list[str]], list[list[float]]] | None:
@@ -111,124 +92,20 @@ def _safe_openai_embed_fn() -> Callable[[list[str]], list[list[float]]] | None:
         return None
 
 
-def _split_csv(value: str) -> list[str]:
-    ids = [item.strip() for item in value.split(",") if item.strip()]
-    if not ids:
-        raise ValueError("fired-ids must contain at least one id")
-    return ids
-
-
-def _build_snapshot(graph: Graph) -> dict[str, Any]:
-    return {
-        "timestamp": time.time(),
-        "nodes": graph.node_count,
-        "edges": graph.edge_count,
-        "tier_counts": edge_tier_stats(graph),
-        "cross_file_edges": count_cross_file_edges(graph),
-    }
-
-
 def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-
-    rows: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                row = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid JSON line in snapshots file: {path}: {exc}") from exc
-            if not isinstance(row, dict):
-                raise ValueError(f"invalid snapshot row in snapshots file: {path}")
-            rows.append(row)
-    return rows
-
-
-def _health_metric_available(metric: str, has_query_stats: bool) -> bool:
-    if metric in {
-        "avg_nodes_fired_per_query",
-        "context_compression",
-        "proto_promotion_rate",
-        "reconvergence_rate",
-    }:
-        return has_query_stats
-    return True
-
-
-def _health_metric_status(
-    value: float | None,
-    target: tuple[float | None, float | None],
-    available: bool,
-) -> str:
-    if not available or value is None:
-        return "warn"
-
-    min_v, max_v = target
-    if min_v is not None and value < min_v:
-        return "low"
-    if max_v is not None and value > max_v:
-        return "high"
-    return "ok"
-
-
-def _keyword_seed(graph: Graph, query_text: str) -> dict[str, float]:
-    if not query_text:
-        return {}
-    needles = {token.strip().lower() for token in query_text.split() if token.strip()}
-    seeds: dict[str, float] = {}
-    for node in graph.nodes():
-        haystack = f"{node.id} {node.content}".lower()
-        score = 0.0
-        for needle in needles:
-            if needle in haystack:
-                score += 1.0
-        if score:
-            seeds[node.id] = score
-    return seeds
-
-
-def _build_firing(graph: Graph, fired_ids: list[str]) -> Firing:
-    if not fired_ids:
-        raise ValueError("fired-ids must contain at least one id")
-    nodes: list[tuple[Any, float]] = []
-    fired_at: dict[str, int] = {}
-    for idx, node_id in enumerate(fired_ids):
-        node = graph.get_node(node_id)
-        if node is None:
-            raise ValueError(f"unknown node id: {node_id}")
-        nodes.append((node, 1.0))
-        fired_at[node_id] = idx
-    return Firing(fired=nodes, inhibited=[], fired_at=fired_at)
+    return load_snapshot_rows(path)
 
 
 def mcp_query(arguments: dict[str, Any]) -> dict[str, Any]:
     graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
     index = _load_index(arguments.get("index", "crabpath_embeddings.json"))
-
-    seeds: dict[str, float] = {}
-    if os.getenv("OPENAI_API_KEY"):
-        embed_fn = _safe_openai_embed_fn()
-        if embed_fn is not None and index.vectors:
-            seeds = index.seed(
-                arguments["query"],
-                embed_fn=embed_fn,
-                top_k=arguments.get("top", 12),
-            )
-
-    if not seeds:
-        seeds = _keyword_seed(graph, arguments["query"])
-
-    firing = activate(
+    embed_fn = _safe_openai_embed_fn() if os.getenv("OPENAI_API_KEY") else None
+    firing = run_query(
         graph,
-        seeds,
-        max_steps=3,
-        decay=0.1,
+        index,
+        arguments["query"],
         top_k=arguments.get("top", 12),
-        reset=False,
+        embed_fn=embed_fn,
     )
     return {
         "fired": [
@@ -276,11 +153,11 @@ def mcp_migrate(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_learn(arguments: dict[str, Any]) -> dict[str, Any]:
     graph = _load_graph(arguments["graph"])
-    fired_ids = [item.strip() for item in arguments["fired_ids"].split(",") if item.strip()]
+    fired_ids = split_csv(arguments["fired_ids"])
     outcome = float(arguments["outcome"])
 
     before = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
-    firing = _build_firing(graph, fired_ids)
+    firing = build_firing(graph, fired_ids)
     _learn(graph, firing, outcome=outcome)
 
     after = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
@@ -294,21 +171,7 @@ def mcp_learn(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_stats(arguments: dict[str, Any]) -> dict[str, Any]:
     graph = _load_graph(arguments["graph"])
-    edges = graph.edges()
-    avg_weight = sum(edge.weight for edge in edges) / len(edges) if edges else 0.0
-
-    degree: dict[str, int] = {}
-    for edge in edges:
-        degree[edge.source] = degree.get(edge.source, 0) + 1
-        degree[edge.target] = degree.get(edge.target, 0) + 1
-    top = sorted(degree.items(), key=lambda item: (-item[1], item[0]))[:5]
-
-    return {
-        "nodes": graph.node_count,
-        "edges": graph.edge_count,
-        "avg_weight": avg_weight,
-        "top_hubs": [node_id for node_id, _ in top],
-    }
+    return graph_stats(graph)
 
 
 def mcp_split(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -384,20 +247,7 @@ def mcp_health(arguments: dict[str, Any]) -> dict[str, Any]:
     state = _load_mitosis_state(arguments.get("mitosis_state"))
     query_stats, has_query_stats = _load_query_stats(arguments.get("query_stats"))
     health = measure_health(graph, state, query_stats)
-
-    metrics: list[dict[str, Any]] = []
-    for metric, target in HEALTH_TARGETS.items():
-        available = _health_metric_available(metric, has_query_stats)
-        raw_value = getattr(health, metric)
-        value = float(raw_value) if available and raw_value is not None else None
-        metrics.append(
-            {
-                "metric": metric,
-                "value": value,
-                "target_range": target,
-                "status": _health_metric_status(value if available else None, target, available),
-            }
-        )
+    metrics = build_health_rows(health, has_query_stats)
 
     return {
         "ok": True,
@@ -417,7 +267,7 @@ def mcp_evolve(arguments: dict[str, Any]) -> dict[str, Any]:
     path = Path(snapshots_path).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    snapshot = _build_snapshot(graph)
+    snapshot = build_snapshot(graph)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(snapshot) + "\n")
 
@@ -463,7 +313,7 @@ def mcp_sim(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
     _load_graph(arguments["graph"])
-    fired_ids = _split_csv(arguments["fired_ids"])
+    fired_ids = split_csv(arguments["fired_ids"])
 
     record = {
         "session_id": arguments["session"],

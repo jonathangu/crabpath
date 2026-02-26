@@ -20,13 +20,24 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import __version__
-from ._structural_utils import count_cross_file_edges
+from ._io import (
+    build_firing,
+    build_health_rows,
+    build_snapshot,
+    graph_stats,
+    load_graph,
+    load_index,
+    load_mitosis_state,
+    load_query_stats,
+    load_snapshot_rows,
+    run_query,
+    split_csv,
+)
 from .autotune import HEALTH_TARGETS, measure_health
 from .controller import ControllerConfig, MemoryController
 from .embeddings import EmbeddingIndex, auto_embed
 from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .graph import Graph
-from .legacy.activation import Firing
 from .legacy.activation import learn as _learn
 from .lifecycle_sim import SimConfig, run_simulation, workspace_scenario
 from .migrate import MigrateConfig, fallback_llm_split, migrate, parse_session_logs
@@ -34,7 +45,6 @@ from .mitosis import MitosisConfig, MitosisState, split_node
 from .synaptogenesis import (
     SynaptogenesisConfig,
     SynaptogenesisState,
-    edge_tier_stats,
     record_cofiring,
     record_correction,
 )
@@ -69,73 +79,38 @@ def _emit_error(message: str) -> int:
 
 
 def _load_graph(path: str) -> Graph:
-    file_path = Path(path)
-    if not file_path.exists():
-        raise CLIError(f"graph file not found: {path}")
     try:
-        return Graph.load(path)
-    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise CLIError(f"failed to load graph: {path}: {exc}") from exc
+        return load_graph(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise CLIError(str(exc)) from exc
 
 
 def _load_index(path: str) -> EmbeddingIndex:
-    file_path = Path(path)
-    if not file_path.exists():
-        return EmbeddingIndex()
     try:
-        return EmbeddingIndex.load(path)
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise CLIError(f"failed to load index: {path}: {exc}") from exc
+        return load_index(path)
+    except ValueError as exc:
+        raise CLIError(str(exc)) from exc
 
 
-def _split_csv(value: str) -> list[str]:
-    ids = [item.strip() for item in value.split(",") if item.strip()]
-    if not ids:
-        raise CLIError("fired-ids must contain at least one id")
-    return ids
-
-
-def _load_query_stats(path: str | None) -> tuple[dict[str, Any], bool]:
-    if path is None:
-        return {}, False
-
-    file_path = Path(path)
-    if not file_path.exists():
-        raise CLIError(f"query-stats file not found: {path}")
-
+def _load_query_stats(path: str | None) -> dict[str, Any]:
     try:
-        raw = file_path.read_text(encoding="utf-8")
-        stats = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise CLIError(f"failed to load query-stats: {path}: {exc}") from exc
-
-    if not isinstance(stats, dict):
-        raise CLIError(f"query-stats must be a JSON object: {path}")
-    return stats, True
+        return load_query_stats(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise CLIError(str(exc)) from exc
 
 
 def _load_mitosis_state(path: str | None) -> MitosisState:
-    if path is None:
-        return MitosisState()
-
-    file_path = Path(path)
-    if not file_path.exists():
-        raise CLIError(f"mitosis-state file not found: {path}")
-
     try:
-        raw = file_path.read_text(encoding="utf-8")
-        state_data = json.loads(raw)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise CLIError(f"failed to load mitosis-state: {path}: {exc}") from exc
+        return load_mitosis_state(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise CLIError(str(exc)) from exc
 
-    if not isinstance(state_data, dict):
-        raise CLIError(f"mitosis-state must be a JSON object: {path}")
 
-    return MitosisState(
-        families=state_data.get("families", {}),
-        generations=state_data.get("generations", {}),
-        chunk_to_parent=state_data.get("chunk_to_parent", {}),
-    )
+def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        return load_snapshot_rows(path)
+    except ValueError as exc:
+        raise CLIError(str(exc)) from exc
 
 
 def _format_health_target(target: tuple[float | None, float | None]) -> str:
@@ -147,25 +122,6 @@ def _format_health_target(target: tuple[float | None, float | None]) -> str:
     if max_v is None:
         return f">= {min_v}"
     return f"{min_v} - {max_v}"
-
-
-def _status_for_health_metric(
-    value: float | None,
-    target: tuple[float | None, float | None],
-    available: bool,
-) -> str:
-    if not available:
-        return "⚠️"
-
-    if value is None:
-        return "⚠️"
-
-    min_v, max_v = target
-    if min_v is not None and value < min_v:
-        return "❌"
-    if max_v is not None and value > max_v:
-        return "❌"
-    return "✅"
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
@@ -184,17 +140,6 @@ def _format_metric_value(metric: str, value: float | None) -> str:
     return str(value)
 
 
-def _health_metric_available(metric: str, has_query_stats: bool) -> bool:
-    if metric in {
-        "avg_nodes_fired_per_query",
-        "context_compression",
-        "proto_promotion_rate",
-        "reconvergence_rate",
-    }:
-        return has_query_stats
-    return True
-
-
 def _build_health_report_lines(
     graph: Graph,
     health: dict[str, Any],
@@ -202,15 +147,24 @@ def _build_health_report_lines(
     *,
     with_status: bool = False,
 ) -> list[str]:
+    rows = build_health_rows(health, has_query_stats)
     lines: list[str] = [
         f"Graph Health: {graph.node_count} nodes, {graph.edge_count} edges",
         "-" * 46,
     ]
     for metric, target in HEALTH_TARGETS.items():
-        available = _health_metric_available(metric, has_query_stats)
-        raw_value = health.get(metric)
-        value = raw_value if available else None
-        status = _status_for_health_metric(value if available else None, target, available)
+        row = next((item for item in rows if item["metric"] == metric), None)
+        if row is None:
+            continue
+        value = row["value"]
+        status_state = row["status"]
+        status = (
+            "⚠️"
+            if status_state == "warn"
+            else "❌"
+            if status_state in {"low", "high"}
+            else "✅"
+        )
         value_text = (
             _format_metric_value(metric, float(value))
             if value is not None
@@ -219,8 +173,7 @@ def _build_health_report_lines(
         if with_status:
             target_text = _format_health_target(target)
             lines.append(
-                f"{metric:24} | {value_text:>20} | "
-                f"target {target_text:15} | {status}"
+                f"{metric:24} | {value_text:>20} | target {target_text:15} | {status}"
             )
         else:
             lines.append(
@@ -235,19 +188,14 @@ def _build_health_payload(
     health: Any,
     has_query_stats: bool,
 ) -> dict[str, Any]:
-    rows = []
-    for metric, target in HEALTH_TARGETS.items():
-        value = getattr(health, metric)
-        available = _health_metric_available(metric, has_query_stats)
-        status = _status_for_health_metric(value if available else None, target, available)
-        rows.append(
-            {
-                "metric": metric,
-                "value": value if available else None,
-                "target_range": target,
-                "status": status,
-            }
-        )
+    rows = build_health_rows(health, has_query_stats)
+    for row in rows:
+        if row["status"] == "warn":
+            row["status"] = "⚠️"
+        elif row["status"] in {"low", "high"}:
+            row["status"] = "❌"
+        else:
+            row["status"] = "✅"
 
     return {
         "ok": True,
@@ -261,7 +209,8 @@ def _build_health_payload(
 def cmd_health(args: argparse.Namespace) -> dict[str, Any] | str:
     graph = _load_graph(args.graph)
     state = _load_mitosis_state(args.mitosis_state)
-    query_stats, has_query_stats = _load_query_stats(args.query_stats)
+    query_stats = _load_query_stats(args.query_stats)
+    has_query_stats = args.query_stats is not None
     health = measure_health(graph, state, query_stats)
     if args.json:
         return _build_health_payload(args, graph, health, has_query_stats)
@@ -281,35 +230,6 @@ def _snapshot_path(path_value: str | None) -> Path:
         raise CLIError("--snapshots is required for evolve")
     return Path(path_value)
 
-
-def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-
-    rows: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                row = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise CLIError(f"invalid JSON line in snapshots file: {path}: {exc}") from exc
-            if not isinstance(row, dict):
-                raise CLIError(f"invalid snapshot row in snapshots file: {path}")
-            rows.append(row)
-    return rows
-
-
-def _build_snapshot(graph: Graph) -> dict[str, Any]:
-    return {
-        "timestamp": time.time(),
-        "nodes": graph.node_count,
-        "edges": graph.edge_count,
-        "tier_counts": edge_tier_stats(graph),
-        "cross_file_edges": count_cross_file_edges(graph),
-    }
 
 
 def _format_timeline(snapshots: list[dict[str, Any]]) -> str:
@@ -373,7 +293,7 @@ def cmd_evolve(args: argparse.Namespace) -> dict[str, Any] | str:
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    snapshot = _build_snapshot(graph)
+    snapshot = build_snapshot(graph)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(snapshot) + "\n")
 
@@ -382,23 +302,6 @@ def cmd_evolve(args: argparse.Namespace) -> dict[str, Any] | str:
 
     snapshots = _load_snapshot_rows(path)
     return _format_timeline(snapshots)
-
-
-def _keyword_seed(graph: Graph, query_text: str) -> dict[str, float]:
-    if not query_text:
-        return {}
-
-    needles = {token.strip() for token in query_text.lower().split() if token.strip()}
-    seeds: dict[str, float] = {}
-    for node in graph.nodes():
-        haystack = f"{node.id} {node.content}".lower()
-        score = 0.0
-        for needle in needles:
-            if needle in haystack:
-                score += 1.0
-        if score:
-            seeds[node.id] = score
-    return seeds
 
 
 def _safe_embed_fn() -> Optional[Callable[[list[str]], list[list[float]]]]:
@@ -491,7 +394,9 @@ def _explain_traversal(
         for target_id, suppressed_score in step.get("candidates", []):
             if not isinstance(target_id, str):
                 continue
-            target_score = float(suppressed_score) if isinstance(suppressed_score, int | float) else 0.0
+            target_score = (
+                float(suppressed_score) if isinstance(suppressed_score, int | float) else 0.0
+            )
             base_score = float(outgoing.get(target_id, 0.0))
             suppressed_by = target_score - base_score
 
@@ -630,29 +535,8 @@ def _format_explain_trace(trace: dict[str, Any]) -> str:
 def cmd_query(args: argparse.Namespace) -> dict[str, Any]:
     graph = _load_graph(args.graph)
     index = _load_index(args.index)
-
-    seeds: dict[str, float] = {}
     embed_fn = _safe_embed_fn()
-    if embed_fn is not None and index.vectors:
-        seeds = index.seed(
-            args.query,
-            embed_fn=embed_fn,
-            top_k=args.top,
-        )
-
-    if not seeds:
-        seeds = _keyword_seed(graph, args.query)
-
-    from .legacy.activation import activate
-
-    firing = activate(
-        graph,
-        seeds,
-        max_steps=3,
-        decay=0.1,
-        top_k=args.top,
-        reset=False,
-    )
+    firing = run_query(graph, index, args.query, top_k=args.top, embed_fn=embed_fn)
     payload = {
         "fired": [
             {"id": node.id, "content": node.content, "energy": score}
@@ -680,33 +564,20 @@ def cmd_explain(args: argparse.Namespace) -> dict[str, Any] | str:
     return _format_explain_trace(trace)
 
 
-def _build_firing(graph: Graph, fired_ids: list[str]) -> Firing:
-    if not fired_ids:
-        raise CLIError("fired-ids must contain at least one id")
-
-    nodes: list[tuple[Any, float]] = []
-    fired_at: dict[str, int] = {}
-    for idx, node_id in enumerate(fired_ids):
-        node = graph.get_node(node_id)
-        if node is None:
-            raise CLIError(f"unknown node id: {node_id}")
-        nodes.append((node, 1.0))
-        fired_at[node_id] = idx
-
-    return Firing(fired=nodes, inhibited=[], fired_at=fired_at)
-
-
 def cmd_learn(args: argparse.Namespace) -> dict[str, Any]:
     graph = _load_graph(args.graph)
 
-    fired_ids = _split_csv(args.fired_ids)
+    fired_ids = split_csv(args.fired_ids)
     try:
         outcome = float(args.outcome)
     except ValueError as exc:
         raise CLIError(f"invalid outcome: {args.outcome}") from exc
 
     before = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
-    firing = _build_firing(graph, fired_ids)
+    try:
+        firing = build_firing(graph, fired_ids)
+    except ValueError as exc:
+        raise CLIError(str(exc)) from exc
     _learn(graph, firing, outcome=outcome)
 
     after = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
@@ -721,7 +592,7 @@ def cmd_learn(args: argparse.Namespace) -> dict[str, Any]:
 
 def cmd_snapshot(args: argparse.Namespace) -> dict[str, Any]:
     _load_graph(args.graph)
-    fired_ids = _split_csv(args.fired_ids)
+    fired_ids = split_csv(args.fired_ids)
 
     record = {
         "session_id": args.session,
@@ -768,7 +639,7 @@ def cmd_feedback(args: argparse.Namespace) -> dict[str, Any]:
     if args.reward is None:
         raise CLIError("--reward is required for manual feedback")
 
-    trajectory = _split_csv(args.trajectory)
+    trajectory = split_csv(args.trajectory)
     graph = _load_graph(args.graph)
     syn_state = SynaptogenesisState()
     config = SynaptogenesisConfig()
@@ -805,25 +676,7 @@ def cmd_feedback(args: argparse.Namespace) -> dict[str, Any]:
 
 def cmd_stats(args: argparse.Namespace) -> dict[str, Any]:
     graph = _load_graph(args.graph)
-    edges = graph.edges()
-
-    if edges:
-        avg_weight = sum(edge.weight for edge in edges) / len(edges)
-    else:
-        avg_weight = 0.0
-
-    degree: dict[str, int] = {}
-    for edge in edges:
-        degree[edge.source] = degree.get(edge.source, 0) + 1
-        degree[edge.target] = degree.get(edge.target, 0) + 1
-    top = sorted(degree.items(), key=lambda item: (-item[1], item[0]))[:5]
-
-    return {
-        "nodes": graph.node_count,
-        "edges": graph.edge_count,
-        "avg_weight": avg_weight,
-        "top_hubs": [node_id for node_id, _ in top],
-    }
+    return graph_stats(graph)
 
 
 def cmd_migrate(args: argparse.Namespace) -> dict[str, Any]:

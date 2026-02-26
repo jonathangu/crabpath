@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 
-from crabpath import Edge, Graph, Node
-from crabpath import mcp_server
+from crabpath import Edge, Graph, Node, mcp_server
 
 
 def _build_graph() -> Graph:

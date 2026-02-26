@@ -7,7 +7,7 @@ LLM-guided memory traversal with learned pointer weights
 and corrected policy gradients.
 
 CLI:
-  python -m crabpath.cli
+  python -m crabpath
   crabpath  # via console_scripts entry point
 
 Paper: https://jonathangu.com/crabpath/
@@ -15,7 +15,6 @@ Paper: https://jonathangu.com/crabpath/
 
 __version__ = "1.0.0"
 
-from . import inhibition
 from .adapter import CrabPathAgent, OpenClawCrabPathAdapter
 from .autotune import (
     DEFAULTS,
@@ -54,9 +53,6 @@ from .graph import (
     prune_weak_edges,
     should_split,
 )
-from .graph import (
-    should_merge as consolidation_should_merge,
-)
 from .inhibition import (
     InhibitionConfig,
     apply_correction,
@@ -65,8 +61,8 @@ from .inhibition import (
     is_inhibited,
     score_with_inhibition,
 )
-from .legacy.activation import Firing, activate, learn
 from .learning import LearningConfig, LearningResult, RewardSignal, make_learning_step
+from .legacy.activation import Firing, activate, learn
 from .migrate import MigrateConfig, gather_files, migrate, parse_session_logs
 from .mitosis import (
     BLOCKED_QUERIES,
@@ -138,7 +134,6 @@ __all__ = [
     "should_split",
     "consolidate",
     "should_merge",
-    "consolidation_should_merge",
     "CrabPathAgent",
     "OpenClawCrabPathAdapter",
     "migrate",
@@ -163,7 +158,6 @@ __all__ = [
     "is_inhibited",
     "get_inhibitory_edges",
     "inhibition_stats",
-    "inhibition",
     "MitosisConfig",
     "MitosisState",
     "SplitResult",
