@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from math import exp, log
 from typing import Any, Callable
 
@@ -388,9 +388,12 @@ class MemoryController:
                 )
                 learning_updates = []
                 for update in learning_result.updates:
-                    learning_updates.append(
-                        update._asdict() if hasattr(update, "_asdict") else update
-                    )
+                    if hasattr(update, "__dataclass_fields__"):
+                        learning_updates.append(asdict(update))
+                    elif hasattr(update, "_asdict"):
+                        learning_updates.append(update._asdict())
+                    else:
+                        learning_updates.append(update)
                 learning_step_updates = {
                     "updates": learning_updates,
                     "baseline": learning_result.baseline,

@@ -217,3 +217,38 @@ def test_query_family_groups_similar_queries():
     first_delta = next(u for u in first.updates if u.target == "a").delta
     second_delta = next(u for u in second.updates if u.target == "a").delta
     assert abs(second_delta) < abs(first_delta)
+
+
+def test_baseline_state_is_isolated_per_config():
+    graph = Graph()
+    graph.add_node(Node(id="root", content="Root"))
+    graph.add_node(Node(id="a", content="A"))
+    graph.add_node(Node(id="b", content="B"))
+    graph.add_edge(Edge(source="root", target="a", weight=0.0))
+    graph.add_edge(Edge(source="root", target="b", weight=0.0))
+
+    trajectory = [
+        {
+            "from_node": "root",
+            "to_node": "a",
+            "edge_weight": 0.0,
+            "candidates": {"a": 0.0, "b": 0.0},
+        }
+    ]
+    cfg_one = LearningConfig(learning_rate=0.1, discount=1.0, baseline_decay=0.95)
+    cfg_two = LearningConfig(learning_rate=0.1, discount=1.0, baseline_decay=0.95)
+
+    make_learning_step(
+        graph,
+        trajectory,
+        RewardSignal(episode_id="shared-demo", final_reward=2.0),
+        cfg_one,
+    )
+    second = make_learning_step(
+        graph,
+        trajectory,
+        RewardSignal(episode_id="shared-demo", final_reward=0.0),
+        cfg_two,
+    )
+
+    assert second.baseline == 0.0

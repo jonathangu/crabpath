@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import exp, log
 from typing import Any, Callable, Sequence
 
@@ -75,6 +76,7 @@ class LearningConfig:
     discount: float = 1.0
     temperature: float = 0.5
     baseline_decay: float = 0.95
+    baseline_state: dict[str, float] = field(default_factory=dict)
     query_family_fn: Callable[[str], str] | None = None
     clip_min: float = -5
     clip_max: float = 5
@@ -96,7 +98,7 @@ class LearningResult:
     avg_reward: float
 
 
-_BASELINE_STATE: dict[str, float] = {}
+_BASELINE_LOCK = threading.Lock()
 
 
 def _as_float(value: object) -> float:
@@ -327,7 +329,9 @@ def make_learning_step(
     # episode_id is intended to represent a recurring query family/group so that
     # baselines are shared across similar trajectories; per-query unique IDs
     # reduce baseline effectiveness.
-    prev_baseline = _BASELINE_STATE.get(episode_id, 0.0)
+    baseline_state = config.baseline_state
+    with _BASELINE_LOCK:
+        prev_baseline = baseline_state.get(episode_id, 0.0)
     loss, advantages = policy_gradient_update(
         trajectory_steps,
         reward,
@@ -340,6 +344,7 @@ def make_learning_step(
     updated_baseline = (
         config.baseline_decay * prev_baseline + (1.0 - config.baseline_decay) * final_reward
     )
-    _BASELINE_STATE[episode_id] = updated_baseline
+    with _BASELINE_LOCK:
+        baseline_state[episode_id] = updated_baseline
 
     return LearningResult(updates=updates, baseline=updated_baseline, avg_reward=final_reward)

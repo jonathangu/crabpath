@@ -24,6 +24,7 @@ from .autotune import (
     measure_health,
     suggest_config,
 )
+from .controller import ControllerConfig, MemoryController, QueryResult
 from .embeddings import (
     EmbeddingIndex,
     auto_embed,
@@ -72,7 +73,6 @@ from .mitosis import (
     split_node,
     split_with_llm,
 )
-from .controller import ControllerConfig, MemoryController, QueryResult
 from .shadow_logger import ShadowLog
 from .synaptogenesis import (
     ProtoEdge,
