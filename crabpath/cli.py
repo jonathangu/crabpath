@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shlex
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from .graph import Edge, Graph, Node
@@ -17,6 +21,8 @@ from .learn import apply_outcome
 from .autotune import measure_health
 from .journal import log_health, log_learn, log_query, log_replay, read_journal, journal_stats
 
+_EMBED_BATCH_SIZE = 50
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="crabpath")
@@ -26,8 +32,19 @@ def _build_parser() -> argparse.ArgumentParser:
     init.add_argument("--workspace", required=True)
     init.add_argument("--output", required=True)
     init.add_argument("--sessions", required=False)
+    embed_init_group = init.add_mutually_exclusive_group(required=False)
+    embed_init_group.add_argument("--embed-command")
+    embed_init_group.add_argument("--embed-provider", choices=("openai", "ollama"))
     init.add_argument("--json", action="store_true")
     init.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
+
+    embed = sub.add_parser("embed", help="build index.json from texts.json using an embedding command")
+    embed.add_argument("--texts", required=True)
+    embed.add_argument("--output", required=True)
+    embed_provider_group = embed.add_mutually_exclusive_group(required=True)
+    embed_provider_group.add_argument("--command", dest="embed_command")
+    embed_provider_group.add_argument("--provider", choices=("openai", "ollama"))
+    embed.add_argument("--json", action="store_true")
 
     query = sub.add_parser("query", help="seed from index and traverse graph")
     query.add_argument("text")
@@ -151,6 +168,149 @@ def _load_query_vector_from_stdin() -> list[float]:
     return vector
 
 
+def _load_texts_payload(path: str) -> dict[str, str]:
+    payload_path = Path(path).expanduser()
+    if not payload_path.exists():
+        raise SystemExit(f"missing texts file: {path}")
+    data = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit("texts payload must be a JSON object")
+    return {str(key): str(value) for key, value in data.items()}
+
+
+def _iter_text_batches(
+    texts: list[tuple[str, str]],
+    batch_size: int = _EMBED_BATCH_SIZE,
+) -> list[list[tuple[str, str]]]:
+    if batch_size <= 0:
+        raise SystemExit("embed batch size must be positive")
+
+    batches: list[list[tuple[str, str]]] = []
+    for idx in range(0, len(texts), batch_size):
+        batches.append(texts[idx : idx + batch_size])
+    return batches
+
+
+def _provider_script(provider: str) -> str:
+    if provider == "openai":
+        return """import json
+import sys
+
+from openai import OpenAI
+
+
+try:
+    client = OpenAI()
+    for line in sys.stdin:
+        obj = json.loads(line)
+        resp = client.embeddings.create(model='text-embedding-3-small', input=[obj['text']])
+        print(json.dumps({'id': obj['id'], 'embedding': resp.data[0].embedding}))
+except Exception as e:
+    print(json.dumps({'error': str(e)}), file=sys.stderr)
+    sys.exit(1)
+"""
+    if provider == "ollama":
+        return """import json
+import sys
+
+import requests
+
+
+for line in sys.stdin:
+    obj = json.loads(line)
+    resp = requests.post('http://localhost:11434/api/embeddings', json={'model': 'nomic-embed-text', 'prompt': obj['text']})
+    print(json.dumps({'id': obj['id'], 'embedding': resp.json()['embedding']}))
+"""
+    raise SystemExit(f"unsupported provider: {provider}")
+
+
+def _build_embed_command(
+    embed_command: str | None,
+    embed_provider: str | None,
+) -> tuple[list[str], str | None]:
+    if embed_command is None and embed_provider is None:
+        raise SystemExit("provide either --command or --provider for embedding")
+    if embed_command is not None and embed_provider is not None:
+        raise SystemExit("provide only one of --command or --provider")
+    if embed_command is not None:
+        return shlex.split(embed_command), None
+
+    script_code = _provider_script(embed_provider)
+    fd, script_path = tempfile.mkstemp(prefix="crabpath_embed_", suffix=".py")
+    os.close(fd)
+    Path(script_path).write_text(script_code, encoding="utf-8")
+    return [sys.executable, script_path], script_path
+
+
+def _run_embedding_batch(
+    command: list[str],
+    batch: list[tuple[str, str]],
+) -> dict[str, list[float]]:
+    payload = "\n".join(json.dumps({"id": node_id, "text": text}) for node_id, text in batch) + "\n"
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stdout_data, stderr_data = proc.communicate(payload)
+    if proc.returncode != 0:
+        message = (stderr_data or "").strip() or f"exit code {proc.returncode}"
+        raise SystemExit(f"embed command failed: {message}")
+
+    if not stdout_data.strip():
+        raise SystemExit("embed command returned no embeddings")
+
+    expected_ids = [node_id for node_id, _ in batch]
+    results: dict[str, list[float]] = {}
+    for line in stdout_data.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "error" in data:
+            raise SystemExit(f"embedding service error: {data['error']}")
+        if "id" not in data or "embedding" not in data:
+            raise SystemExit("embedding output must contain id and embedding fields")
+        vector = [float(value) for value in data["embedding"]]
+        results[str(data["id"])] = vector
+
+    missing = [node_id for node_id in expected_ids if node_id not in results]
+    if missing:
+        raise SystemExit(f"embed output missing ids: {', '.join(missing)}")
+    return results
+
+
+def _build_index_from_texts(
+    texts: dict[str, str],
+    embed_command: str | None,
+    embed_provider: str | None,
+) -> VectorIndex:
+    text_items = list(texts.items())
+    index = VectorIndex()
+    if not text_items:
+        return index
+
+    command, temp_script = _build_embed_command(embed_command=embed_command, embed_provider=embed_provider)
+    batches = _iter_text_batches(texts=text_items)
+    try:
+        total_batches = len(batches)
+        for batch_index, batch in enumerate(batches, start=1):
+            print(
+                f"Embedding batch {batch_index}/{total_batches} ({min(batch_index * _EMBED_BATCH_SIZE, len(texts))}/{len(texts)})",
+                file=sys.stderr,
+            )
+            results = _run_embedding_batch(command=command, batch=batch)
+            for node_id, vector in results.items():
+                index.upsert(node_id, vector)
+    finally:
+        if temp_script is not None and Path(temp_script).exists():
+            Path(temp_script).unlink()
+
+    return index
+
+
 def _keyword_seeds(graph: Graph, text: str, top_k: int) -> list[tuple[str, float]]:
     query_tokens = _tokenize_text(text)
     if not query_tokens or top_k <= 0:
@@ -205,12 +365,46 @@ def cmd_init(args: argparse.Namespace) -> int:
     }
     graph_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     texts_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
+    if args.embed_command is not None or args.embed_provider is not None:
+        index = _build_index_from_texts(
+            texts=texts,
+            embed_command=args.embed_command,
+            embed_provider=args.embed_provider,
+        )
+        index_path = output_dir / "index.json"
+        index.save(str(index_path))
 
     if args.json:
-        print(json.dumps({"graph": str(graph_path), "texts": str(texts_path)}))
+        payload = {"graph": str(graph_path), "texts": str(texts_path)}
+        if args.embed_command is not None or args.embed_provider is not None:
+            payload["index"] = str(output_dir / "index.json")
+        print(json.dumps(payload))
     else:
         print(f"graph_path: {graph_path}")
         print(f"texts_path: {texts_path}")
+        if args.embed_command is not None or args.embed_provider is not None:
+            print(f"index_path: {output_dir / 'index.json'}")
+    return 0
+
+
+def cmd_embed(args: argparse.Namespace) -> int:
+    texts = _load_texts_payload(args.texts)
+    index = _build_index_from_texts(
+        texts=texts,
+        embed_command=args.embed_command,
+        embed_provider=args.provider,
+    )
+    output_path = Path(args.output).expanduser()
+    if output_path.suffix != ".json" and output_path.exists() is False:
+        output_path = output_path / "index.json"
+    if output_path.is_dir() or output_path.suffix != ".json":
+        output_path = output_path / "index.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    index.save(str(output_path))
+    if args.json:
+        print(json.dumps({"index": str(output_path), "count": len(texts)}))
+    else:
+        print(f"index_path: {output_path}")
     return 0
 
 
@@ -446,6 +640,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_health(args)
     if args.command == "journal":
         return cmd_journal(args)
+    if args.command == "embed":
+        return cmd_embed(args)
     return 1
 
 

@@ -15,6 +15,7 @@ The result: in simulation, active context drops from 30 nodes to 2.7 per query (
 
 - **Cold start is slow**: 100% habitual at bootstrap, everything requires deliberation until enough queries accumulate
 - **Embedding quality matters**: CrabPath is only as good as the vectors you give it
+- **Without embeddings, retrieval is keyword-based and noisy** — CrabPath is a pure graph engine and doesn't compute embeddings itself. Use `crabpath embed` or `--embed-provider` to add them.
 - **No production deployment yet**: all results are from simulation
 - **Small workspaces (< 10 files) see limited benefit**
 - **Not for one-shot queries**: CrabPath shines with recurring patterns over time
@@ -59,7 +60,21 @@ graph.save('graph.json')
 
 ```bash
 # Split workspace into graph + node texts for embedding
-crabpath init --workspace ./my-workspace --output ./crabpath-data.json
+crabpath init --workspace ./my-workspace --output ./crabpath-data
+
+# Adding embeddings (strongly recommended)
+#
+# Option 1: OpenAI (requires OPENAI_API_KEY)
+crabpath embed --texts ./crabpath-data/texts.json --output ./crabpath-data/index.json --provider openai
+
+# Option 2: Ollama (free, local)
+crabpath embed --texts ./crabpath-data/texts.json --output ./crabpath-data/index.json --provider ollama
+
+# Option 3: Custom embedding script
+crabpath embed --texts ./crabpath-data/texts.json --output ./crabpath-data/index.json --command 'python3 my_embed.py'
+
+# Or combine everything in one shot:
+crabpath init --workspace ./my-workspace --output ./crabpath-data --embed-provider openai
 
 # Query (provide seeds from your own index/embedding)
 # CLI also supports --query-vector for vector inputs in production use
