@@ -28,7 +28,7 @@ class RouterError(RuntimeError):
 
 @dataclass
 class RouterConfig:
-    model: str = "gpt-5-mini"
+    model: str = "gpt-4o-mini"  # No reasoning overhead — routing is classification, not thinking
     temperature: float | None = None  # Use model default
     timeout_s: float = 8.0
     max_retries: int = 2
