@@ -83,7 +83,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
         deltas.append(
             {
                 "knob": "decay_half_life",
-                "suggested_adjustment": "increase",
+                "suggested_adjustment": "decrease",
                 "value": 10,
                 "reason": "Many dormant edges; slow decay to preserve low-signal paths longer.",
             }
@@ -110,10 +110,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
     if health.reflex_pct > 0.8:
         deltas.append(
             {
-                "knob": "reflex_threshold",
+                "knob": "decay_half_life",
                 "suggested_adjustment": "increase",
-                "value": 0.02,
-                "reason": "Too many reflex edges; require stronger weights for auto-follow.",
+                "value": 15,
+                "reason": "Predominantly reflex traffic; relax decay to avoid over-pruning.",
             }
         )
 
@@ -130,10 +130,10 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
     if health.cross_file_edge_pct < 0.1 and graph.node_count() > 1:
         deltas.append(
             {
-                "knob": "hebbian_increment",
-                "suggested_adjustment": "increase",
-                "value": 0.01,
-                "reason": "Increase global cross-file reinforcement potential.",
+                "knob": "promotion_threshold",
+                "suggested_adjustment": "decrease",
+                "value": 0.05,
+                "reason": "Promote more dormant edges and increase cross-file exploration.",
             }
         )
 

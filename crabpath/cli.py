@@ -22,6 +22,7 @@ def _build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init", help="split workspace and output node text payload")
     init.add_argument("--workspace", required=True)
     init.add_argument("--output", required=True)
+    init.add_argument("--json", action="store_true")
 
     query = sub.add_parser("query", help="seed from index and traverse graph")
     query.add_argument("text")
@@ -35,15 +36,23 @@ def _build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--graph", required=True)
     learn.add_argument("--outcome", type=float, required=True)
     learn.add_argument("--fired-ids", required=True)
+    learn.add_argument("--json", action="store_true")
 
     health = sub.add_parser("health", help="compute graph health")
     health.add_argument("--graph", required=True)
+    health.add_argument("--json", action="store_true")
 
     return parser
 
 
+def _load_payload(path: str) -> dict:
+    if not Path(path).exists():
+        raise SystemExit(f"missing graph file: {path}")
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def _load_graph(path: str) -> Graph:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = _load_payload(path)
     graph_payload = payload["graph"] if "graph" in payload else payload
     graph = Graph()
     for node_data in graph_payload.get("nodes", []):
@@ -107,7 +116,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         "node_texts": texts,
     }
     Path(args.output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"wrote {args.output}")
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        print(f"wrote {args.output}")
     return 0
 
 
@@ -117,6 +129,8 @@ def cmd_query(args: argparse.Namespace) -> int:
     if query_vec is None:
         raise SystemExit("query requires --query-vector in CLI mode")
 
+    if not Path(args.index).exists():
+        raise SystemExit(f"missing index file: {args.index}")
     index_payload = json.loads(Path(args.index).read_text(encoding="utf-8"))
     index = VectorIndex()
     for node_id, vector in index_payload.items():
@@ -165,20 +179,27 @@ def cmd_learn(args: argparse.Namespace) -> int:
                     "kind": edge.kind,
                     "metadata": edge.metadata,
                 }
-                for source_edges in graph._edges.values()
+            for source_edges in graph._edges.values()
                 for edge in source_edges.values()
             ],
         },
     }
     Path(args.graph).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"updated {args.graph}")
+    if args.json:
+        print(json.dumps(payload["graph"], indent=2))
+    else:
+        print(f"updated {args.graph}")
     return 0
 
 
 def cmd_health(args: argparse.Namespace) -> int:
     graph = _load_graph(args.graph)
     health = measure_health(graph)
-    print(json.dumps(health.__dict__, indent=2))
+    payload = health.__dict__
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(json.dumps(payload, indent=2))
     return 0
 
 

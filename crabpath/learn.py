@@ -96,7 +96,7 @@ def apply_outcome(
             continue
 
         edge.weight = _clip_weight(edge.weight + delta, cfg.weight_bounds)
-        if sign < 0 and edge.weight > 0:
+        if sign < 0 and edge.weight <= 0:
             edge.kind = "inhibitory"
         graph._edges[source_id][target_id] = edge
         updates[f"{source_id}->{target_id}"] = delta

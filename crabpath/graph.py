@@ -62,6 +62,24 @@ class Graph:
             metadata=dict(edge.metadata),
         )
 
+    def remove_node(self, node_id: str) -> None:
+        """Remove a node and all incident edges."""
+        self._nodes.pop(node_id, None)
+        self._edges.pop(node_id, None)
+        for source in list(self._edges):
+            self._edges[source].pop(node_id, None)
+            if not self._edges[source]:
+                self._edges.pop(source, None)
+
+    def remove_edge(self, source: str, target: str) -> None:
+        """Remove an edge if present."""
+        source_edges = self._edges.get(source)
+        if source_edges is None:
+            return
+        source_edges.pop(target, None)
+        if not source_edges:
+            self._edges.pop(source, None)
+
     def get_node(self, id: str) -> Node | None:
         """Return a node by id, or ``None`` when absent."""
         return self._nodes.get(id)

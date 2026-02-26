@@ -4,28 +4,132 @@ from crabpath.autotune import GraphHealth, autotune, measure_health
 from crabpath.graph import Edge, Graph, Node
 
 
-def test_measure_health_counts_percentages() -> None:
+def test_measure_health_on_empty_graph() -> None:
     graph = Graph()
-    graph.add_node(Node("a", "A", metadata={"file": "f1"}))
-    graph.add_node(Node("b", "B", metadata={"file": "f1"}))
-    graph.add_node(Node("c", "C", metadata={"file": "f1"}))
-    graph.add_edge(Edge("a", "b", 0.9))
-    graph.add_edge(Edge("b", "c", 0.5))
+    health = measure_health(graph)
+
+    assert health.dormant_pct == 0.0
+    assert health.habitual_pct == 0.0
+    assert health.reflex_pct == 0.0
+    assert health.orphan_nodes == 0
+    assert health.cross_file_edge_pct == 0.0
+
+
+def test_measure_health_matches_manual_counts() -> None:
+    graph = Graph()
+    for node_id in ["a", "b", "c", "d"]:
+        graph.add_node(Node(node_id, node_id, metadata={"file": "f1"}))
+
+    graph.add_node(Node("e", "e", metadata={"file": "f2"}))
+    graph.add_edge(Edge("a", "b", 0.95))
+    graph.add_edge(Edge("b", "c", 0.6))
+    graph.add_edge(Edge("c", "d", 0.2))
+    graph.add_edge(Edge("d", "e", 0.9))
+    graph.add_edge(Edge("e", "a", 0.1))
 
     health = measure_health(graph)
-    assert health.reflex_pct == 0.5
-    assert health.habitual_pct == 0.5
+    assert health.reflex_pct == 2 / 5
+    assert health.habitual_pct == 1 / 5
+    assert health.dormant_pct == 2 / 5
+    assert health.cross_file_edge_pct == 2 / 5
     assert health.orphan_nodes == 0
 
 
-def test_autotune_recommends_actions_for_dormant_graph() -> None:
+def test_health_metrics_match_manual_count_with_orphans() -> None:
     graph = Graph()
-    graph.add_node(Node("a", "A"))
-    graph.add_node(Node("b", "B"))
-    graph.add_edge(Edge("a", "b", 0.05))
+    graph.add_node(Node("a", "a", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "b", metadata={"file": "a.md"}))
+    graph.add_node(Node("c", "c", metadata={"file": "b.md"}))
+    graph.add_node(Node("d", "d", metadata={"file": "b.md"}))
+
+    graph.add_edge(Edge("a", "b", 0.4))
+    graph.add_edge(Edge("c", "d", 0.1))
+
+    assert measure_health(graph).orphan_nodes == 0
+
+
+def test_autotune_healthy_graph_returns_no_recommendations() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "a.md"}))
+    graph.add_node(Node("c", "C", metadata={"file": "b.md"}))
+    graph.add_node(Node("d", "D", metadata={"file": "b.md"}))
+    graph.add_node(Node("e", "E", metadata={"file": "a.md"}))
+
+    # Balanced distribution around thresholds
+    graph.add_edge(Edge("a", "b", 0.85))
+    graph.add_edge(Edge("b", "c", 0.5))
+    graph.add_edge(Edge("c", "d", 0.5))
+    graph.add_edge(Edge("d", "e", 0.85))
+    graph.add_edge(Edge("e", "a", 0.5))
 
     health = measure_health(graph)
-    changes = autotune(graph, health)
-    knobs = {item["knob"] for item in changes}
+    deltas = autotune(graph, health)
+    assert deltas == []
+
+
+def test_autotune_dormant_graph_recommends_decay() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "a.md"}))
+
+    graph.add_edge(Edge("a", "b", 0.1))
+
+    health = measure_health(graph)
+    deltas = autotune(graph, health)
+    knobs = {change["knob"] for change in deltas}
+
     assert "decay_half_life" in knobs
-    assert "promotion_threshold" in knobs
+    assert deltas[0]["suggested_adjustment"] in {"decrease", "increase"}
+
+
+def test_autotune_reflex_graph_recommends_longer_half_life() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
+
+    graph.add_edge(Edge("a", "b", 0.95))
+    graph.add_edge(Edge("b", "a", 0.95))
+
+    health = measure_health(graph)
+    deltas = autotune(graph, health)
+    assert any(item["knob"] == "decay_half_life" for item in deltas)
+    assert any(item["suggested_adjustment"] == "increase" for item in deltas)
+
+
+def test_autotune_without_cross_file_edges_reduces_promotion_threshold() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "same.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "same.md"}))
+    graph.add_node(Node("c", "C", metadata={"file": "same.md"}))
+
+    graph.add_edge(Edge("a", "b", 0.4))
+    graph.add_edge(Edge("b", "c", 0.4))
+
+    deltas = autotune(graph, measure_health(graph))
+    assert any(
+        change["knob"] == "promotion_threshold" and change["suggested_adjustment"] == "decrease"
+        for change in deltas
+    )
+
+
+def test_autotune_detects_orphan_nodes() -> None:
+    graph = Graph()
+    graph.add_node(Node("root", "root", metadata={"file": "a.md"}))
+    graph.add_node(Node("orphan", "orphan", metadata={"file": "b.md"}))
+    graph.add_edge(Edge("root", "root", 0.5))
+
+    health = measure_health(graph)
+    assert health.orphan_nodes == 1
+
+
+def test_autotune_recommendations_are_actionable() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
+    graph.add_edge(Edge("a", "b", 0.01))
+
+    deltas = autotune(graph, measure_health(graph))
+    knobs = {change["knob"] for change in deltas}
+    assert knobs.issubset({"decay_half_life", "promotion_threshold", "hebbian_increment", "reflex_threshold"})
+    assert all("suggested_adjustment" in change for change in deltas)

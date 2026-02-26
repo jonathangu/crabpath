@@ -94,6 +94,8 @@ def traverse(
 
                 use_count = used_edges.get((source_id, target_node.id), 0)
                 effective = edge.weight * (cfg.edge_damping**use_count)
+                if effective <= 0.0:
+                    continue
                 score = source_score * effective
                 if target_node.id in seen_counts:
                     score -= cfg.visit_penalty
@@ -111,7 +113,8 @@ def traverse(
 
         if route_fn is not None and habitual:
             wanted = set(route_fn(None, [target_id for _, target_id, _, _, _ in habitual]))
-            selected.extend(item for item in habitual if item[1] in wanted)
+            if wanted:
+                selected.extend(item for item in habitual if item[1] in wanted)
         else:
             selected.extend(sorted(habitual, key=lambda item: item[2], reverse=True))
 
