@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from math import exp, log
 from typing import Any, Callable
 
 from .decay import DecayConfig, apply_decay
@@ -51,6 +52,149 @@ class QueryResult:
     candidates_considered: int
 
 
+@dataclass
+class PhaseState:
+    current_phase: int = 1
+    weight_entropy: float = 0.0
+    avg_gradient_magnitude: float = 0.0
+    queries_in_phase: int = 0
+    phase_history: list[dict] = field(default_factory=list)
+
+
+class LearningPhaseManager:
+    def __init__(
+        self,
+        entropy_threshold: float = 1.2,
+        gradient_threshold: float = 0.02,
+        min_queries_before_transition: int = 20,
+        hysteresis: int = 5,
+    ):
+        self.state = PhaseState()
+        self.entropy_threshold = entropy_threshold
+        self.gradient_threshold = gradient_threshold
+        self.min_queries_before_transition = min_queries_before_transition
+        self.hysteresis = hysteresis
+        self._consecutive_phase2_signals = 0
+        self._consecutive_phase1_signals = 0
+        self._gradient_observations = 0
+
+    def compute_weight_entropy(self, graph: Graph) -> float:
+        weights = [float(edge.weight) for edge in graph.edges() if edge.weight > 0]
+        if not weights:
+            return 0.0
+
+        max_weight = max(weights)
+        weights = [exp(weight - max_weight) for weight in weights]
+        total = sum(weights)
+        if total <= 0.0:
+            return 0.0
+
+        entropy = 0.0
+        for probability in (weight / total for weight in weights):
+            if probability <= 0.0:
+                continue
+            entropy -= probability * log(probability)
+        return entropy
+
+    def _extract_gradient_magnitude(self, learning_summary: dict) -> float:
+        updates = learning_summary.get("updates", [])
+        if not isinstance(updates, list) or not updates:
+            return 0.0
+
+        deltas = []
+        for update in updates:
+            raw_delta = None
+            if hasattr(update, "delta"):
+                raw_delta = getattr(update, "delta")
+            elif isinstance(update, dict):
+                raw_delta = update.get("delta")
+            if raw_delta is None:
+                continue
+            try:
+                deltas.append(abs(float(raw_delta)))
+            except (TypeError, ValueError):
+                continue
+
+        if not deltas:
+            return 0.0
+        return sum(deltas) / len(deltas)
+
+    def update(self, graph: Graph, learning_summary: dict) -> int:
+        self.state.weight_entropy = self.compute_weight_entropy(graph)
+        instant_gradient = self._extract_gradient_magnitude(learning_summary)
+        self._gradient_observations += 1
+        self.state.avg_gradient_magnitude = (
+            (self.state.avg_gradient_magnitude * (self._gradient_observations - 1))
+            + instant_gradient
+        ) / self._gradient_observations
+        self.state.queries_in_phase += 1
+
+        meets_entropy = self.state.weight_entropy < self.entropy_threshold
+        meets_gradient = self.state.avg_gradient_magnitude > self.gradient_threshold
+        phase2_signal = (
+            self.state.current_phase == 1
+            and meets_entropy
+            and meets_gradient
+            and self.state.queries_in_phase >= self.min_queries_before_transition
+        )
+        phase1_signal = (
+            self.state.current_phase == 2
+            and not meets_entropy
+            and not meets_gradient
+            and self.state.queries_in_phase >= self.min_queries_before_transition
+        )
+
+        if phase2_signal:
+            self._consecutive_phase2_signals += 1
+            self._consecutive_phase1_signals = 0
+        elif phase1_signal:
+            self._consecutive_phase1_signals += 1
+            self._consecutive_phase2_signals = 0
+        else:
+            self._consecutive_phase2_signals = 0
+            self._consecutive_phase1_signals = 0
+
+        if self.state.current_phase == 1 and self._consecutive_phase2_signals >= self.hysteresis:
+            previous = self.state.current_phase
+            self.state.current_phase = 2
+            self.state.queries_in_phase = 0
+            self.state.phase_history.append(
+                {
+                    "from": previous,
+                    "to": self.state.current_phase,
+                    "weight_entropy": self.state.weight_entropy,
+                    "avg_gradient_magnitude": self.state.avg_gradient_magnitude,
+                }
+            )
+            self._consecutive_phase2_signals = 0
+
+        if self.state.current_phase == 2 and self._consecutive_phase1_signals >= self.hysteresis:
+            previous = self.state.current_phase
+            self.state.current_phase = 1
+            self.state.queries_in_phase = 0
+            self.state.phase_history.append(
+                {
+                    "from": previous,
+                    "to": self.state.current_phase,
+                    "weight_entropy": self.state.weight_entropy,
+                    "avg_gradient_magnitude": self.state.avg_gradient_magnitude,
+                }
+            )
+            self._consecutive_phase1_signals = 0
+
+        return self.state.current_phase
+
+    @property
+    def phase(self) -> int:
+        return self.state.current_phase
+
+    def should_skip_pg(self) -> bool:
+        return self.state.current_phase == 1
+
+    def should_dampen_hebbian(self) -> bool:
+        return self.state.current_phase == 2 and self.state.queries_in_phase > 100
+
+
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower())
 
@@ -83,6 +227,7 @@ class MemoryController:
         self.config = config or ControllerConfig.default()
         self._syn_state = SynaptogenesisState()
         self._query_count = 0
+        self.phase_manager = LearningPhaseManager()
 
     @property
     def query_count(self) -> int:
@@ -196,11 +341,17 @@ class MemoryController:
         skip_penalties = 0
 
         if self.config.enable_synaptogenesis and selected_nodes:
+            synaptogenesis_config = self.config.synaptogenesis
+            if self.phase_manager.should_dampen_hebbian():
+                synaptogenesis_config = replace(
+                    self.config.synaptogenesis,
+                    hebbian_increment=self.config.synaptogenesis.hebbian_increment / 2.0,
+                )
             synaptogenesis = record_cofiring(
                 self.graph,
                 selected_nodes,
                 self._syn_state,
-                self.config.synaptogenesis,
+                synaptogenesis_config,
             )
         else:
             synaptogenesis = {"reinforced": 0, "proto_created": 0, "promoted": 0}
@@ -222,22 +373,29 @@ class MemoryController:
                 )
 
         if self.config.enable_learning and normalized_trajectory:
-            learning_result = make_learning_step(
-                self.graph,
-                normalized_trajectory,
-                reward_signal,
-                self.config.learning,
-            )
-            learning_updates = []
-            for update in learning_result.updates:
-                learning_updates.append(
-                    update._asdict() if hasattr(update, "_asdict") else update
+            if self.phase_manager.should_skip_pg():
+                learning_step_updates = {
+                    "updates": [],
+                    "baseline": 0.0,
+                    "avg_reward": reward_value,
+                }
+            else:
+                learning_result = make_learning_step(
+                    self.graph,
+                    normalized_trajectory,
+                    reward_signal,
+                    self.config.learning,
                 )
-            learning_step_updates = {
-                "updates": learning_updates,
-                "baseline": learning_result.baseline,
-                "avg_reward": learning_result.avg_reward,
-            }
+                learning_updates = []
+                for update in learning_result.updates:
+                    learning_updates.append(
+                        update._asdict() if hasattr(update, "_asdict") else update
+                    )
+                learning_step_updates = {
+                    "updates": learning_updates,
+                    "baseline": learning_result.baseline,
+                    "avg_reward": learning_result.avg_reward,
+                }
         else:
             learning_step_updates = {
                 "updates": [],
@@ -268,6 +426,8 @@ class MemoryController:
                 config=self.config.decay,
             )
 
+        self.phase_manager.update(self.graph, learning_step_updates)
+
         return {
             "query": result.query,
             "reward": reward_value,
@@ -277,6 +437,11 @@ class MemoryController:
             "learning": learning_step_updates,
             "corrections": corrections,
             "decayed": decay_changes,
+            "phase": {
+                "current": self.phase_manager.phase,
+                "entropy": self.phase_manager.state.weight_entropy,
+                "gradient": self.phase_manager.state.avg_gradient_magnitude,
+            },
         }
 
     def stats(self) -> dict[str, Any]:

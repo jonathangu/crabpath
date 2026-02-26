@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
+
 from crabpath import Edge, Graph, MemoryController, Node, QueryResult
-from crabpath.controller import ControllerConfig
+from crabpath.controller import ControllerConfig, LearningPhaseManager
 from crabpath.decay import DecayConfig
 from crabpath.inhibition import InhibitionConfig
 from crabpath.learning import LearningConfig
@@ -156,3 +158,79 @@ def test_controller_default_config():
     assert isinstance(cfg.synaptogenesis, SynaptogenesisConfig)
     assert isinstance(cfg.inhibition, InhibitionConfig)
     assert isinstance(cfg.decay, DecayConfig)
+
+
+def test_phase_starts_at_1():
+    graph = Graph()
+    graph.add_node(Node(id="start", content="alpha root"))
+    graph.add_node(Node(id="good", content="alpha good node"))
+    graph.add_edge(Edge(source="start", target="good", weight=0.9))
+
+    controller = MemoryController(graph)
+    assert controller.phase_manager.phase == 1
+
+
+def test_phase_transitions_to_2():
+    graph = Graph()
+    graph.add_edge(Edge(source="a", target="b", weight=2.0))
+    graph.add_edge(Edge(source="a", target="c", weight=1.0))
+    manager = LearningPhaseManager(min_queries_before_transition=3, hysteresis=2)
+
+    for _ in range(4):
+        phase = manager.update(
+            graph, {"updates": [{"delta": 0.03}]}
+        )
+
+    assert phase == 2
+    assert manager.state.phase_history[0]["to"] == 2
+
+
+def test_phase_skips_pg_in_phase_1(monkeypatch):
+    graph = Graph()
+    graph.add_node(Node(id="start", content="alpha root"))
+    graph.add_node(Node(id="good", content="alpha good node"))
+    graph.add_edge(Edge(source="start", target="good", weight=0.4))
+
+    def fake_make_learning_step(*args, **kwargs):
+        raise AssertionError("PG should be skipped in phase 1")
+
+    monkeypatch.setattr("crabpath.controller.make_learning_step", fake_make_learning_step)
+
+    controller = MemoryController(graph)
+    result = QueryResult(
+        query="alpha",
+        selected_nodes=["start", "good"],
+        context="alpha root\n\nalpha good node",
+        context_chars=31,
+        trajectory=[
+            {
+                "from_node": "start",
+                "to_node": "good",
+                "edge_weight": 0.0,
+                "candidates": [("good", 0.0)],
+            }
+        ],
+        candidates_considered=1,
+    )
+
+    summary = controller.learn(result, reward=1.0)
+    assert summary["learning"]["updates"] == []
+    assert graph.get_edge("start", "good").weight > 0.4
+
+
+def test_phase_detects_entropy():
+    graph = Graph()
+    graph.add_node(Node(id="a", content="node"))
+    graph.add_node(Node(id="b", content="node"))
+    graph.add_node(Node(id="c", content="node"))
+    graph.add_edge(Edge(source="a", target="b", weight=1.0))
+    graph.add_edge(Edge(source="a", target="c", weight=2.0))
+    graph.add_edge(Edge(source="b", target="a", weight=-1.0))
+
+    manager = LearningPhaseManager()
+
+    p1 = math.exp(1.0) / (math.exp(1.0) + math.exp(2.0))
+    p2 = math.exp(2.0) / (math.exp(1.0) + math.exp(2.0))
+    expected_entropy = -(p1 * math.log(p1) + p2 * math.log(p2))
+
+    assert math.isclose(manager.compute_weight_entropy(graph), expected_entropy, rel_tol=1e-6)
