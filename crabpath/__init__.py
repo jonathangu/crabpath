@@ -40,7 +40,21 @@ from .feedback import (
     map_correction_to_snapshot,
     score_retrieval,
 )
-from .graph import Edge, Graph, Node
+from .graph import (
+    ConsolidationConfig,
+    ConsolidationResult,
+    Edge,
+    Graph,
+    Node,
+    consolidate,
+    prune_orphan_nodes,
+    prune_probationary,
+    prune_weak_edges,
+    should_split,
+)
+from .graph import (
+    should_merge as consolidation_should_merge,
+)
 from .inhibition import (
     InhibitionConfig,
     apply_correction,
@@ -123,6 +137,14 @@ __all__ = [
     "record_cofiring",
     "record_skips",
     "record_correction",
+    "ConsolidationConfig",
+    "ConsolidationResult",
+    "consolidate",
+    "prune_weak_edges",
+    "prune_orphan_nodes",
+    "prune_probationary",
+    "should_split",
+    "consolidation_should_merge",
     "decay_proto_edges",
     "classify_tier",
     "edge_tier_stats",

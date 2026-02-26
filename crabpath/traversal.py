@@ -37,7 +37,13 @@ def _normalize_seed_nodes(seed_nodes: Any) -> list[tuple[str, float]]:
         return []
 
     if isinstance(seed_nodes, Mapping):
-        return [(str(node_id), float(score)) for node_id, score in seed_nodes.items()]
+        normalized: list[tuple[str, float]] = []
+        for node_id, score in seed_nodes.items():
+            try:
+                normalized.append((str(node_id), float(score)))
+            except (TypeError, ValueError):
+                normalized.append((str(node_id), 1.0))
+        return normalized
 
     if not isinstance(seed_nodes, Sequence) or isinstance(seed_nodes, (str, bytes)):
         return [(str(seed_nodes), 1.0)]
@@ -46,7 +52,10 @@ def _normalize_seed_nodes(seed_nodes: Any) -> list[tuple[str, float]]:
     for item in seed_nodes:
         if isinstance(item, tuple | list) and len(item) >= 2:
             node_id, score = item[0], item[1]
-            normalized.append((str(node_id), float(score)))
+            try:
+                normalized.append((str(node_id), float(score)))
+            except (TypeError, ValueError):
+                normalized.append((str(node_id), 1.0))
         else:
             normalized.append((str(item), 1.0))
     return normalized
@@ -148,6 +157,8 @@ def traverse(
     visited = set(visit_order)
 
     current_node = start_node
+    # max_hops indicates edge hops to traverse; visit order grows by one per hop
+    # so the resulting node count is at most max_hops + 1.
     for _ in range(cfg.max_hops):
         outgoing = graph.outgoing(current_node)
         if not outgoing:

@@ -161,6 +161,52 @@ def test_baseline_reduces_variance():
     assert second.baseline == pytest.approx(1.5)
 
 
+def test_empty_trajectory_no_baseline_drift():
+    graph = Graph()
+    graph.add_node(Node(id="a", content="A"))
+    cfg = LearningConfig(learning_rate=0.1, discount=1.0)
+
+    first = make_learning_step(graph, [], RewardSignal(episode_id="empty", final_reward=2.0), cfg)
+    second = make_learning_step(graph, [], RewardSignal(episode_id="empty", final_reward=4.0), cfg)
+
+    assert first.updates == []
+    assert first.baseline == 0.0
+    assert second.baseline == 0.0
+
+
+def test_empty_trajectory_returns_zero_updates():
+    graph = Graph()
+    graph.add_node(Node(id="a", content="A"))
+    cfg = LearningConfig(learning_rate=0.1, discount=1.0)
+
+    result = make_learning_step(graph, [], RewardSignal(episode_id="empty2", final_reward=1.0), cfg)
+
+    assert result.updates == []
+    assert result.baseline == 0.0
+    assert result.avg_reward == 1.0
+
+
+def test_malformed_candidates_in_trajectory():
+    graph = Graph()
+    graph.add_node(Node(id="root", content="Root"))
+    graph.add_node(Node(id="a", content="A"))
+    cfg = LearningConfig(learning_rate=0.1, discount=1.0)
+    trajectory = [
+        {
+            "from_node": "root",
+            "to_node": "a",
+            "edge_weight": 1.0,
+            "candidates": "oops",
+        }
+    ]
+
+    result = make_learning_step(
+        graph, trajectory, RewardSignal(episode_id="bad", final_reward=1.0), cfg
+    )
+
+    assert result.updates == []
+
+
 def test_temperature_sharpens_gradient():
     trajectory = [
         {

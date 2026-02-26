@@ -25,6 +25,8 @@ class ControllerConfig:
     synaptogenesis: SynaptogenesisConfig  # from synaptogenesis.py
     inhibition: InhibitionConfig  # from inhibition.py
     decay: DecayConfig  # from decay.py
+    # traversal_max_hops is the number of edges traversed; selected nodes can be up
+    # to max_hops + 1 entries (including the starting node).
     traversal_max_hops: int = 3
     enable_learning: bool = True
     enable_synaptogenesis: bool = True
@@ -249,12 +251,33 @@ class MemoryController:
                 candidates_considered=0,
             )
 
-        visited = set(seed_nodes[:1])
-        selected_nodes = [seed_nodes[0]]
+        start_node: str | None = None
+        for candidate in seed_nodes[:3]:
+            candidate_node = self.graph.get_node(candidate)
+            if candidate_node is None:
+                continue
+            if start_node is None:
+                start_node = candidate
+            if self.graph.outgoing(candidate):
+                start_node = candidate
+                break
+
+        if start_node is None:
+            return QueryResult(
+                query=query,
+                selected_nodes=[],
+                context="",
+                context_chars=0,
+                trajectory=[],
+                candidates_considered=0,
+            )
+
+        visited = {start_node}
+        selected_nodes = [start_node]
         trajectory: list[dict[str, Any]] = []
         candidates_considered = 0
 
-        current_node_id = seed_nodes[0]
+        current_node_id = start_node
         current_node = self.graph.get_node(current_node_id)
         if current_node is None:
             return QueryResult(
@@ -269,7 +292,9 @@ class MemoryController:
         # Increase access count immediately for starting node.
         current_node.access_count += 1
 
-        for _ in range(max(0, self.config.traversal_max_hops - 1)):
+        # traversal_max_hops is the number of edges traversed; visit count is
+        # therefore up to max_hops + 1 nodes (start node + up to max_hops hops).
+        for _ in range(max(0, self.config.traversal_max_hops)):
             outgoing = self.graph.outgoing(current_node_id)
             if not outgoing:
                 break

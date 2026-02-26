@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from crabpath import Edge, Graph, Node
-from crabpath.consolidation import (
+from crabpath.graph import (
     ConsolidationConfig,
     consolidate,
     prune_orphan_nodes,
@@ -146,7 +146,7 @@ def test_consolidate_full_sweep(monkeypatch) -> None:
     graph.add_edge(Edge(source="good", target="protected", weight=1.0))
     graph.add_edge(Edge(source="good", target="probationary", weight=1.0))
 
-    monkeypatch.setattr("crabpath.consolidation.time.time", lambda: 100.0)
+    monkeypatch.setattr("crabpath.graph.time.time", lambda: 100.0)
     result = consolidate(
         graph, config=ConsolidationConfig(min_edge_weight=0.03, probation_max_turns=10)
     )
@@ -170,7 +170,7 @@ def test_probationary_pruning(monkeypatch) -> None:
     )
     graph.add_edge(Edge(source="seed", target="probationary", weight=1.0))
 
-    monkeypatch.setattr("crabpath.consolidation.time.time", lambda: 100.0)
+    monkeypatch.setattr("crabpath.graph.time.time", lambda: 100.0)
     removed = prune_probationary(graph, max_turns=10)
 
     assert removed == 1

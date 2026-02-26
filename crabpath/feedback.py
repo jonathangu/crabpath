@@ -343,7 +343,20 @@ def snapshot_path(graph_path: str | None = None) -> Path:
     """
     env_path = os.getenv("CRABPATH_SNAPSHOT_PATH")
     if env_path:
-        return Path(env_path)
+        # Security: reject parent traversal attempts and invalid/unsafe snapshot
+        # destinations; fall back to defaults to avoid writing outside allowed paths.
+        try:
+            candidate = Path(env_path).expanduser()
+            if ".." in candidate.parts:
+                raise ValueError("path traversal detected")
+            resolved = candidate.resolve()
+            if ".." in resolved.parts:
+                raise ValueError("path traversal detected")
+            if not resolved.parent.exists():
+                raise ValueError("snapshot directory does not exist")
+            return resolved
+        except (OSError, ValueError):
+            return Path(DEFAULT_SNAPSHOT_PATH)
     if graph_path:
         return Path(graph_path).with_suffix(".events.db")
     return Path(DEFAULT_SNAPSHOT_PATH)

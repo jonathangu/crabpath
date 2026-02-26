@@ -127,9 +127,16 @@ def _as_candidates(candidates: Any) -> list[tuple[str, float]]:
         return [(str(k), _as_float(v)) for k, v in candidates.items()]
     if candidates is None:
         return []
+    if isinstance(candidates, (str, bytes)):
+        return []
+
+    try:
+        iterator = iter(candidates)
+    except TypeError:
+        return []
 
     pairs: list[tuple[str, float]] = []
-    for item in candidates:
+    for item in iterator:
         if isinstance(item, tuple) and len(item) == 2:
             pairs.append((str(item[0]), _as_float(item[1])))
             continue
@@ -142,7 +149,7 @@ def _as_candidates(candidates: Any) -> list[tuple[str, float]]:
         if hasattr(item, "to") and hasattr(item, "score"):
             pairs.append((str(item.to), _as_float(getattr(item, "score"))))
             continue
-        raise TypeError("unsupported candidate entry type")
+        continue
     return pairs
 
 
@@ -320,6 +327,10 @@ def make_learning_step(
     config: LearningConfig,
 ) -> LearningResult:
     """Run a learning step end-to-end and return all weight updates."""
+    final_reward = _extract_reward(reward)
+    if not trajectory_steps:
+        return LearningResult(updates=[], baseline=0.0, avg_reward=final_reward)
+
     episode_id = reward.episode_id
     if not _looks_like_family_key(episode_id):
         if config.query_family_fn is not None:
@@ -340,7 +351,6 @@ def make_learning_step(
     )
     deltas = weight_delta(trajectory_steps, advantages, config)
     updates = apply_weight_updates(graph, deltas, config)
-    final_reward = _extract_reward(reward)
     updated_baseline = (
         config.baseline_decay * prev_baseline + (1.0 - config.baseline_decay) * final_reward
     )

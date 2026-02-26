@@ -170,6 +170,37 @@ def test_phase_starts_at_1():
     assert controller.phase_manager.phase == 1
 
 
+def test_controller_tries_multiple_seeds():
+    graph = Graph()
+    graph.add_node(Node(id="best_seed", content="delta query token"))
+    graph.add_node(Node(id="fallback_seed", content="delta"))
+    graph.add_node(Node(id="target", content="target"))
+    graph.add_edge(Edge(source="best_seed", target="target", weight=0.9))
+
+    controller = MemoryController(graph)
+
+    result = controller.query("delta query")
+
+    assert result.selected_nodes[0] == "best_seed"
+    assert "target" in result.selected_nodes
+    assert result.candidates_considered >= 1
+
+
+def test_controller_multi_seed_fallback():
+    graph = Graph()
+    graph.add_node(Node(id="blocked_seed", content="beta query"))
+    graph.add_node(Node(id="open_seed", content="beta query extra"))
+    graph.add_node(Node(id="next", content="next"))
+    graph.add_edge(Edge(source="open_seed", target="next", weight=0.7))
+
+    controller = MemoryController(graph)
+
+    result = controller.query("beta query")
+
+    assert result.selected_nodes == ["open_seed", "next"]
+    assert result.query == "beta query"
+
+
 def test_phase_transitions_to_2():
     graph = Graph()
     graph.add_edge(Edge(source="a", target="b", weight=2.0))

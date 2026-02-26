@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from crabpath.feedback import (
     detect_correction,
     no_reward_on_missing_signal,
     score_retrieval,
+    snapshot_path,
 )
 
 
@@ -87,6 +89,23 @@ def test_auto_feedback_applies_negative_correction() -> None:
 
     assert result["action"] == "record_correction"
     assert graph.get_edge("a", "b").weight == 0.5
+
+
+def test_snapshot_path_rejects_directory_traversal(monkeypatch) -> None:
+    monkeypatch.setenv("CRABPATH_SNAPSHOT_PATH", "bad/../path/events.db")
+    assert snapshot_path() == Path("crabpath_events.db")
+
+
+def test_snapshot_path_rejects_missing_parent(monkeypatch) -> None:
+    parent = "nonexistent_parent"
+    monkeypatch.setenv("CRABPATH_SNAPSHOT_PATH", f"{parent}/events.db")
+    assert snapshot_path() == Path("crabpath_events.db")
+
+
+def test_snapshot_path_uses_valid_env_path(monkeypatch, tmp_path) -> None:
+    target = tmp_path / "events.db"
+    monkeypatch.setenv("CRABPATH_SNAPSHOT_PATH", str(target))
+    assert snapshot_path() == target
 
 
 def test_auto_feedback_applies_implicit_positive() -> None:

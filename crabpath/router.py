@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -270,15 +271,18 @@ class Router:
 
         # Primary path for OpenAI-style client.
         if hasattr(self.client, "chat"):
-            kwargs: dict = {
-                "model": self.config.model,
-                "messages": list(messages),
-                "timeout": self.config.timeout_s,
-                "reasoning_effort": "minimal",
-            }
-            if self.config.temperature is not None:
-                kwargs["temperature"] = self.config.temperature
-            response = self.client.chat.completions.create(**kwargs)
+            try:
+                kwargs: dict = {
+                    "model": self.config.model,
+                    "messages": list(messages),
+                    "timeout": self.config.timeout_s,
+                    "reasoning_effort": "minimal",
+                }
+                if self.config.temperature is not None:
+                    kwargs["temperature"] = self.config.temperature
+                response = self.client.chat.completions.create(**kwargs)
+            except Exception as exc:
+                raise RouterError("Router client call failed") from exc
 
             if not response.choices:
                 raise RouterError("LLM response missing choices")
@@ -291,11 +295,17 @@ class Router:
 
         # Generic callable path for tests/mocks.
         if callable(self.client):
-            return str(self.client(messages))
+            try:
+                return str(self.client(messages))
+            except Exception as exc:
+                raise RouterError("Router client call failed") from exc
 
         complete = getattr(self.client, "complete", None)
         if callable(complete):
-            return str(complete(messages))
+            try:
+                return str(complete(messages))
+            except Exception as exc:
+                raise RouterError("Router client call failed") from exc
 
         raise RouterError("Unknown client interface")
 
@@ -333,7 +343,13 @@ class Router:
                     decision.tier = tier
                 decision.raw = payload
                 return decision
-            except (RouterError, Exception) as exc:
+            except (
+                RouterError,
+                ValueError,
+                TypeError,
+                KeyError,
+                json.JSONDecodeError,
+            ) as exc:
                 import warnings
 
                 warnings.warn(
@@ -401,7 +417,13 @@ class Router:
                         selected_nodes = selected_nodes[: self.config.max_select]
                     return selected_nodes
                 return []
-            except Exception as exc:
+            except (
+                RouterError,
+                ValueError,
+                TypeError,
+                KeyError,
+                json.JSONDecodeError,
+            ) as exc:
                 import warnings
 
                 warnings.warn(

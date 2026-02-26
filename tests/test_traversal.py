@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from crabpath import Edge, Graph, Node
 from crabpath.router import Router, RouterDecision
-from crabpath.traversal import TraversalConfig, TraversalTrajectory, render_context, traverse
+from crabpath.traversal import (
+    TraversalConfig,
+    TraversalTrajectory,
+    _normalize_seed_nodes,
+    render_context,
+    traverse,
+)
 
 
 def _node_graph() -> Graph:
@@ -169,3 +175,12 @@ def test_render_context_truncation():
 
     context = render_context(trajectory, graph, max_chars=150)
     assert len(context) <= 150
+
+
+def test_normalize_seed_nodes_with_bad_scores():
+    assert _normalize_seed_nodes({"a": "bad", "b": None}) == [("a", 1.0), ("b", 1.0)]
+    assert _normalize_seed_nodes([("a", "bad"), ("b", None), "plain"]) == [
+        ("a", 1.0),
+        ("b", 1.0),
+        ("plain", 1.0),
+    ]
