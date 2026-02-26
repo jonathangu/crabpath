@@ -16,7 +16,8 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 | Negation accuracy (CrabPath vs BM25) | 1.000 vs 0.000 |
 | Corrected PG vs myopic REINFORCE | +11 pp (non-overlapping 95% CIs) |
 | Cost per turn (two-tier routing) | $0.004 vs $0.091 static |
-| Tests | 278, 0 lint errors |
+| External benchmark (HotpotQA Recall@5) | BM25 0.800, CrabPath 0.200 (cold-start; see below) |
+| Tests | 305, 0 lint errors |
 | Dependencies | Zero (stdlib only) |
 
 ## Install

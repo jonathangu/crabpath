@@ -36,6 +36,7 @@ python run_all.py
 # Deploy simulation and comparison outputs
 python run_deploy_sim.py
 python run_comparison.py
+python ../scripts/external_benchmark.py
 
 # Ablation and phase-transition figures (deterministic/stochastic split as noted)
 cd ../scripts
