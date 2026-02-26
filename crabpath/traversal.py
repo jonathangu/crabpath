@@ -10,7 +10,9 @@ from .router import Router
 
 @dataclass
 class TraversalConfig:
-    max_hops: int = 3
+    max_hops: int = 30
+    episode_edge_damping: float = 0.3
+    episode_visit_penalty: float = 0.0
     temperature: float | None = None  # Use model default
     branch_beam: int = 3
 
@@ -22,6 +24,7 @@ class TraversalStep:
     edge_weight: float
     tier: str
     candidates: list[tuple[str, float]]
+    effective_weight: float = 0.0
 
 
 @dataclass
@@ -154,7 +157,11 @@ def traverse(
     start_node = normalized[0][0]
     visit_order.append(start_node)
     context_nodes.append(start_node)
-    visited = set(visit_order)
+
+    edge_traversal_count: dict[tuple[str, str], int] = {}
+    node_visit_count: dict[str, int] = {start_node: 1}
+    edge_damping = max(0.0, float(cfg.episode_edge_damping))
+    visit_penalty = max(0.0, float(cfg.episode_visit_penalty))
 
     current_node = start_node
     # max_hops indicates edge hops to traverse; visit order grows by one per hop
@@ -169,32 +176,47 @@ def traverse(
             (target.id, float(edge.weight)) for target, edge in outgoing
         ]
         all_candidates.sort(key=lambda item: item[1], reverse=True)
-        unvisited_candidates = [c for c in all_candidates if c[0] not in visited]
-        if not unvisited_candidates:
+
+        effective_candidates: list[tuple[str, float]] = []
+        for target_id, base_weight in all_candidates:
+            effective_weight = base_weight
+            if base_weight > 0.0 and edge_damping != 1.0:
+                traversals = edge_traversal_count.get((current_node, target_id), 0)
+                effective_weight *= edge_damping ** traversals
+
+            if visit_penalty > 0.0:
+                effective_weight -= visit_penalty * node_visit_count.get(target_id, 0)
+
+            effective_candidates.append((target_id, effective_weight))
+
+        effective_candidates.sort(key=lambda item: item[1], reverse=True)
+        if not any(weight > 0.0 for _, weight in effective_candidates):
             break
 
         chosen: tuple[str, float] | None = None
         tier = "dormant"
 
         if any(
-            classify_edge_tier(weight) == "reflex" and node_id not in visited
-            for node_id, weight in all_candidates
+            classify_edge_tier(weight) == "reflex"
+            for _, weight in effective_candidates
         ):
             reflex_candidates = [
                 c
-                for c in all_candidates
-                if classify_edge_tier(c[1]) == "reflex" and c[0] not in visited
+                for c in effective_candidates
+                if classify_edge_tier(c[1]) == "reflex"
             ]
             tier = "reflex"
-            chosen = sorted(reflex_candidates, key=lambda item: (item[1], item[0]), reverse=True)[0]
+            chosen = sorted(
+                reflex_candidates, key=lambda item: (item[1], item[0]), reverse=True
+            )[0]
         elif any(
-            classify_edge_tier(weight) == "habitual" and node_id not in visited
-            for node_id, weight in all_candidates
+            classify_edge_tier(weight) == "habitual"
+            for _, weight in effective_candidates
         ):
             habitual_candidates = [
                 c
-                for c in all_candidates
-                if classify_edge_tier(c[1]) == "habitual" and c[0] not in visited
+                for c in effective_candidates
+                if classify_edge_tier(c[1]) == "habitual"
             ]
             tier = "habitual"
             context = _build_router_context(
@@ -211,12 +233,14 @@ def traverse(
                 context=context,
                 tier="habitual",
             )
-            chosen = _select_by_node(unvisited_candidates, decision.chosen_target)
+            chosen = _select_by_node(habitual_candidates, decision.chosen_target)
             if chosen is None:
                 # Chosen edge was invalid or leads to a visited node; fallback to
                 # the highest-weight habitual candidate.
                 chosen = sorted(
-                    habitual_candidates, key=lambda item: (item[1], item[0]), reverse=True
+                    habitual_candidates,
+                    key=lambda item: (item[1], item[0]),
+                    reverse=True,
                 )[0]
         else:
             # All candidates are dormant for this node.
@@ -226,22 +250,30 @@ def traverse(
             break
 
         chosen_target, chosen_weight = chosen
-        all_candidates_list = list(all_candidates)
+        all_candidates_list = list(effective_candidates)
+        base_weight_lookup = {node_id: weight for node_id, weight in all_candidates}
+        effective_weight = chosen_weight
         step = TraversalStep(
             from_node=current_node,
             to_node=chosen_target,
-            edge_weight=chosen_weight,
+            edge_weight=base_weight_lookup.get(chosen_target, chosen_weight),
+            effective_weight=effective_weight,
             tier=tier,
             candidates=all_candidates_list,
         )
         all_steps.append(step)
 
-        if chosen_target in visited:
-            break
+        edge_traversal_count[(current_node, chosen_target)] = (
+            edge_traversal_count.get((current_node, chosen_target), 0) + 1
+        )
+        node_visit_count[chosen_target] = node_visit_count.get(chosen_target, 0) + 1
+
         visit_order.append(chosen_target)
         context_nodes.append(chosen_target)
-        visited.add(chosen_target)
         current_node = chosen_target
+
+        if not graph.outgoing(current_node):
+            break
 
     raw_context = render_context(
         TraversalTrajectory(

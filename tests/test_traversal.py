@@ -123,9 +123,9 @@ def test_cycle_prevention():
         config=TraversalConfig(max_hops=5),
     )
 
-    assert trajectory.visit_order == ["start", "loop"]
+    assert trajectory.visit_order == ["start", "loop", "start"]
     assert trajectory.steps[0].to_node == "loop"
-    assert len(trajectory.steps) == 1
+    assert len(trajectory.steps) == 2
 
 
 def test_traversal_returns_all_candidates_per_step():

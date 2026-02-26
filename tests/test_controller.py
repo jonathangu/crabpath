@@ -153,7 +153,7 @@ def test_access_count_increments():
 def test_controller_default_config():
     cfg = ControllerConfig.default()
 
-    assert cfg.traversal_max_hops == 3
+    assert cfg.max_hops == 30
     assert isinstance(cfg.learning, LearningConfig)
     assert isinstance(cfg.synaptogenesis, SynaptogenesisConfig)
     assert isinstance(cfg.inhibition, InhibitionConfig)

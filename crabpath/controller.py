@@ -25,14 +25,21 @@ class ControllerConfig:
     synaptogenesis: SynaptogenesisConfig  # from synaptogenesis.py
     inhibition: InhibitionConfig  # from inhibition.py
     decay: DecayConfig  # from decay.py
-    # traversal_max_hops is the number of edges traversed; selected nodes can be up
-    # to max_hops + 1 entries (including the starting node).
-    traversal_max_hops: int = 3
+    # max_hops is the number of edges traversed; selected nodes can be up to
+    # max_hops + 1 entries (including the starting node).
+    max_hops: int = 30
+    episode_edge_damping: float = 0.3  # decay factor per edge traversal (1.0 disabled)
+    episode_visit_penalty: float = 0.0  # penalty per previous node visit
+    traversal_max_hops: int = 30
     enable_learning: bool = True
     enable_synaptogenesis: bool = True
     enable_inhibition: bool = True
     enable_decay: bool = True
     decay_interval: int = 5  # apply decay every N queries
+
+    def __post_init__(self) -> None:
+        if self.traversal_max_hops != 30:
+            self.max_hops = self.traversal_max_hops
 
     @classmethod
     def default(cls) -> "ControllerConfig":
@@ -292,9 +299,14 @@ class MemoryController:
         # Increase access count immediately for starting node.
         current_node.access_count += 1
 
-        # traversal_max_hops is the number of edges traversed; visit count is
+        edge_traversal_count: dict[tuple[str, str], int] = {}
+        node_visit_count: dict[str, int] = {start_node: 1}
+        edge_damping = max(0.0, float(self.config.episode_edge_damping))
+        visit_penalty = max(0.0, float(self.config.episode_visit_penalty))
+
+        # max_hops is the number of edges traversed; visit count is
         # therefore up to max_hops + 1 nodes (start node + up to max_hops hops).
-        for _ in range(max(0, self.config.traversal_max_hops)):
+        for _ in range(max(0, self.config.max_hops)):
             outgoing = self.graph.outgoing(current_node_id)
             if not outgoing:
                 break
@@ -312,21 +324,50 @@ class MemoryController:
             if not scored:
                 break
 
-            selected_target = self._select_next(query, current_node_id, scored, llm_call)
-            if selected_target is None or selected_target not in {nid for nid, _ in scored}:
-                selected_target = scored[0][0]
+            effective_candidates: list[tuple[str, float]] = []
+            for target_id, base_weight in scored:
+                effective_weight = base_weight
+                if base_weight > 0.0 and edge_damping != 1.0:
+                    traversals = edge_traversal_count.get((current_node_id, target_id), 0)
+                    effective_weight *= edge_damping ** traversals
+
+                if visit_penalty > 0.0:
+                    effective_weight -= visit_penalty * node_visit_count.get(target_id, 0)
+
+                effective_candidates.append((target_id, effective_weight))
+
+            effective_candidates.sort(key=lambda item: item[1], reverse=True)
+            if not any(weight > 0.0 for _, weight in effective_candidates):
+                break
+
+            selected_target = self._select_next(
+                query,
+                current_node_id,
+                effective_candidates,
+                llm_call,
+            )
+            if selected_target is None or selected_target not in {nid for nid, _ in effective_candidates}:
+                selected_target = effective_candidates[0][0]
 
             edge = self.graph.get_edge(current_node_id, selected_target)
+            effective_weight = dict(effective_candidates).get(selected_target, 0.0)
             step = {
                 "from_node": current_node_id,
                 "to_node": selected_target,
                 "edge_weight": edge.weight if edge is not None else 0.0,
-                "candidates": scored,
+                "effective_weight": effective_weight,
+                "candidates": effective_candidates,
             }
             trajectory.append(step)
 
-            if selected_target in visited:
-                break
+            edge_traversal_count[(current_node_id, selected_target)] = (
+                edge_traversal_count.get((current_node_id, selected_target), 0) + 1
+            )
+
+            if selected_target in node_visit_count:
+                node_visit_count[selected_target] += 1
+            else:
+                node_visit_count[selected_target] = 1
 
             next_node = self.graph.get_node(selected_target)
             if next_node is None:
@@ -334,7 +375,6 @@ class MemoryController:
 
             next_node.access_count += 1
             selected_nodes.append(selected_target)
-            visited.add(selected_target)
             current_node_id = selected_target
 
             # If we can’t move, stop early.
@@ -486,7 +526,7 @@ class MemoryController:
                 "enable_inhibition": self.config.enable_inhibition,
                 "enable_decay": self.config.enable_decay,
                 "decay_interval": self.config.decay_interval,
-                "traversal_max_hops": self.config.traversal_max_hops,
+                "traversal_max_hops": self.config.max_hops,
                 "proto_edges": len(self._syn_state.proto_edges),
             },
         }

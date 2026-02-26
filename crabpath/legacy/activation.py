@@ -41,6 +41,7 @@ def activate(
     seeds: dict[str, float],
     *,
     max_steps: int = 3,
+    edge_damping: float = 1.0,
     decay: float = 0.1,
     top_k: int = 10,
     reset: bool = True,
@@ -53,6 +54,8 @@ def activate(
         graph: The memory graph.
         seeds: {node_id: energy} — initial energy injection.
         max_steps: Maximum propagation rounds.
+        edge_damping: Decay factor applied for repeated edge use in the same
+            activation episode.
         decay: Fraction of potential that leaks each step (0 = no leak, 1 = full reset).
         top_k: Number of fired nodes to return.
         reset: If True (default), zero all potentials before starting.
@@ -75,6 +78,9 @@ def activate(
         node = graph.get_node(node_id)
         if node:
             node.potential += energy
+
+    edge_damping_factor = max(0.0, float(edge_damping))
+    edge_usage: dict[tuple[str, str], int] = {}
 
     fired_record: dict[str, float] = {}  # node_id -> energy at firing
     fired_at: dict[str, int] = {}  # node_id -> step number
@@ -109,9 +115,13 @@ def activate(
 
             # Send energy along outgoing edges
             for target, edge in graph.outgoing(node.id):
-                target.potential += edge.weight * signal
+                times_used = edge_usage.get((node.id, target.id), 0)
+                damped_signal = signal * (edge_damping_factor ** times_used)
+                target.potential += edge.weight * damped_signal
                 if target.potential < 0:
                     inhibited.add(target.id)
+
+                edge_usage[(node.id, target.id)] = times_used + 1
 
             # Refractory: reset potential
             node.potential = 0.0
