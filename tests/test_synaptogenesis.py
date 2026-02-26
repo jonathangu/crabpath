@@ -217,6 +217,19 @@ def test_max_outgoing_enforced():
     assert g.get_edge("hub", "t3") is None
 
 
+def test_promotion_not_dropped_when_competition_rejects():
+    g = _graph_with_nodes("hub", "kept", "new")
+    g.add_edge(Edge(source="hub", target="kept", weight=0.9))
+    state = SynaptogenesisState()
+    config = SynaptogenesisConfig(max_outgoing=1, promotion_threshold=1, cofire_initial_weight=0.15)
+
+    result = record_cofiring(g, ["hub", "new"], state, config)
+
+    assert result["promoted"] >= 1
+    assert g.get_edge("hub", "new") is None
+    assert ("hub", "new") in state.proto_edges
+
+
 # ---------------------------------------------------------------------------
 # Tier classification
 # ---------------------------------------------------------------------------

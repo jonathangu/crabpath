@@ -128,6 +128,22 @@ def test_cycle_prevention():
     assert len(trajectory.steps) == 2
 
 
+def test_disconnected_start_has_singleton_visit_order():
+    graph = Graph()
+    graph.add_node(Node(id="only", content="no outbound"))
+
+    trajectory = traverse(
+        query="orphan",
+        graph=graph,
+        router=Router(),
+        seed_nodes=["only"],
+        config=TraversalConfig(max_hops=5),
+    )
+
+    assert trajectory.visit_order == ["only"]
+    assert trajectory.steps == []
+
+
 def test_traversal_returns_all_candidates_per_step():
     graph = _node_graph()
     graph.add_edge(Edge(source="start", target="habit", weight=0.5))

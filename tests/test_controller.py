@@ -33,6 +33,38 @@ def test_query_returns_results():
     assert result.candidates_considered >= 1
 
 
+def test_query_single_node_no_edges():
+    graph = Graph()
+    graph.add_node(Node(id="lonely", content="no edges"))
+    controller = MemoryController(graph)
+
+    result = controller.query("lonely")
+
+    assert result.selected_nodes == ["lonely"]
+    assert result.trajectory == []
+    assert result.context == "no edges"
+
+
+def test_learn_empty_query_result_no_updates():
+    graph = Graph()
+    graph.add_node(Node(id="a", content="alpha root"))
+    controller = MemoryController(graph)
+    empty_result = QueryResult(
+        query="alpha",
+        selected_nodes=[],
+        context="",
+        context_chars=0,
+        trajectory=[],
+        candidates_considered=0,
+    )
+
+    summary = controller.learn(empty_result, reward=0.0)
+
+    assert summary["learning"]["updates"] == []
+    assert summary["learning"]["baseline"] == 0.0
+    assert summary["learning"]["avg_reward"] == 0.0
+
+
 def test_learn_positive_reinforces():
     graph = Graph()
     graph.add_node(Node(id="start", content="alpha root"))

@@ -284,7 +284,11 @@ def consolidate(
 
 
 class Graph:
-    """A weighted directed graph. Plain dicts. No dependencies."""
+    """A weighted directed graph. Plain dicts. No dependencies.
+
+    Threading note: this class is intentionally not thread-safe. Serialize graph
+    mutations externally if multiple threads can modify state concurrently.
+    """
 
     VALID_EDGE_CREATORS = {"auto", "manual", "llm"}
     NODE_DEFAULT_TYPE = "fact"

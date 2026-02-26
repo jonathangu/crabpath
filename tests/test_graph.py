@@ -45,12 +45,33 @@ def test_add_edge():
     assert g.get_edge("a", "b").weight == 0.8
 
 
+def test_duplicate_node_id_replaces_node():
+    g = Graph()
+    g.add_node(Node(id="a", content="first", metadata={"version": "one"}))
+
+    g.add_node(Node(id="a", content="second", metadata={"version": "two"}))
+
+    node = g.get_node("a")
+    assert node is not None
+    assert node.content == "second"
+    assert node.metadata["version"] == "two"
+
+
 def test_negative_edge():
     g = Graph()
     g.add_node(Node(id="rule", content="don't do X"))
     g.add_node(Node(id="bad", content="do X"))
     g.add_edge(Edge(source="rule", target="bad", weight=-1.0))
     assert g.get_edge("rule", "bad").weight == -1.0
+
+
+def test_self_loop_edges_are_supported():
+    g = Graph()
+    g.add_node(Node(id="loop", content="loop node"))
+    g.add_edge(Edge(source="loop", target="loop", weight=0.75))
+
+    assert g.get_edge("loop", "loop") is not None
+    assert g.edge_count == 1
 
 
 def test_outgoing():

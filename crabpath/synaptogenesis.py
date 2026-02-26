@@ -223,11 +223,10 @@ def record_cofiring(
                         created_by="auto",
                     )
                     new_edge.last_followed_ts = now
-                    _add_edge_with_competition(graph, new_edge, config)
-
-                    # Remove proto
-                    del state.proto_edges[key]
-                    promoted += 1
+                    if _add_edge_with_competition(graph, new_edge, config):
+                        # Remove proto only when the edge was actually added.
+                        del state.proto_edges[key]
+                        promoted += 1
 
     return {
         "reinforced": reinforced,
@@ -305,8 +304,11 @@ def _add_edge_with_competition(
     graph: Graph,
     new_edge: Edge,
     config: SynaptogenesisConfig,
-) -> None:
-    """Add edge, enforcing max outgoing limit. Weakest edge dies if full."""
+) -> bool:
+    """Add edge, enforcing max outgoing limit. Weakest edge dies if full.
+
+    Returns True when an edge was added/replaced.
+    """
     outgoing = graph.outgoing(new_edge.source)
 
     if len(outgoing) >= config.max_outgoing:
@@ -325,9 +327,10 @@ def _add_edge_with_competition(
             graph._remove_edge(weakest.source, weakest.target)
         else:
             # New edge is weaker than all existing — don't add
-            return
+            return False
 
     graph.add_edge(new_edge)
+    return True
 
 
 def classify_tier(weight: float, config: SynaptogenesisConfig | None = None) -> str:

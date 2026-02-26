@@ -132,6 +132,29 @@ def test_weight_clamping():
     assert updated["left"] == 5.0
 
 
+def test_zero_reward_does_not_change_weights():
+    graph = Graph()
+    graph.add_node(Node(id="root", content="Root"))
+    graph.add_node(Node(id="left", content="Left"))
+    graph.add_node(Node(id="right", content="Right"))
+    graph.add_edge(Edge(source="root", target="left", weight=0.4))
+    graph.add_edge(Edge(source="root", target="right", weight=0.2))
+
+    trajectory = [
+        {
+            "from_node": "root",
+            "to_node": "left",
+            "edge_weight": 0.4,
+            "candidates": {"left": 0.4, "right": 0.2},
+        }
+    ]
+    cfg = LearningConfig(learning_rate=0.5, discount=1.0, clip_min=-5, clip_max=5)
+    make_learning_step(graph, trajectory, RewardSignal(episode_id="zero", final_reward=0.0), cfg)
+
+    assert graph.get_edge("root", "left").weight == 0.4
+    assert graph.get_edge("root", "right").weight == 0.2
+
+
 def test_baseline_reduces_variance():
     graph = Graph()
     graph.add_node(Node(id="root", content="Root"))

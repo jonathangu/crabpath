@@ -147,3 +147,59 @@ def test_max_hops_safety_cap_stops_traversal():
 
     assert len(result.trajectory) == 2
     assert len(result.selected_nodes) == 3
+
+
+def test_damping_factor_one_is_identity():
+    graph = Graph()
+    graph.add_node(Node(id="start", content="damping identity"))
+    graph.add_node(Node(id="loop", content="loop node"))
+    graph.add_edge(Edge(source="start", target="loop", weight=1.0))
+    graph.add_edge(Edge(source="loop", target="loop", weight=1.0))
+
+    controller = _make_controller(
+        graph,
+        max_hops=3,
+        episode_edge_damping=1.0,
+    )
+    result = controller.query("damping identity")
+
+    assert len(result.trajectory) >= 3
+    assert all(step["effective_weight"] == 1.0 for step in result.trajectory)
+
+
+def test_damping_factor_zero_fully_suppresses_after_first_use():
+    graph = Graph()
+    graph.add_node(Node(id="start", content="damping zero"))
+    graph.add_node(Node(id="loop", content="loop node"))
+    graph.add_edge(Edge(source="start", target="loop", weight=1.0))
+    graph.add_edge(Edge(source="loop", target="loop", weight=1.0))
+
+    controller = _make_controller(
+        graph,
+        max_hops=4,
+        episode_edge_damping=0.0,
+    )
+    result = controller.query("damping zero")
+
+    assert len(result.trajectory) == 2
+    assert result.trajectory[0]["effective_weight"] == 1.0
+    assert result.trajectory[1]["effective_weight"] == 1.0
+
+
+def test_visit_penalty_zero_is_identity():
+    graph = Graph()
+    graph.add_node(Node(id="start", content="visit penalty zero"))
+    graph.add_node(Node(id="loop", content="loop node"))
+    graph.add_edge(Edge(source="start", target="loop", weight=1.0))
+    graph.add_edge(Edge(source="loop", target="start", weight=1.0))
+    graph.add_edge(Edge(source="loop", target="loop", weight=1.0))
+
+    controller = _make_controller(
+        graph,
+        max_hops=3,
+        episode_visit_penalty=0.0,
+    )
+    result = controller.query("visit penalty zero")
+
+    assert len(result.trajectory) == 3
+    assert result.trajectory[1]["to_node"] in {"start", "loop"}

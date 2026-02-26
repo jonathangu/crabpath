@@ -81,3 +81,15 @@ def test_inhibition_stats():
         "average_inhibitory_weight": -0.5,
     }
     assert get_inhibitory_edges(g, "A") == [("C", -0.4), ("D", -0.6)]
+
+
+def test_competition_respects_protected_targets():
+    g = _graph_with_nodes("A", "B", "C")
+    g.get_node("B").metadata["protected"] = True
+    g.add_edge(Edge(source="A", target="B", weight=-0.2))
+
+    config = InhibitionConfig()
+    config.max_outgoing = 1
+
+    apply_correction(g, ["A", "C"], reward=-1.0, config=config)
+    assert g.get_edge("A", "C") is None
