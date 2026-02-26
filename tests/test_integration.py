@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,7 @@ def _disable_auto_detect(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CRABPATH_NO_AUTO_DETECT", "1")
 
 
-def test_full_cycle_init_query_learn_query(tmp_path, capsys) -> None:
+def test_full_cycle_init_query_learn_query(tmp_path, capsys, monkeypatch) -> None:
     workspace = tmp_path / "docs"
     workspace.mkdir()
     (workspace / "note.md").write_text(
@@ -43,6 +45,7 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys) -> None:
     )
 
     # first query
+    monkeypatch.setattr(sys, "stdin", StringIO(json.dumps([1.0, 0.0])))
     code = main(
         [
             "query",
@@ -54,12 +57,11 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys) -> None:
             "--top",
             "2",
             "--json",
-            "--query-vector",
-            "1,0",
+            "--query-vector-stdin",
         ]
     )
-    assert code == 0
     first = json.loads(capsys.readouterr().out.strip())
+    assert code == 0
     first_fired = first["fired"]
 
     before = payload["edges"][0]["weight"]
@@ -72,6 +74,7 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys) -> None:
     assert after > before
 
     capsys.readouterr()
+    monkeypatch.setattr(sys, "stdin", StringIO(json.dumps([1.0, 0.0])))
     code = main(
         [
             "query",
@@ -83,8 +86,7 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys) -> None:
             "--top",
             "2",
             "--json",
-            "--query-vector",
-            "1,0",
+            "--query-vector-stdin",
         ]
     )
     assert code == 0
@@ -135,7 +137,7 @@ def test_decay_and_learning_interaction() -> None:
     assert final < learned + 1
 
 
-def test_large_workspace_pipeline_end_to_end(tmp_path, capsys) -> None:
+def test_large_workspace_pipeline_end_to_end(tmp_path, capsys, monkeypatch) -> None:
     workspace = tmp_path / "docs"
     workspace.mkdir()
 
@@ -160,6 +162,7 @@ def test_large_workspace_pipeline_end_to_end(tmp_path, capsys) -> None:
     }
     index_path.write_text(json.dumps(index_payload), encoding="utf-8")
 
+    monkeypatch.setattr(sys, "stdin", StringIO(json.dumps([1.0, 0.0])))
     code = main(
         [
             "query",
@@ -171,8 +174,7 @@ def test_large_workspace_pipeline_end_to_end(tmp_path, capsys) -> None:
             "--top",
             "5",
             "--json",
-            "--query-vector",
-            "1,0",
+            "--query-vector-stdin",
         ]
     )
     assert code == 0

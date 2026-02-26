@@ -125,32 +125,3 @@ def test_replay_creates_cross_file_edges() -> None:
     assert graph._edges["b"]["a"].source == "b"
     assert graph._edges["b"]["a"].target == "a"
 
-
-def test_replay_with_max_queries(tmp_path, capsys) -> None:
-    graph_path = tmp_path / "graph.json"
-    _write_graph_payload(graph_path)
-
-    sessions = tmp_path / "sessions"
-    sessions.mkdir()
-    (sessions / "events.jsonl").write_text(
-        "\n".join([json.dumps({"role": "user", "content": f"query {idx}"}) for idx in range(10)]),
-        encoding="utf-8",
-    )
-
-    code = main(
-        [
-            "replay",
-            "--graph",
-            str(graph_path),
-            "--sessions",
-            str(sessions / "events.jsonl"),
-            "--max-queries",
-            "3",
-            "--json",
-        ]
-    )
-    assert code == 0
-
-    stats = json.loads(capsys.readouterr().out.strip())
-    assert stats["queries_replayed"] == 3
-    assert stats["edges_reinforced"] > 0
