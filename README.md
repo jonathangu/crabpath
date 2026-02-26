@@ -17,6 +17,7 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 | Corrected PG vs myopic REINFORCE | +11 pp (non-overlapping 95% CIs) |
 | Cost per turn (two-tier routing) | $0.004 vs $0.091 static |
 | External benchmark (HotpotQA) | BM25 dominates cold-start IR; CrabPath learns (1948 edge updates) but topic diversity limits transfer |
+| Recurring-topic benchmark (200 queries) | CrabPath R@2: 0.02→0.07 vs BM25 flat 0.27 |
 | Tests | 305, 0 lint errors |
 | Dependencies | Zero (stdlib only) |
 

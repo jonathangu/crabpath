@@ -110,6 +110,46 @@ def _normalize_metrics(ranking: list[str], gold: list[str]) -> dict[str, float]:
     }
 
 
+def _normalize_metrics_3(ranking: list[str], gold: list[str]) -> dict[str, float]:
+    """Top-k@3 metrics used by the recurring-topic benchmark."""
+    base = _normalize_metrics(ranking, gold)
+
+    expected = set(gold)
+    if not expected:
+        return {
+            "recall@2": base["recall@2"],
+            "recall@3": 0.0,
+            "ndcg@3": 0.0,
+            "mrr@3": 0.0,
+        }
+
+    top3 = ranking[:3]
+    num_relevant = len(expected)
+
+    recall3 = len(set(top3) & expected) / num_relevant
+
+    ideal_hits = min(num_relevant, 3)
+    ideal_dcg = sum(1.0 / math.log2(i + 2.0) for i in range(ideal_hits))
+    dcg = 0.0
+    for idx, node_id in enumerate(top3):
+        if node_id in expected:
+            dcg += 1.0 / math.log2(idx + 2.0)
+    ndcg3 = dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+
+    mrr3 = 0.0
+    for idx, node_id in enumerate(top3, start=1):
+        if node_id in expected:
+            mrr3 = 1.0 / idx
+            break
+
+    return {
+        "recall@2": base["recall@2"],
+        "recall@3": recall3,
+        "ndcg@3": ndcg3,
+        "mrr@3": mrr3,
+    }
+
+
 def _window_mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -146,6 +186,8 @@ def _graph_window_stats(graph: Graph, initial_edge_weights: dict[tuple[str, str]
     edge_count = len(edges)
     inhibitory = sum(1 for edge in edges if edge.weight < 0.0)
     avg_weight = (sum(edge.weight for edge in edges) / edge_count) if edge_count else 0.0
+    reflex = sum(1 for edge in edges if edge.weight > 0.8)
+    dormant = sum(1 for edge in edges if edge.weight < 0.3)
     changed = sum(
         1
         for edge in edges
@@ -154,6 +196,8 @@ def _graph_window_stats(graph: Graph, initial_edge_weights: dict[tuple[str, str]
     return {
         "inhibitory_edges": inhibitory,
         "avg_weight": avg_weight,
+        "reflex_edges": reflex,
+        "dormant_edges": dormant,
         "changed_edges": changed,
     }
 
@@ -788,6 +832,548 @@ def _run_retrieval_suite_beir(
     return metric_map, method_query_results
 
 
+def _build_recurring_topic_corpus() -> list[tuple[str, str]]:
+    return [
+        (
+            "mp-deploy-01",
+            "Meridian Deployment Playbook defines the baseline release lifecycle used across all teams. "
+            "Every production rollout starts by staging changes in a temporary release branch and running "
+            "automated validation before approval. The playbook explicitly references the incident response "
+            "runbook (mp-inc-01) when validation gates fail after deployment has begun. "
+            "It also requires every release to record decision checkpoints in the release notebook that "
+            "captures security checks from the secret policy document (mp-sec-01).",
+        ),
+        (
+            "mp-deploy-02",
+            "Meridian CI/CD Pipeline policy controls every commit path from merge request to image build. "
+            "Build jobs emit signed artifacts, run static checks, and attach provenance metadata for traceability. "
+            "When the pipeline detects schema or config drift, teams defer the change and file a recovery note in "
+            "the architecture assumptions doc (mp-arc-01). Release managers can only approve deployment after "
+            "canary health checks pass in the observability workspace (mp-mon-02).",
+        ),
+        (
+            "mp-deploy-03",
+            "Canary Rollout Procedure describes staged traffic percentages and auto-stop conditions. "
+            "At each stage, monitoring metrics from tracing and logs are reviewed before increasing traffic. "
+            "If error rate climbs, the team follows the rollback protocol in mp-deploy-04 and updates the incident "
+            "timeline using mp-inc-02. The procedure also notes that feature flags should be aligned with the "
+            "hotfix plan before any broad promotion in mp-deploy-05.",
+        ),
+        (
+            "mp-deploy-04",
+            "Meridian Rollback Protocol is the fastest path when a release introduces regression. "
+            "It defines safe windows for traffic shifting, database compatibility checks, and cache invalidation. "
+            "The protocol must consult the on-call runbook and communication checklist in mp-inc-01 before "
+            "restoring previous stable release states. Teams then run a post-deploy verification set from mp-mon-03 "
+            "to confirm no residual telemetry errors remain.",
+        ),
+        (
+            "mp-deploy-05",
+            "Emergency Patch and Freeze rules describe when a release should be paused and only critical fixes allowed. "
+            "During a freeze, only emergency labels can pass through the deploy gate and every patch must include "
+            "a rollback test case from mp-deploy-04. Security teams review affected components against mp-sec-03 "
+            "before the patch is promoted, and architecture leads confirm impact scope in mp-arc-02 before signoff.",
+        ),
+        (
+            "mp-inc-01",
+            "Incident Triage Standard defines how Meridian teams classify severity and establish the first responder. "
+            "Severity is checked within two minutes, then the response room is opened with owners for the affected service. "
+            "The document references the rollback protocol (mp-deploy-04) when release change created the failure. "
+            "If the incident degrades customer confidence, the communications playbook in mp-inc-03 is activated immediately.",
+        ),
+        (
+            "mp-inc-02",
+            "Production Outage Playbook provides step-by-step command chains for isolating failures and reducing blast radius. "
+            "Operators confirm scope using dashboards from mp-mon-02 and tracing links from mp-mon-03 before choosing a runbook. "
+            "The playbook requires that deployment-related disruptions reference mp-deploy-03 or mp-deploy-04 and that any "
+            "service restart aligns with the operational safety rules in mp-sec-02. "
+            "If the incident is caused by a secret leak, escalation to security is mandatory under mp-sec-01.",
+        ),
+        (
+            "mp-inc-03",
+            "Comms and Severity Escalation policy documents how outages are communicated to business and engineering channels. "
+            "The channel map is linked with incident state transitions from mp-inc-01 and aligns with team readiness on mp-onb-01. "
+            "When cross-functional action is needed, the escalation matrix points to service ownership records in mp-arc-01 and "
+            "operational contact details in mp-mon-01. "
+            "Every comms update must include the rollback assumption and monitoring checkpoints.",
+        ),
+        (
+            "mp-inc-04",
+            "Post-Incident Review Framework is used after recovery to capture root cause, timeline, and preventive changes. "
+            "Reviews are required even for recovered false alarms to improve heuristics in automation. "
+            "Findings should propose edits to mp-inc-02, mp-deploy-01, and monitoring alerts in mp-mon-02. "
+            "Unresolved risks are passed to architecture owners for follow-up in mp-arc-02.",
+        ),
+        (
+            "mp-inc-05",
+            "Error Budget and Escalation Ladder defines when incidents become organizational escalations versus local fixes. "
+            "It maps SLO breach thresholds to response levels and ties each level to approved responders. "
+            "For sustained breaches during deployment, the ladder references mp-deploy-03 to throttle rollout and mp-mon-01 for root analysis. "
+            "All escalations are logged into the same evidence store used by mp-inc-01.",
+        ),
+        (
+            "mp-sec-01",
+            "Identity and Access Discipline covers role-based access, service principals, and just-in-time privilege grants. "
+            "All deployment actions must be tied to logged identities and checked against Meridian policy tags. "
+            "If an incident is identity-related, triagers follow mp-inc-01 and then verify token states using mp-sec-02. "
+            "Architects reviewing sensitive touchpoints should also ensure controls from mp-arc-01 are enforced.",
+        ),
+        (
+            "mp-sec-02",
+            "Secret Rotation and Token Hygiene requires automatic expiry for long-lived credentials and scheduled audits. "
+            "Any emergency patch under mp-deploy-05 must include verification that rotated secrets remain valid in runtime. "
+            "Monitoring for credential errors uses alerts in mp-mon-02 and feeds into incident comms via mp-inc-03. "
+            "The process is reviewed in onboarding runbooks at mp-onb-02 for consistency across squads.",
+        ),
+        (
+            "mp-sec-03",
+            "Dependency and Supply Chain Hardening tracks base image trust, vulnerability scanning, and blocked package policy. "
+            "CI jobs fail automatically when unknown artifacts are detected, as described in mp-deploy-02. "
+            "Patch candidates must pass integrity checks before deployment approvals and should align with mp-sec-01 permissions. "
+            "If a vulnerability appears in production, responders use mp-inc-02 and mp-deploy-04 for containment.",
+        ),
+        (
+            "mp-mon-01",
+            "Observability Foundation defines the default telemetry schema for logs, metrics, and traces. "
+            "It standardizes cardinality, labels, and query naming so incidents and deployments are traceable in one graph. "
+            "Deployment and incident operators both depend on this standard before checking mp-mon-02 alert gates. "
+            "Architecture owners must keep this schema aligned with control-plane events in mp-arc-01.",
+        ),
+        (
+            "mp-mon-02",
+            "Alerting and SLO Rules capture thresholds for latency, error budgets, and saturation warnings. "
+            "The policy includes maintenance windows from mp-deploy-05 and severity mapping from mp-inc-05. "
+            "When alerts trigger during a rollout, operators follow canary progression guidance in mp-deploy-03 and may invoke rollback in mp-deploy-04. "
+            "Teams tune alert fatigue using observations from mp-mon-03 and postmortems in mp-inc-04.",
+        ),
+        (
+            "mp-mon-03",
+            "Distributed Tracing and Correlation Handbook connects request paths to deployment and incident records. "
+            "It specifies how to pivot from error traces to root service in under one minute. "
+            "For deployment anomalies, engineers should correlate rollout stages from mp-deploy-03 with trace latency shifts. "
+            "All critical incidents should add trace IDs to summaries maintained by mp-inc-01 and mp-inc-03.",
+        ),
+        (
+            "mp-onb-01",
+            "Team Onboarding Foundations covers required repositories, credential setup, and local tooling for new operators. "
+            "New members are required to run a synthetic query against mp-mon-01 before they can approve any deployment in mp-deploy-01. "
+            "The checklist includes reading the deployment policy (mp-deploy-02), security policy (mp-sec-01), and incident entry workflow in mp-inc-01. "
+            "After onboarding, teammates should complete a guided incident simulation to practice escalation paths.",
+        ),
+        (
+            "mp-onb-02",
+            "Agent Workspace Setup focuses on agent-to-agent handoff conventions, runbook ownership, and command aliases. "
+            "It references mp-onb-01 for baseline profile setup and mp-inc-03 for status communication standards. "
+            "Security-related onboarding tasks include creating short-lived service tokens as described in mp-sec-02. "
+            "Operational simulation drills also cross-check mp-deploy-05 freeze procedures during mock pressure tests.",
+        ),
+        (
+            "mp-arc-01",
+            "Meridian Architecture Overview describes control plane, API gateway, and environment boundaries for deployments. "
+            "The design requires every release path to stay within the staged topology and maintain one rollback point. "
+            "Deployment automation in mp-deploy-02 should consult this topology when calculating blast radius. "
+            "If architecture changes are proposed, they are validated through mp-inc-01 impact criteria and mp-sec-03 hardening guidance.",
+        ),
+        (
+            "mp-arc-02",
+            "Event Routing and Deployment Graph details how deployment state changes propagate across teams and environments. "
+            "The document models edges between deploy, observe, verify, and recover states and references mp-mon-02 for signal thresholds. "
+            "Any proposed topology edit must confirm security boundaries from mp-sec-01 and onboarding role assumptions from mp-onb-01. "
+            "When incidents reveal missing transitions, teams update both this architecture note and the rollback protocol in mp-deploy-04.",
+        ),
+    ]
+
+
+def _build_recurring_query_variants(
+    domain: str,
+    base_queries: list[tuple[str, list[str]]],
+    query_count: int,
+    id_start: int,
+) -> tuple[list[dict], int]:
+    patterns = [
+        "{q}",
+        "In one practical Meridian scenario, {q}",
+        "{q} for the on-call runbook and release team",
+        "How should we handle this: {q}",
+        "Can you clarify this for the operations team: {q}",
+    ]
+
+    queries: list[dict] = []
+    current = id_start
+    for idx in range(query_count):
+        base_query, gold = base_queries[idx % len(base_queries)]
+        pattern = patterns[(idx // len(base_queries)) % len(patterns)]
+        question = pattern.format(q=base_query)
+        queries.append(
+            {
+                "id": f"recurring-{domain}-{current:03d}",
+                "question": question,
+                "topic": domain,
+                "gold": list(gold),
+            }
+        )
+        current += 1
+
+    return queries, current
+
+
+def _build_recurring_queries() -> list[dict]:
+    queries: list[dict] = []
+    current = 1
+
+    deployment_queries = [
+        (
+            "What is the standard Meridian production deployment workflow from merge to rollout?",
+            ["mp-deploy-01", "mp-deploy-02", "mp-deploy-03"],
+        ),
+        (
+            "How do we prepare CI and policy checks before a scheduled release?",
+            ["mp-deploy-02", "mp-sec-01", "mp-deploy-01"],
+        ),
+        (
+            "Describe the canary rollout sequence and what to verify at each step.",
+            ["mp-deploy-03", "mp-mon-02", "mp-mon-03"],
+        ),
+        (
+            "When a release fails, how do we execute the rollback sequence?",
+            ["mp-deploy-04", "mp-inc-01", "mp-deploy-03"],
+        ),
+        (
+            "How do feature flags interact with the deployment promotion process?",
+            ["mp-deploy-03", "mp-deploy-05", "mp-deploy-02"],
+        ),
+        (
+            "What are the emergency patch rules during active incidents?",
+            ["mp-deploy-05", "mp-inc-02", "mp-sec-02"],
+        ),
+        (
+            "Which docs define deployment governance before production signoff?",
+            ["mp-deploy-01", "mp-deploy-02", "mp-sec-01"],
+        ),
+        (
+            "How should deployment state and architecture assumptions be updated after release?",
+            ["mp-deploy-01", "mp-arc-01", "mp-inc-04"],
+        ),
+    ]
+
+    incident_queries = [
+        (
+            "What is the first step when an alert indicates a production incident?",
+            ["mp-inc-01", "mp-mon-01", "mp-sec-01"],
+        ),
+        (
+            "How do responders determine severity and assign the first responder?",
+            ["mp-inc-05", "mp-inc-01", "mp-onb-01"],
+        ),
+        (
+            "What are the immediate actions for a service outage during business hours?",
+            ["mp-inc-02", "mp-mon-02", "mp-inc-01"],
+        ),
+        (
+            "How do we communicate customer impact during a live production incident?",
+            ["mp-inc-03", "mp-inc-01", "mp-inc-05"],
+        ),
+        (
+            "How should post-incident reviews be documented and fed back into ops docs?",
+            ["mp-inc-04", "mp-inc-02", "mp-deploy-04"],
+        ),
+        (
+            "What is the process for escalating incidents that exceed SLO error budget thresholds?",
+            ["mp-inc-05", "mp-mon-02", "mp-inc-01"],
+        ),
+        (
+            "Where should incident evidence and runbook links be consolidated?",
+            ["mp-inc-01", "mp-mon-03", "mp-inc-04"],
+        ),
+        (
+            "How do we close an incident after rollback and stabilization?",
+            ["mp-inc-02", "mp-deploy-04", "mp-inc-04"],
+        ),
+    ]
+
+    security_queries = [
+        (
+            "How are identities and permissions controlled for deployment actions?",
+            ["mp-sec-01", "mp-deploy-02", "mp-onb-01"],
+        ),
+        (
+            "What does secret rotation look like during normal operations?",
+            ["mp-sec-02", "mp-sec-01", "mp-deploy-05"],
+        ),
+        (
+            "How is the supply chain hardened before and after deployment?",
+            ["mp-sec-03", "mp-deploy-02", "mp-sec-01"],
+        ),
+        (
+            "How should teams respond to a suspected token exposure event?",
+            ["mp-sec-02", "mp-inc-02", "mp-sec-01"],
+        ),
+        (
+            "What checks enforce least privilege for new team members?",
+            ["mp-sec-01", "mp-onb-01", "mp-onb-02"],
+        ),
+        (
+            "Which security controls are mandatory during freeze or emergency patching?",
+            ["mp-deploy-05", "mp-sec-02", "mp-sec-01"],
+        ),
+    ]
+
+    monitoring_queries = [
+        (
+            "Which observability standard is required before a deployment can be approved?",
+            ["mp-mon-01", "mp-arc-01", "mp-deploy-01"],
+        ),
+        (
+            "How are alert thresholds defined for latency and saturation?",
+            ["mp-mon-02", "mp-inc-05", "mp-deploy-03"],
+        ),
+        (
+            "How can tracing help debug a rollout regression within the first minute?",
+            ["mp-mon-03", "mp-mon-02", "mp-deploy-03"],
+        ),
+        (
+            "What telemetry should be checked when a rollback is triggered?",
+            ["mp-deploy-04", "mp-mon-03", "mp-inc-02"],
+        ),
+        (
+            "How do dashboards support on-call handoffs and incident comms?",
+            ["mp-mon-01", "mp-inc-03", "mp-mon-02"],
+        ),
+        (
+            "What metrics demonstrate that the rollback is safe to stop?",
+            ["mp-mon-03", "mp-mon-02", "mp-mon-01"],
+        ),
+    ]
+
+    onboarding_queries = [
+        (
+            "What is the baseline onboarding checklist for a new Meridian operator?",
+            ["mp-onb-01", "mp-onb-02", "mp-deploy-01"],
+        ),
+        (
+            "How is a new teammate granted environment access and release roles?",
+            ["mp-sec-01", "mp-onb-01", "mp-onb-02"],
+        ),
+        (
+            "What runbook sequence should a new team member learn first?",
+            ["mp-onb-02", "mp-inc-01", "mp-deploy-02"],
+        ),
+        (
+            "How do new hires practice their first incident and deployment drill?",
+            ["mp-onb-01", "mp-inc-04", "mp-mon-01"],
+        ),
+    ]
+
+    architecture_queries = [
+        (
+            "How is Meridian control-plane and data-plane flow organized for safe deployments?",
+            ["mp-arc-01", "mp-arc-02", "mp-deploy-01"],
+        ),
+        (
+            "What are the architecture assumptions for release propagation and blast radius control?",
+            ["mp-arc-02", "mp-inc-04", "mp-deploy-04"],
+        ),
+        (
+            "How should event routing be updated when deployment topology changes?",
+            ["mp-arc-02", "mp-mon-02", "mp-deploy-03"],
+        ),
+        (
+            "Where is the boundary between deployment logic and operations observability documented?",
+            ["mp-arc-01", "mp-mon-01", "mp-inc-02"],
+        ),
+    ]
+
+    cross_queries = [
+        (
+            "How does incident response tie into the deployment rollback procedure when canaries fail?",
+            ["mp-inc-01", "mp-deploy-04", "mp-deploy-03"],
+        ),
+        (
+            "How do security approvals affect deployment governance during an incident?",
+            ["mp-sec-01", "mp-inc-05", "mp-deploy-01"],
+        ),
+        (
+            "Where do monitoring alerts trigger both release gating and on-call communication?",
+            ["mp-mon-02", "mp-deploy-03", "mp-inc-03"],
+        ),
+        (
+            "How should architecture boundaries influence postmortem remediation after rollout mistakes?",
+            ["mp-arc-01", "mp-inc-04", "mp-deploy-05"],
+        ),
+        (
+            "How do onboarding playbooks ensure release and incident runbooks stay synchronized?",
+            ["mp-onb-02", "mp-inc-01", "mp-deploy-01"],
+        ),
+        (
+            "Which process links dependency hygiene with incident readiness before a hotfix?",
+            ["mp-sec-03", "mp-deploy-05", "mp-inc-02"],
+        ),
+        (
+            "How are tracing and comms combined when a deployment rollback is happening live?",
+            ["mp-mon-03", "mp-deploy-04", "mp-inc-03"],
+        ),
+        (
+            "How do access checks and rollout policies interact during an emergency freeze?",
+            ["mp-sec-02", "mp-deploy-05", "mp-deploy-01"],
+        ),
+        (
+            "How should incident severity affect release promotion and monitoring thresholds?",
+            ["mp-inc-05", "mp-mon-02", "mp-deploy-03"],
+        ),
+        (
+            "How do architecture runbook references reduce repeat incidents after repeated patching?",
+            ["mp-arc-02", "mp-inc-04", "mp-deploy-04"],
+        ),
+    ]
+
+    domain_buckets = [
+        ("deploy", deployment_queries, 40),
+        ("incident", incident_queries, 40),
+        ("security", security_queries, 30),
+        ("monitoring", monitoring_queries, 30),
+        ("onboarding", onboarding_queries, 20),
+        ("architecture", architecture_queries, 20),
+        ("cross", cross_queries, 20),
+    ]
+
+    for domain, bases, count in domain_buckets:
+        items, current = _build_recurring_query_variants(
+            domain=domain,
+            base_queries=bases,
+            query_count=count,
+            id_start=current,
+        )
+        queries.extend(items)
+        # Keep unique IDs across domains by advancing the counter.
+        current += len(items)
+
+    return queries
+
+
+def _run_recurring_benchmark() -> tuple[dict[str, object], list[dict[str, object]]]:
+    corpus = _build_recurring_topic_corpus()
+    recurring_queries = _build_recurring_queries()
+
+    graph_bm25 = _build_graph(corpus)
+    graph_crab = _build_graph(corpus)
+    graph_no_inhibition = _build_graph(corpus)
+
+    initial_crab = {(edge.source, edge.target): edge.weight for edge in graph_crab.edges()}
+    initial_no_inhibition = {
+        (edge.source, edge.target): edge.weight for edge in graph_no_inhibition.edges()
+    }
+
+    window_size = 20
+    metric_keys = ("recall@2", "recall@3", "ndcg@3", "mrr@3")
+    window_metrics = {
+        "BM25": {metric: [] for metric in metric_keys},
+        "CrabPath": {metric: [] for metric in metric_keys},
+        "CrabPath no-inhibition": {metric: [] for metric in metric_keys},
+    }
+
+    per_query: list[dict[str, object]] = []
+    windows: list[dict[str, object]] = []
+
+    for idx, query_item in enumerate(recurring_queries, 1):
+        question = str(query_item.get("question", ""))
+        query_id = str(query_item.get("id", ""))
+        topic = str(query_item.get("topic", ""))
+        gold = list(query_item.get("gold", []))
+
+        bm25_ranking = _bm25_ranking(graph_bm25, question)
+        bm25_metrics = _normalize_metrics_3(bm25_ranking, gold)
+        selected_bm25 = bm25_ranking[:TOP_K]
+
+        crab_ranking, crab_result = _activation_ranking(graph_crab, question)
+        crab_selected = crab_ranking[:TOP_K]
+        crab_metrics = _normalize_metrics_3(crab_ranking, gold)
+        crab_reward = _learn_outcome(crab_selected, gold)
+        if crab_reward != 0.0:
+            _learn(graph=graph_crab, result=crab_result, outcome=crab_reward, rate=0.1)
+
+        no_inh_ranking, no_inh_activation = _activation_ranking(graph_no_inhibition, question)
+        no_inh_selected = no_inh_ranking[:TOP_K]
+        no_inh_metrics = _normalize_metrics_3(no_inh_ranking, gold)
+        no_inh_reward = _learn_outcome(no_inh_selected, gold)
+        if no_inh_reward != 0.0:
+            _learn(graph=graph_no_inhibition, result=no_inh_activation, outcome=no_inh_reward, rate=0.1)
+        _clamp_negative_edges(graph_no_inhibition)
+
+        per_query_item: dict[str, object] = {
+            "query_num": idx,
+            "query_id": query_id,
+            "topic": topic,
+            "query": question,
+            "expected_nodes": gold,
+            "bm25": {
+                "selected_nodes": selected_bm25,
+                "all_nodes": bm25_ranking,
+                "metrics": bm25_metrics,
+            },
+            "crabpath": {
+                "selected_nodes": crab_selected,
+                "all_nodes": crab_ranking,
+                "reward": crab_reward,
+                "metrics": crab_metrics,
+            },
+            "crabpath_no_inhibition": {
+                "selected_nodes": no_inh_selected,
+                "all_nodes": no_inh_ranking,
+                "reward": no_inh_reward,
+                "metrics": no_inh_metrics,
+            },
+        }
+        per_query.append(per_query_item)
+
+        for metric in metric_keys:
+            window_metrics["BM25"][metric].append(float(bm25_metrics[metric]))
+            window_metrics["CrabPath"][metric].append(float(crab_metrics[metric]))
+            window_metrics["CrabPath no-inhibition"][metric].append(float(no_inh_metrics[metric]))
+
+        if idx % window_size == 0:
+            start = idx - (window_size - 1)
+            windows.append(
+                {
+                    "window": f"{start}-{idx}",
+                    "method_metrics": {
+                        method: {
+                            metric: _window_mean(values)
+                            for metric, values in values_by_metric.items()
+                        }
+                        for method, values_by_metric in window_metrics.items()
+                    },
+                    "graph": {
+                        "crab": _graph_window_stats(graph_crab, initial_crab),
+                        "crab_no_inhibition": _graph_window_stats(
+                            graph_no_inhibition, initial_no_inhibition
+                        ),
+                    },
+                    "query_results": per_query[start - 1 : idx],
+                }
+            )
+            window_metrics = {
+                "BM25": {metric: [] for metric in metric_keys},
+                "CrabPath": {metric: [] for metric in metric_keys},
+                "CrabPath no-inhibition": {metric: [] for metric in metric_keys},
+            }
+
+    final_summary = {
+        "query_count": len(recurring_queries),
+        "window_size": window_size,
+        "window_count": len(windows),
+        "final_graph": {
+            "crab": _graph_window_stats(graph_crab, initial_crab),
+            "crab_no_inhibition": _graph_window_stats(graph_no_inhibition, initial_no_inhibition),
+        },
+    }
+
+    return {
+        "windows": windows,
+        "summary": final_summary,
+        "per_query": per_query,
+    }, per_query
+
+
 def _render_latex_table(name: str, method_metrics: dict[str, dict]) -> str:
     methods = [
         "BM25",
@@ -879,6 +1465,45 @@ def _print_learning_curve_table(learning_curve: dict[str, object]) -> None:
         )
 
 
+def _print_recurring_benchmark_table(recurring_result: dict[str, object]) -> None:
+    windows = recurring_result.get("windows", []) if isinstance(recurring_result, dict) else []
+    if not isinstance(windows, list):
+        return
+
+    print("")
+    print(
+        "Window | BM25 R@2 | Crab R@2 | Crab-noInh R@2 | "
+        "Reflex Edges | Inhib Edges | Avg Wt"
+    )
+    print("-" * 104)
+    for item in windows:
+        if not isinstance(item, dict):
+            continue
+        metrics = item.get("method_metrics", {})
+        if not isinstance(metrics, dict):
+            continue
+        bm25 = metrics.get("BM25", {})
+        crab = metrics.get("CrabPath", {})
+        no_inh = metrics.get("CrabPath no-inhibition", {})
+        graph = item.get("graph", {})
+        if not isinstance(bm25, dict) or not isinstance(crab, dict) or not isinstance(graph, dict):
+            continue
+
+        crab_graph = graph.get("crab")
+        if not isinstance(crab_graph, dict):
+            continue
+
+        print(
+            f"{item.get('window', ''):6} | "
+            f"{float(bm25.get('recall@2', 0.0)):8.3f} | "
+            f"{float(crab.get('recall@2', 0.0)):8.3f} | "
+            f"{float(no_inh.get('recall@2', 0.0)):13.3f} | "
+            f"{int(crab_graph.get('reflex_edges', 0)):12d} | "
+            f"{int(crab_graph.get('inhibitory_edges', 0)):11d} | "
+            f"{float(crab_graph.get('avg_weight', 0.0)):6.4f}"
+        )
+
+
 def main() -> None:
     _seed_everything(SEED)
 
@@ -888,11 +1513,13 @@ def main() -> None:
 
     beir_cases = _build_beir_corpus()
     beir_metrics, beir_query_results = _run_retrieval_suite_beir(beir_cases)
+    recurring_benchmark, recurring_query_results = _run_recurring_benchmark()
 
     print(_render_latex_table("HotpotQA Comparison", hotpot_metrics))
     print("")
     print(_render_latex_table("BEIR-style Frozen Benchmark", beir_metrics))
     _print_learning_curve_table(learning_curve)
+    _print_recurring_benchmark_table(recurring_benchmark)
 
     payload = {
         "seed": SEED,
@@ -911,6 +1538,13 @@ def main() -> None:
             "summary": learning_summary,
             "windows": learning_curve.get("windows", []),
             "per_query": learning_query_results,
+        },
+        "recurring_topic": {
+            "query_count": len(_build_recurring_queries()),
+            "window_size": 20,
+            "summary": recurring_benchmark.get("summary", {}),
+            "windows": recurring_benchmark.get("windows", []),
+            "per_query": recurring_query_results,
         },
     }
     RESULTS_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
