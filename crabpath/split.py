@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import hashlib
 import fnmatch
 import os
+import re
+from collections.abc import Callable
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -29,6 +32,85 @@ DEFAULT_EXCLUDES = {
     "vendor",
     "target",
 }
+
+_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
+
+
+def _extract_json(raw: str) -> dict | list | str:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+
+    if text.startswith("```") and text.endswith("```"):
+        text = "\n".join(text.splitlines()[1:-1]).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    match = _JSON_OBJECT_RE.search(text)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _first_line(text: str) -> str:
+    return (text.splitlines() or [""])[0]
+
+
+def _split_with_llm(content: str, llm_fn: Callable[[str, str], str]) -> list[str]:
+    system = (
+        "Split this document into coherent semantic sections. Each section should be a "
+        "concept or topic. Return JSON: {\"sections\": [\"section1 text\", \"section2 text\"]}"
+    )
+    try:
+        raw = llm_fn(system, content)
+        payload = _extract_json(raw)
+        sections = payload.get("sections") if isinstance(payload, dict) else None
+        if isinstance(sections, list):
+            parsed = [str(section).strip() for section in sections if str(section).strip()]
+            if parsed:
+                return parsed
+    except (Exception, SystemExit):
+        pass
+    return _chunk_markdown(content)
+
+
+def generate_summaries(graph: Graph, llm_fn: Callable[[str, str], str] | None = None) -> dict[str, str]:
+    """Generate one-line summaries for each node.
+
+    If no LLM callback is provided, fall back to the first content line.
+    """
+    summaries: dict[str, str] = {}
+    for node in graph.nodes():
+        if llm_fn is None:
+            summaries[node.id] = _first_line(node.content)
+            continue
+
+        try:
+            raw = llm_fn(
+                "Write a one-line summary for this node. Return JSON: "
+                "{\"summary\": \"...\"}",
+                node.content,
+            )
+            payload = _extract_json(raw)
+            summary = ""
+            if isinstance(payload, dict):
+                maybe_summary = payload.get("summary")
+                if isinstance(maybe_summary, str):
+                    summary = maybe_summary.strip()
+            if not summary:
+                summary = _first_line(node.content)
+            summaries[node.id] = summary
+        except Exception:
+            summaries[node.id] = _first_line(node.content)
+        except SystemExit:
+            summaries[node.id] = _first_line(node.content)
+
+    return summaries
 
 
 def _chunk_markdown(content: str) -> list[str]:
@@ -147,6 +229,7 @@ def split_workspace(
     *,
     max_depth: int = 3,
     exclude: Iterable[str] | None = None,
+    llm_fn: Callable[[str, str], str] | None = None,
 ) -> tuple[Graph, dict[str, str]]:
     """Read markdown files from workspace and convert them into a graph.
 
@@ -194,7 +277,7 @@ def split_workspace(
                 continue
 
             text = file_path.read_text(encoding="utf-8")
-            chunks = _chunk_markdown(text)
+            chunks = _split_with_llm(text, llm_fn) if llm_fn is not None else _chunk_markdown(text)
 
             node_ids: list[str] = []
             for idx, chunk in enumerate(chunks):

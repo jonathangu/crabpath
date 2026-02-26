@@ -16,9 +16,11 @@ from pathlib import Path
 from .graph import Edge, Graph, Node
 from .index import VectorIndex
 from .replay import extract_queries, extract_queries_from_dir, replay_queries
-from .split import split_workspace
+from .split import generate_summaries, split_workspace
 from .traverse import TraversalConfig, traverse
-from .learn import apply_outcome
+from .learn import apply_outcome, maybe_create_node
+from .merge import apply_merge, suggest_merges
+from .score import score_retrieval
 from .autotune import measure_health
 from .journal import log_health, log_learn, log_query, log_replay, read_journal, journal_stats
 
@@ -66,10 +68,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     learn = sub.add_parser("learn", help="apply outcome update")
     learn.add_argument("--graph", required=True)
-    learn.add_argument("--outcome", type=float, required=True)
+    learn.add_argument("--outcome", type=float, required=False)
+    learn.add_argument("--scores", required=False)
     learn.add_argument("--fired-ids", required=True)
     learn.add_argument("--json", action="store_true")
     learn.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
+
+    merge = sub.add_parser("merge", help="suggest and apply node merges")
+    merge.add_argument("--graph", required=True)
+    merge.add_argument("--route-provider", choices=("openai", "ollama"))
+    merge.add_argument("--json", action="store_true")
+    merge.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
 
     replay = sub.add_parser("replay", help="warm up graph from historical sessions")
     replay.add_argument("--graph", required=True)
@@ -127,6 +136,44 @@ def _load_graph(path: str) -> Graph:
     return graph
 
 
+def _graph_path_arg(path: str) -> Path:
+    graph_path = Path(path).expanduser()
+    if graph_path.is_dir():
+        graph_path = graph_path / "graph.json"
+    return graph_path
+
+
+def _graph_payload(graph: Graph) -> dict:
+    return {
+        "nodes": [
+            {
+                "id": node.id,
+                "content": node.content,
+                "summary": node.summary,
+                "metadata": node.metadata,
+            }
+            for node in graph.nodes()
+        ],
+        "edges": [
+            {
+                "source": edge.source,
+                "target": edge.target,
+                "weight": edge.weight,
+                "kind": edge.kind,
+                "metadata": edge.metadata,
+            }
+            for source_edges in graph._edges.values()
+            for edge in source_edges.values()
+        ],
+    }
+
+
+def _write_graph(graph_path: str | Path, graph: Graph) -> None:
+    destination = _graph_path_arg(str(graph_path))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(_graph_payload(graph), indent=2), encoding="utf-8")
+
+
 def _parse_vector(values: list[str] | None) -> list[float] | None:
     if values is None:
         return None
@@ -136,6 +183,30 @@ def _parse_vector(values: list[str] | None) -> list[float] | None:
             if chunk:
                 vector.append(float(chunk))
     return vector
+
+
+def _parse_score_payload(raw: str | None) -> dict[str, float] | None:
+    if raw is None:
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid --scores payload: {exc}")
+
+    scores = payload.get("scores", payload) if isinstance(payload, dict) else None
+    if not isinstance(scores, dict):
+        raise SystemExit("--scores payload must be a JSON object mapping node ids to scores")
+
+    parsed: dict[str, float] = {}
+    for node_id, raw_score in scores.items():
+        if not isinstance(node_id, str):
+            continue
+        try:
+            parsed[node_id] = float(raw_score)
+        except (TypeError, ValueError):
+            continue
+    return parsed
 
 
 def _auto_detect_provider(check_env_only: bool = False) -> str | None:
@@ -332,6 +403,76 @@ print(json.dumps(result))
     raise SystemExit(f"unsupported route provider: {provider}")
 
 
+def _llm_provider_script(provider: str) -> str:
+    if provider == "openai":
+        return """import json
+import sys
+
+from openai import OpenAI
+
+
+req = json.loads(sys.stdin.read())
+client = OpenAI()
+resp = client.chat.completions.create(
+    model='gpt-5-mini',
+    messages=[
+        {'role': 'system', 'content': req['system']},
+        {'role': 'user', 'content': req['user']},
+    ],
+    temperature=0.0,
+    response_format={"type": "json_object"},
+    max_completion_tokens=500,
+)
+content = resp.choices[0].message.content
+print(content or '')
+"""
+    if provider == "ollama":
+        return """import json
+import re
+import sys
+
+import requests
+
+
+req = json.loads(sys.stdin.read())
+prompt = f"{req['system']}\\n\\n{req['user']}"
+resp = requests.post(
+    'http://localhost:11434/api/generate',
+    json={'model': 'llama3', 'prompt': prompt, 'stream': False},
+)
+content = resp.json().get('response', '')
+match = re.search(r'\\{.*\\}', content, re.S)
+print(match.group(0) if match else content)
+"""
+    raise SystemExit(f"unsupported llm provider: {provider}")
+
+
+def _build_llm_command(llm_provider: str) -> tuple[list[str], str | None]:
+    if llm_provider is None:
+        raise SystemExit("provider required for llm commands")
+    script_code = _llm_provider_script(llm_provider)
+    fd, script_path = tempfile.mkstemp(prefix="crabpath_llm_", suffix=".py")
+    os.close(fd)
+    Path(script_path).write_text(script_code, encoding="utf-8")
+    return [sys.executable, script_path], script_path
+
+
+def _run_llm_command(command: list[str], system_prompt: str, user_prompt: str) -> str:
+    payload = {"system": system_prompt, "user": user_prompt}
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stdout_data, stderr_data = proc.communicate(json.dumps(payload))
+    if proc.returncode != 0:
+        message = (stderr_data or "").strip() or f"exit code {proc.returncode}"
+        raise SystemExit(f"llm command failed: {message}")
+    return (stdout_data or "").strip()
+
+
 def _build_route_command(route_command: str | None, route_provider: str | None) -> tuple[list[str], str | None]:
     if route_command is None and route_provider is None:
         raise SystemExit("provide either --route-command or --route-provider for routing")
@@ -495,37 +636,50 @@ def cmd_init(args: argparse.Namespace) -> int:
         output_dir = output_dir.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    graph, texts = split_workspace(args.workspace)
-    if args.sessions is not None:
-        queries = _load_session_queries(args.sessions)
-        replay_queries(graph=graph, queries=queries)
+    if args.no_route:
+        if args.route_provider is not None:
+            raise SystemExit("use --no-route without --route-provider")
+        route_provider = None
+    elif args.route_provider is not None:
+        route_provider = args.route_provider
+    else:
+        route_provider = _auto_detect_provider()
+        if route_provider:
+            print(f"Auto-detected routing provider: {route_provider}", file=sys.stderr)
+        else:
+            print("Warning: no routing provider detected, continuing without LLM splitting/summaries", file=sys.stderr)
 
-    graph_path = output_dir / "graph.json"
-    texts_path = output_dir / "texts.json"
-    payload = {
-        "nodes": [
-            {
-                "id": node.id,
-                "content": node.content,
-                "summary": node.summary,
-                "metadata": node.metadata,
-            }
-            for node in graph.nodes()
-        ],
-        "edges": [
-            {
-                "source": edge.source,
-                "target": edge.target,
-                "weight": edge.weight,
-                "kind": edge.kind,
-                "metadata": edge.metadata,
-            }
-            for source_edges in graph._edges.values()
-            for edge in source_edges.values()
-        ],
-    }
-    graph_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    texts_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
+    llm_command = None
+    llm_temp_script = None
+    if route_provider is not None:
+        llm_command, llm_temp_script = _build_llm_command(route_provider)
+        print("Using LLM for: splitting, summaries", file=sys.stderr)
+
+    def llm_fn(system_prompt: str, user_prompt: str) -> str:
+        if llm_command is None:
+            raise SystemExit("LLM command is unavailable")
+        return _run_llm_command(llm_command, system_prompt, user_prompt)
+
+    try:
+        graph, texts = split_workspace(args.workspace, llm_fn=llm_fn if llm_command else None)
+        if llm_command is not None:
+            summaries = generate_summaries(graph, llm_fn=llm_fn)
+            for node_id, summary in summaries.items():
+                node = graph.get_node(node_id)
+                if node is not None:
+                    node.summary = summary
+        if args.sessions is not None:
+            queries = _load_session_queries(args.sessions)
+            replay_queries(graph=graph, queries=queries)
+
+        graph_path = output_dir / "graph.json"
+        texts_path = output_dir / "texts.json"
+        _write_graph(graph_path, graph)
+        texts_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
+    finally:
+        if llm_temp_script is not None and Path(llm_temp_script).exists():
+            Path(llm_temp_script).unlink()
+
     if args.no_embed:
         if args.embed_command is not None or args.embed_provider is not None:
             raise SystemExit("use --no-embed without --embed-command or --embed-provider")
@@ -643,6 +797,10 @@ def cmd_query(args: argparse.Namespace) -> int:
 
     route_fn = None
     route_temp_script = None
+    llm_command = None
+    llm_temp_script = None
+    scores: dict[str, float] = {}
+    created_node_id: str | None = None
     if args.no_route:
         if args.route_command is not None or args.route_provider is not None:
             raise SystemExit("use --no-route without --route-command or --route-provider")
@@ -670,6 +828,14 @@ def cmd_query(args: argparse.Namespace) -> int:
 
         route_fn = route_fn_impl
 
+    if not args.no_route and args.route_command is None and route_provider is not None:
+        llm_command, llm_temp_script = _build_llm_command(route_provider)
+
+    def llm_fn(system_prompt: str, user_prompt: str) -> str:
+        if llm_command is None:
+            raise SystemExit("no llm route command configured")
+        return _run_llm_command(llm_command, system_prompt, user_prompt)
+
     try:
         result = traverse(
             graph=graph,
@@ -678,36 +844,79 @@ def cmd_query(args: argparse.Namespace) -> int:
             query_text=args.text,
             route_fn=route_fn,
         )
+        fired_ids = result.fired
+        context = result.context
+
+        if llm_command is not None and result.fired:
+            fired_pairs = [
+                (node_id, graph.get_node(node_id).content)
+                for node_id in result.fired
+                if graph.get_node(node_id)
+            ]
+            if fired_pairs:
+                scores = score_retrieval(args.text, fired_pairs, llm_fn=llm_fn)
+
+        if not fired_ids and llm_command is not None:
+            created_node_id = maybe_create_node(graph, args.text, [node_id for node_id, _ in seeds], llm_fn=llm_fn)
+            if created_node_id:
+                fired_ids = [created_node_id]
+                context = graph.get_node(created_node_id).content if graph.get_node(created_node_id) else ""
     finally:
         if route_temp_script is not None and Path(route_temp_script).exists():
             Path(route_temp_script).unlink()
+        if llm_temp_script is not None and Path(llm_temp_script).exists():
+            Path(llm_temp_script).unlink()
 
     if not args.no_log:
-        log_query(query_text=args.text, fired_ids=result.fired, node_count=graph.node_count())
+        log_query(query_text=args.text, fired_ids=fired_ids, node_count=graph.node_count())
+
+    if created_node_id:
+        _write_graph(args.graph, graph)
 
     if args.json:
         print(
             json.dumps(
                 {
-                    "fired": result.fired,
+                    "fired": fired_ids,
                     "steps": [step.__dict__ for step in result.steps],
-                    "context": result.context,
+                    "context": context,
+                    "scores": scores,
+                    "created_node_id": created_node_id,
                 }
             )
         )
     else:
-        print(result.context)
+        print(context)
         print()
-        print("\"fired\":", result.fired)
+        print("\"fired\":", fired_ids)
+        if scores:
+            print("\"scores\":", scores)
+        if created_node_id:
+            print("created_node_id:", created_node_id)
     return 0
 
 
 def cmd_learn(args: argparse.Namespace) -> int:
     graph = _load_graph(args.graph)
     fired_ids = [value.strip() for value in args.fired_ids.split(",") if value.strip()]
-    apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
+    parsed_scores = _parse_score_payload(args.scores)
+    if parsed_scores:
+        relevant_scores = [parsed_scores[node_id] for node_id in fired_ids if node_id in parsed_scores]
+        if relevant_scores:
+            avg_score = sum(relevant_scores) / len(relevant_scores)
+            outcome = max(-1.0, min(1.0, avg_score * 2.0 - 1.0))
+        elif args.outcome is not None:
+            outcome = args.outcome
+        else:
+            raise SystemExit("no matching scored nodes; provide --outcome")
+    elif args.outcome is not None:
+        outcome = args.outcome
+    else:
+        raise SystemExit("provide either --outcome or --scores")
+
+    apply_outcome(graph, fired_nodes=fired_ids, outcome=outcome)
     if not args.no_log:
-        log_learn(fired_ids=fired_ids, outcome=args.outcome)
+        log_learn(fired_ids=fired_ids, outcome=outcome)
     payload = {
         "graph": {
             "nodes": [
@@ -727,16 +936,63 @@ def cmd_learn(args: argparse.Namespace) -> int:
                     "kind": edge.kind,
                     "metadata": edge.metadata,
                 }
-            for source_edges in graph._edges.values()
+                for source_edges in graph._edges.values()
                 for edge in source_edges.values()
             ],
         },
     }
-    Path(args.graph).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    graph_path = _graph_path_arg(args.graph)
+    graph_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if args.json:
         print(json.dumps(payload["graph"], indent=2))
     else:
         print(f"updated {args.graph}")
+    return 0
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    graph = _load_graph(args.graph)
+
+    route_provider = args.route_provider
+    if args.route_provider is None:
+        route_provider = _auto_detect_provider()
+        if route_provider:
+            print(f"Auto-detected merge provider: {route_provider}", file=sys.stderr)
+
+    llm_temp_script = None
+    llm_fn = None
+    if route_provider is not None:
+        llm_command, llm_temp_script = _build_llm_command(route_provider)
+
+        def route_aware_llm_fn(system_prompt: str, user_prompt: str) -> str:
+            return _run_llm_command(llm_command, system_prompt, user_prompt)
+
+        llm_fn = route_aware_llm_fn
+
+    try:
+        suggestions = suggest_merges(graph, llm_fn=llm_fn)
+        applied: list[dict[str, list[str]]] = []
+        for source_id, target_id in suggestions:
+            if graph.get_node(source_id) is None or graph.get_node(target_id) is None:
+                continue
+            merged_id = apply_merge(graph, source_id, target_id)
+            applied.append({"from": [source_id, target_id], "to": [merged_id]})
+    finally:
+        if llm_temp_script is not None and Path(llm_temp_script).exists():
+            Path(llm_temp_script).unlink()
+
+    _write_graph(args.graph, graph)
+    payload = {
+        "suggestions": [{"from": [source_id, target_id]} for source_id, target_id in suggestions],
+        "applied": applied,
+    }
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        print(f"Suggested merges: {len(suggestions)}")
+        for pair in suggestions:
+            print(f"{pair[0]} + {pair[1]}")
+        print(f"Applied merges: {len(applied)}")
     return 0
 
 
@@ -883,6 +1139,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_journal(args)
     if args.command == "embed":
         return cmd_embed(args)
+    if args.command == "merge":
+        return cmd_merge(args)
     return 1
 
 

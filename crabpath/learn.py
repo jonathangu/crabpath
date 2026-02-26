@@ -2,10 +2,106 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass
+from collections.abc import Callable
 
-from .graph import Edge, Graph
+from .graph import Edge, Graph, Node
+
+
+_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.S)
+
+
+def _extract_json(raw: str) -> dict | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if text.startswith("```") and text.endswith("```"):
+        text = "\n".join(text.splitlines()[1:-1]).strip()
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        pass
+
+    match = _JSON_OBJECT_RE.search(text)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(0))
+        if isinstance(payload, dict):
+            return payload
+    except json.JSONDecodeError:
+        return None
+    return None
+
+
+def _first_line(text: str) -> str:
+    return (text.splitlines() or [""])[0]
+
+
+def _unique_node_id(content: str, graph: Graph) -> str:
+    base = f"auto:{hashlib.sha1(content.encode('utf-8')).hexdigest()[:10]}"
+    candidate = base
+    suffix = 0
+    while graph.get_node(candidate) is not None:
+        suffix += 1
+        candidate = f"{base}:{suffix}"
+    return candidate
+
+
+def maybe_create_node(
+    graph: Graph,
+    query_text: str,
+    fired_nodes: list[str],
+    llm_fn: Callable[[str, str], str] | None = None,
+) -> str | None:
+    """If no good nodes were found for this query, ask LLM to create a new node."""
+    if llm_fn is None:
+        return None
+
+    system = (
+        "A query found no relevant documents. Should a new memory node be created from this "
+        'query? Return JSON: {"should_create": true/false, "content": "...", "reason": "..."}'
+    )
+    nearby = ", ".join(
+        f"{node_id}: {node.content[:80]}"
+        for node_id in fired_nodes
+        if (node := graph.get_node(node_id)) is not None
+    )
+    if not nearby:
+        nearby = "<no recent fired nodes>"
+    user = f"Query: {query_text}\n\nRecent context: {nearby}"
+
+    try:
+        payload = _extract_json(llm_fn(system, user)) or {}
+        if not bool(payload.get("should_create", False)):
+            return None
+
+        content = str(payload.get("content", query_text)).strip() or query_text
+        reason = str(payload.get("reason", "")).strip()
+        summary = str(payload.get("summary", _first_line(content))).strip() or _first_line(content)
+        node_id = _unique_node_id(content, graph)
+        graph.add_node(
+            Node(
+                id=node_id,
+                content=content,
+                summary=_first_line(summary),
+                metadata={"source": "llm-create", "query": query_text, "reason": reason},
+            )
+        )
+        for source_id in fired_nodes[:5]:
+            if source_id == node_id or graph.get_node(source_id) is None:
+                continue
+            graph.add_edge(Edge(source=source_id, target=node_id, weight=0.15))
+            graph.add_edge(Edge(source=node_id, target=source_id, weight=0.15))
+        return node_id
+    except (Exception, SystemExit):
+        return None
 
 
 @dataclass

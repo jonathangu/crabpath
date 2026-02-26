@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from crabpath.split import split_workspace
 
@@ -137,3 +138,48 @@ def test_split_file_with_title_only(tmp_path: Path) -> None:
     assert graph.node_count() == 1
     assert graph.incoming("title.md::0") == []
     assert texts["title.md::0"] == "# Just a title"
+
+
+def test_split_with_llm_json_sections(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_llm"
+    workspace.mkdir()
+    (workspace / "note.md").write_text("Intro paragraph.\n\nDeep dive.\n\nChecklist.\n")
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_llm(system: str, user: str) -> str:
+        calls.append((system, user))
+        return json.dumps({"sections": ["Section 1: Intro.", "Section 2: Deep dive.", "Section 3: Checklist."]})
+
+    graph, texts = split_workspace(str(workspace), llm_fn=fake_llm)
+
+    assert len(graph.nodes()) == 3
+    assert list(texts.values()) == ["Section 1: Intro.", "Section 2: Deep dive.", "Section 3: Checklist."]
+    assert calls
+
+
+def test_split_with_llm(tmp_path: Path) -> None:
+    test_split_with_llm_json_sections(tmp_path)
+
+
+def test_split_without_llm(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_no_llm"
+    workspace.mkdir()
+    (workspace / "note.md").write_text("## Intro\nFirst\n\n## Body\nSecond")
+
+    graph, texts = split_workspace(str(workspace))
+    assert len(graph.nodes()) == 2
+    assert texts["note.md::0"].startswith("## Intro")
+
+
+def test_split_with_llm_parse_fallback_to_headers(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_bad_llm"
+    workspace.mkdir()
+    (workspace / "note.md").write_text("## Intro\nFirst\n\n## Body\nSecond")
+
+    def bad_llm(_system: str, _user: str) -> str:
+        return "not-json"
+
+    graph, texts = split_workspace(str(workspace), llm_fn=bad_llm)
+    assert len(graph.nodes()) == 2
+    assert texts["note.md::0"].startswith("## Intro")

@@ -361,6 +361,96 @@ def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
     assert data["edges"][0]["source"] == "a"
 
 
+def test_learn_command_uses_scores(tmp_path, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    _write_graph_payload(graph_path)
+
+    code = main(
+        [
+            "learn",
+            "--graph",
+            str(graph_path),
+            "--fired-ids",
+            "a,b",
+            "--scores",
+            json.dumps({"scores": {"a": 0.95, "b": 0.95}}),
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(graph_path.read_text(encoding="utf-8"))
+    assert payload["graph"]["edges"][0]["weight"] > 0.7
+
+
+def test_query_with_llm_provider_returns_scores(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    index_path = tmp_path / "index.json"
+    _write_route_graph_payload(graph_path)
+    index_path.write_text(json.dumps({"a": [1, 0], "b": [0, 0], "c": [0, 0]}), encoding="utf-8")
+
+    stub_dir = tmp_path / "route_stubs"
+    stub_dir.mkdir()
+    _write_route_openai_stub(stub_dir / "openai.py", selected_id="c")
+    env_path = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(stub_dir), env_path]) if env_path else str(stub_dir))
+
+    code = main(
+        [
+            "query",
+            "deploy",
+            "--graph",
+            str(graph_path),
+            "--index",
+            str(index_path),
+            "--query-vector",
+            "1,0",
+            "--top",
+            "1",
+            "--route-provider",
+            "openai",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert "scores" in out
+    assert out["scores"].get("a") == 1.0
+
+
+def test_merge_command_suggests_and_applies(tmp_path, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    payload = {
+        "graph": {
+            "nodes": [
+                {"id": "a", "content": "alpha", "summary": "", "metadata": {}},
+                {"id": "b", "content": "beta", "summary": "", "metadata": {}},
+                {"id": "c", "content": "gamma", "summary": "", "metadata": {}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "weight": 0.95, "kind": "sibling", "metadata": {}},
+                {"source": "b", "target": "a", "weight": 0.95, "kind": "sibling", "metadata": {}},
+                {"source": "a", "target": "c", "weight": 0.2, "kind": "sibling", "metadata": {}},
+                {"source": "c", "target": "a", "weight": 0.1, "kind": "sibling", "metadata": {}},
+            ],
+        },
+    }
+    graph_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    code = main(["merge", "--graph", str(graph_path), "--json"])
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert "suggestions" in out
+    assert out["suggestions"]
+
+    updated = json.loads(graph_path.read_text(encoding="utf-8"))
+    if "graph" in updated:
+        graph_payload = updated["graph"]
+    else:
+        graph_payload = updated
+    assert "nodes" in graph_payload
+    assert len(graph_payload["nodes"]) == 2
+
+
 def test_health_command_outputs_all_metrics(tmp_path, capsys) -> None:
     graph_path = tmp_path / "graph.json"
     _write_graph_payload(graph_path)
@@ -377,6 +467,37 @@ def test_health_command_outputs_all_metrics(tmp_path, capsys) -> None:
         "edges",
     }
     assert expected.issubset(set(payload.keys()))
+
+
+def test_init_with_auto_route_provider_message_when_detected(tmp_path, monkeypatch, capsys) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("## A\nHello", encoding="utf-8")
+    output = tmp_path / "out"
+
+    monkeypatch.delenv("CRABPATH_NO_AUTO_DETECT", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    stub_dir = tmp_path / "stubs"
+    stub_dir.mkdir()
+    (stub_dir / "openai.py").write_text(
+        """class _Message:\n    def __init__(self, content):\n        self.content = content\n\n\nclass _Choice:\n    def __init__(self, content):\n        self.message = _Message(content)\n\n\nclass _Resp:\n    def __init__(self, content):\n        self.choices = [_Choice(content)]\n\n\nclass _Chat:\n    def __init__(self):\n        self.completions = self\n\n    def create(self, **_kwargs):\n        return _Resp('{\"selected\": []}')\n\n\nclass OpenAI:\n    def __init__(self):\n        self.chat = _Chat()\n""",
+        encoding="utf-8",
+    )
+    env_path = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(stub_dir), env_path]) if env_path else str(stub_dir))
+
+    code = main(
+        [
+            "init",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(output),
+            "--no-embed",
+        ]
+    )
+    assert code == 0
+    assert "Using LLM for: splitting, summaries" in capsys.readouterr().err
 
 
 def test_init_output_flag_writes_path(tmp_path) -> None:
@@ -402,6 +523,6 @@ def test_health_invalid_graph_path_error_is_clear(tmp_path) -> None:
 
 
 def test_cli_help_text_for_all_commands() -> None:
-    for command in ["init", "query", "learn", "health"]:
+    for command in ["init", "query", "learn", "merge", "health"]:
         with pytest.raises(SystemExit):
             main([command, "--help"])
