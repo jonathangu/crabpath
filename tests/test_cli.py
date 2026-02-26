@@ -561,3 +561,54 @@ def test_cli_version_flag() -> None:
     result = _run_cli(["--version"])
     assert result.returncode == 0
     assert __version__ in result.stdout.strip()
+
+
+def test_cli_help_available_for_public_commands() -> None:
+    commands = [
+        "query",
+        "learn",
+        "snapshot",
+        "feedback",
+        "stats",
+        "migrate",
+        "init",
+        "explain",
+        "extract-sessions",
+        "split",
+        "sim",
+        "health",
+        "add",
+        "remove",
+        "consolidate",
+        "evolve",
+    ]
+
+    for command in commands:
+        result = _run_cli([command, "--help"])
+        assert result.returncode == 0
+        assert "usage:" in result.stdout
+
+
+def test_explain_command_without_seeds_returns_no_traceback(tmp_path: Path) -> None:
+    graph_path = tmp_path / "graph.json"
+    graph = Graph()
+    graph.add_node(Node(id="a", content="deploy failed after config change"))
+    graph.save(str(graph_path))
+
+    result = _run_cli(
+        [
+            "explain",
+            "nonmatching-query",
+            "--graph",
+            str(graph_path),
+            "--json",
+        ],
+        env={"OPENAI_API_KEY": ""},
+    )
+
+    assert result.returncode == 0
+    assert "Traceback" not in result.stderr
+    payload = _load_json_output(result.stdout)
+    assert payload["query"] == "nonmatching-query"
+    assert payload["seed_scores"] == []
+    assert payload["selected_nodes"] == []

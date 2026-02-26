@@ -24,6 +24,7 @@ from ._io import (
 )
 from .autotune import measure_health
 from .embeddings import EmbeddingIndex, openai_embed
+from . import __version__
 from .feedback import auto_outcome, map_correction_to_snapshot, snapshot_path
 from .graph import Edge, Graph
 from .legacy.activation import learn as _learn
@@ -549,7 +550,7 @@ def _handle_initialize(req_id: Any, _params: dict[str, Any] | None) -> None:
         {
             "protocolVersion": "2025-03-26",
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "crabpath-mcp", "version": "1.0.0"},
+            "serverInfo": {"name": "crabpath-mcp", "version": __version__},
         },
     )
 

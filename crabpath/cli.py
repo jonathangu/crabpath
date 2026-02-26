@@ -346,6 +346,8 @@ def _explain_traversal(
             "candidate_rankings": [],
             "inhibition_effects": [],
             "candidates_considered": 0,
+            "selected_nodes": [],
+            "fired_with_reasoning": [],
             "traversal_path": [],
             "selected_node_reasons": [],
         }
@@ -361,6 +363,8 @@ def _explain_traversal(
             "candidate_rankings": [],
             "inhibition_effects": [],
             "candidates_considered": 0,
+            "selected_nodes": [],
+            "fired_with_reasoning": [],
             "traversal_path": [],
             "selected_node_reasons": [],
         }
@@ -490,44 +494,83 @@ def _explain_traversal(
 
 
 def _format_explain_trace(trace: dict[str, Any]) -> str:
+    selected_nodes = trace.get("selected_nodes")
+    if not isinstance(selected_nodes, list):
+        selected_nodes = []
+
+    seed_scores = trace.get("seed_scores")
+    if not isinstance(seed_scores, list):
+        seed_scores = []
+
+    candidate_rankings = trace.get("candidate_rankings")
+    if not isinstance(candidate_rankings, list):
+        candidate_rankings = []
+
+    inhibition_effects = trace.get("inhibition_effects")
+    if not isinstance(inhibition_effects, list):
+        inhibition_effects = []
+
+    selected_node_reasons = trace.get("selected_node_reasons")
+    if not isinstance(selected_node_reasons, list):
+        selected_node_reasons = []
+
+    selected_nodes_text = ", ".join(
+        str(node_id) for node_id in selected_nodes if isinstance(node_id, str)
+    )
+
     lines = [
         f"Query: {trace['query']}",
         f"Candidates considered: {trace['candidates_considered']}",
-        f"Selected nodes: {', '.join(trace['selected_nodes']) or 'none'}",
+        f"Selected nodes: {selected_nodes_text or 'none'}",
         "",
         "Seed scores:",
     ]
-    if trace["seed_scores"]:
-        for entry in trace["seed_scores"]:
-            lines.append(f"- {entry['node_id']}: {float(entry['score']):.3f}")
+    if seed_scores:
+        for entry in seed_scores:
+            if not isinstance(entry, dict):
+                continue
+            lines.append(
+                f"- {entry.get('node_id', '')}: {float(entry.get('score', 0.0)):.3f}"
+            )
     else:
         lines.append("- none")
 
     lines.extend(["", "Routing steps:"])
-    for step in trace["candidate_rankings"]:
-        selected = step["selected"] or "none"
-        lines.append(f"Step {step['step']}: {step['from']} -> {selected}")
-        for candidate in step["candidates"]:
-            marker = "✓" if candidate["node_id"] == selected else " "
+    for step in candidate_rankings:
+        if not isinstance(step, dict):
+            continue
+        selected = step.get("selected") or "none"
+        lines.append(f"Step {step.get('step')} from {step.get('from')} -> {selected}")
+        for candidate in step.get("candidates", []):
+            if not isinstance(candidate, dict):
+                continue
+            marker = "✓" if candidate.get("node_id") == selected else " "
             lines.append(
-                f"  {marker} {candidate['node_id']} "
-                f"base={candidate['base_score']:.3f} "
-                f"suppressed={candidate['suppressed_score']:.3f} "
-                f"suppressed_by={candidate['suppressed_by']:.3f} "
-                f"reason={candidate['reason']}"
+                f"  {marker} {candidate.get('node_id')} "
+                f"base={float(candidate.get('base_score', 0.0)):.3f} "
+                f"suppressed={float(candidate.get('suppressed_score', 0.0)):.3f} "
+                f"suppressed_by={float(candidate.get('suppressed_by', 0.0)):.3f} "
+                f"reason={candidate.get('reason')}"
             )
 
-    if trace["inhibition_effects"]:
+    if inhibition_effects:
         lines.extend(["", "Inhibition effects:"])
-        for effect in trace["inhibition_effects"]:
+        for effect in inhibition_effects:
+            if not isinstance(effect, dict):
+                continue
             lines.append(
-                f"- {effect['from']} -> {effect['to']} delta={effect['suppressed_delta']:.3f} "
-                f"edge={effect['weight']:.3f}"
+                f"- {effect.get('from')} -> {effect.get('to')} "
+                f"delta={float(effect.get('suppressed_delta', 0.0)):.3f} "
+                f"edge={float(effect.get('weight', 0.0)):.3f}"
             )
 
     lines.extend(["", "Selection rationale:"])
-    for reason in trace["selected_node_reasons"]:
-        lines.append(f"- step {reason['step']}: {reason['node_id']}: {reason['reason']}")
+    for reason in selected_node_reasons:
+        if not isinstance(reason, dict):
+            continue
+        lines.append(
+            f"- step {reason.get('step')}: {reason.get('node_id')}: {reason.get('reason')}"
+        )
 
     return "\n".join(lines)
 
@@ -1130,6 +1173,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
     except CLIError as exc:
         return _emit_error(str(exc))
+    except Exception as exc:  # pragma: no cover - avoid raw tracebacks for CLI users
+        return _emit_error(f"internal error: {exc}")
 
 
 if __name__ == "__main__":

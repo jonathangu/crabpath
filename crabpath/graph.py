@@ -403,7 +403,20 @@ class Graph:
     @staticmethod
     def normalize_node(record: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record, dict):
-            return {}
+            return {
+                "id": "",
+                "content": "",
+                "summary": "",
+                "type": Graph.NODE_DEFAULT_TYPE,
+                "threshold": 1.0,
+                "potential": 0.0,
+                "trace": 0.0,
+                "access_count": 0,
+                "failure_count": 0,
+                "cluster_id": "",
+                "created_at": None,
+                "metadata": {},
+            }
 
         metadata = record.get("metadata", {})
         if not isinstance(metadata, dict):
@@ -462,7 +475,21 @@ class Graph:
     @staticmethod
     def normalize_edge(record: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record, dict):
-            return {}
+            return {
+                "source": "",
+                "target": "",
+                "weight": 1.0,
+                "decay_rate": 0.01,
+                "last_followed_ts": None,
+                "created_by": Graph.EDGE_DEFAULT_CREATED_BY,
+                "follow_count": 0,
+                "skip_count": 0,
+                "kind": "excitatory",
+                "evidence_count": 0,
+                "provenance": "",
+                "last_modified_ts": None,
+                "decay_group": "",
+            }
 
         created_by = record.get("created_by", Graph.EDGE_DEFAULT_CREATED_BY)
         if created_by not in Graph.VALID_EDGE_CREATORS:
@@ -664,6 +691,8 @@ class Graph:
             "w", delete=False, dir=str(target.parent), suffix=".tmp"
         ) as f:
             json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
             temp_path = Path(f.name)
 
         os.replace(temp_path, target)
@@ -677,10 +706,27 @@ class Graph:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Graph:
         g = cls()
-        for nd in data.get("nodes", []):
-            g.add_node(Node(**cls.normalize_node(nd)))
-        for ed in data.get("edges", []):
-            g.add_edge(Edge(**cls.normalize_edge(ed)))
+        nodes = data.get("nodes", [])
+        if not isinstance(nodes, list):
+            nodes = []
+        for nd in nodes:
+            if not isinstance(nd, dict):
+                continue
+            normalized = cls.normalize_node(nd)
+            if not normalized.get("id"):
+                continue
+            g.add_node(Node(**normalized))
+
+        edges = data.get("edges", [])
+        if not isinstance(edges, list):
+            edges = []
+        for ed in edges:
+            if not isinstance(ed, dict):
+                continue
+            normalized = cls.normalize_edge(ed)
+            if not normalized.get("source") or not normalized.get("target"):
+                continue
+            g.add_edge(Edge(**normalized))
         return g
 
     @classmethod
@@ -690,6 +736,12 @@ class Graph:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("invalid graph file: top-level object must be a dict")
+
+        normalized = dict(data)
+        if not isinstance(normalized.get("nodes"), list):
+            normalized["nodes"] = []
+        if not isinstance(normalized.get("edges"), list):
+            normalized["edges"] = []
 
         raw_schema_version = data.get("schema_version", 0)
         try:
@@ -705,7 +757,7 @@ class Graph:
                 "Please upgrade."
             )
 
-        return cls.from_dict(data)
+        return cls.from_dict(normalized)
 
     def to_dict(self) -> dict[str, Any]:
         return {

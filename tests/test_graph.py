@@ -291,3 +291,34 @@ def test_graph_save_includes_schema_version(tmp_path):
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == 1
+
+
+def test_graph_load_ignores_invalid_records_and_preserves_valid_data(tmp_path: Path) -> None:
+    path = tmp_path / "weird_graph.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "nodes": [
+                    {"id": "a", "content": "valid node"},
+                    "invalid-node",
+                    {"content": "missing-id"},
+                    {"id": "", "content": "blank-id"},
+                ],
+                "edges": [
+                    {"source": "a", "target": "a", "weight": 0.5},
+                    {"source": "a", "weight": 0.5},
+                    ["invalid", "edge"],
+                    42,
+                ],
+                "unexpected": {"extra": "ignored"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    graph = Graph.load(str(path))
+
+    assert graph.node_count == 1
+    assert graph.get_node("a") is not None
+    assert graph.edge_count == 1

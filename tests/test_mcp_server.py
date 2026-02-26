@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from crabpath import Edge, Graph, Node, mcp_server
+from crabpath import __version__
 
 
 def _build_graph() -> Graph:
@@ -146,3 +147,19 @@ def test_tools_call_missing_graph_emits_error(monkeypatch, tmp_path):
     assert captured and "error" in captured[-1]
     assert captured[-1]["error"]["code"] == -32602
     assert "graph file not found" in captured[-1]["error"]["message"]
+
+
+def test_initialize_reports_current_package_version(monkeypatch):
+    captured: list[dict] = []
+    monkeypatch.setattr(mcp_server, "_emit", lambda payload: captured.append(payload))
+
+    request = {
+        "jsonrpc": "2.0",
+        "id": "init-1",
+        "method": "initialize",
+        "params": {},
+    }
+    mcp_server._handle_request(request)
+
+    assert captured and "result" in captured[-1]
+    assert captured[-1]["result"]["serverInfo"]["version"] == __version__

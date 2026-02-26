@@ -3,6 +3,9 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
+import crabpath.graph as graph_module
 from crabpath import Edge, Graph, Node, activate, learn
 
 
@@ -106,3 +109,23 @@ def test_save_load_with_trace():
     assert g2.get_node("a").trace == 2.0
 
     Path(path).unlink()
+
+
+def test_graph_save_atomic_replace_failure_preserves_existing_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    graph = Graph()
+    graph.add_node(Node(id="a", content="existing"))
+    path = tmp_path / "atomic.json"
+    graph.save(str(path))
+
+    def fail_replace(*_args: object) -> None:
+        raise RuntimeError("simulated disk failure")
+
+    monkeypatch.setattr(graph_module.os, "replace", fail_replace)
+    with pytest.raises(RuntimeError, match="simulated disk failure"):
+        graph.save(str(path))
+
+    restored = Graph.load(str(path))
+    assert restored.get_node("a").content == "existing"

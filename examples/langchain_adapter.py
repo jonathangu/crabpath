@@ -7,10 +7,32 @@ this file (for example, `pip install langchain`).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, TYPE_CHECKING
 
-from langchain_core.documents import Document
-from langchain_core.retrievers import BaseRetriever
+if TYPE_CHECKING:
+    from langchain_core.documents import Document
+    from langchain_core.retrievers import BaseRetriever
+else:
+    try:
+        from langchain_core.documents import Document
+        from langchain_core.retrievers import BaseRetriever
+    except Exception:  # pragma: no cover - optional dependency path
+        class Document:
+            def __init__(self, page_content: str, metadata: dict[str, Any] | None = None) -> None:
+                self.page_content = page_content
+                self.metadata = metadata or {}
+
+        class BaseRetriever:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                raise RuntimeError(
+                    "Install langchain-core to use CrabPathRetriever as a retriever."
+                )
+
+            def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> List[Document]:
+                raise RuntimeError("langchain-core is required for this adapter.")
+
+        BaseRetriever.__name__ = "BaseRetriever"
+        Document.__name__ = "Document"
 
 from crabpath import Edge, Graph, MemoryController, Node
 
@@ -27,6 +49,10 @@ class CrabPathRetriever(BaseRetriever):
 
     def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> List[Document]:
         del run_manager
+        if not isinstance(self.graph, Graph):
+            raise RuntimeError(
+                "langchain-core is required for CrabPathRetriever runtime usage."
+            )
         result = self.controller.query(query)
         docs: list[Document] = []
 

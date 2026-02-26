@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from crabpath import Edge, Graph, MemoryController, Node
 
-try:
-    from openai import OpenAI
-except Exception as exc:  # pragma: no cover - optional dependency
-    raise RuntimeError("Install openai (pip install openai) to run this example.") from exc
+if TYPE_CHECKING:
+    from openai import OpenAI  # pragma: no cover
 
 
 WORKSPACE = Path(__file__).with_name("openai_example_graph.json")
@@ -71,6 +69,15 @@ def _run_tool(
     return {"error": f"Unsupported tool: {call_name}"}
 
 
+def _build_openai_client() -> "OpenAI":
+    try:
+        from openai import OpenAI
+    except Exception as exc:
+        raise RuntimeError("Install openai (pip install openai) to run this example.") from exc
+
+    return OpenAI()
+
+
 def main() -> None:
     # Tool loop is intentionally simple and deterministic for demo readability.
     turns = [
@@ -81,7 +88,7 @@ def main() -> None:
     graph = _build_graph()
     controller = MemoryController(graph)
     state = {"last_result": None}
-    client = OpenAI()
+    client = _build_openai_client()
     tools = _load_tools()
 
     messages = [

@@ -19,7 +19,7 @@ CrabPath is a memory architecture for AI agents where documents are nodes, weigh
 | External benchmark (HotpotQA) | BM25 dominates cold-start IR; CrabPath learns (1948 edge updates) but topic diversity limits transfer |
 | Recurring-topic benchmark (200 queries) | CrabPath R@2: 0.02→0.07 vs BM25 flat 0.27 |
 | Sparsity crossover benchmark | Synthetic clusters: Phase2 Recall@3 crossover at ~50 nodes in sparse regimes (edge_ratio 0.1/0.05) |
-| Tests | 305, 0 lint errors |
+| Tests | 327, 0 lint errors |
 | Dependencies | Zero (stdlib only) |
 
 ## Install
