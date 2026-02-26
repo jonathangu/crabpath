@@ -204,7 +204,7 @@ class CrabPathAgent:
                             top_k=top_k,
                         )
                     )
-                except TypeError:
+                except (TypeError, ValueError):
                     # Fall back to keyword matching when index scores are malformed.
                     self._pending_index_refresh = True
                 except Exception as exc:
@@ -331,7 +331,7 @@ class CrabPathAgent:
             existing.metadata["last_seen_ts"] = now
             try:
                 self.index.upsert(auto_node_id, query_text, self._embedding_fn())
-            except TypeError as exc:
+            except (TypeError, ValueError) as exc:
                 # Index type assumptions can vary during bootstrap; ignore this miss.
                 self._pending_index_refresh = True
                 _ = str(exc)

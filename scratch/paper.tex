@@ -220,6 +220,16 @@ Each user request is modelled as one episode of a Markov decision process.
 \[
 \pi_W(a \mid s=i)=\frac{\exp((r_{ia}+w_{ia})/\tau)}{\sum_{j\in\mathcal N(i)\cup\{\texttt{STOP}\}}\exp((r_{ij}+w_{ij})/\tau)}
 \]
+\[
+\pi_{\text{edge damp}}(a\mid s=i)\propto
+\exp\!\left(\frac{w_{ia}\cdot \delta^{k_{ia}}}{\tau}\right),\quad
+k_{ia}=\text{traversals of edge }(i,a)
+\]
+\[
+\pi_{\text{visit pen}}(a\mid s=i)\propto
+\exp\!\left(\frac{w_{ia}\cdot \delta^{k_{ia}}-\lambda\,v_a}{\tau}\right),\quad
+v_a=\text{visit count of }a
+\]
 
 \subsection{The Myopic Update (Williams, 1992)}
 
@@ -709,6 +719,39 @@ CrabPath & 0.684 & 0.752 & 0.160 & 22.2 \\
 \end{table}
 
 Despite lower coverage, CrabPath more than doubles F1 and reduces context length by about 6$\times$, while also lowering noise ratio. This indicates an architecture tuned for precise, targeted context slices rather than exhaustive retrieval. It also reinforces that metric choice should match workload: if throughput and precision under stable query families are primary, learned routing is a strong fit; if broad topical search is primary, BM25 remains competitive.
+
+\subsection{Traversal Mechanisms: From Depth Budget to Edge Damping}
+
+The original ``depth-budget'' mechanism (hard cap at three hops) is structurally blind on large graphs. For example, on a 5,000-node graph with only 3-hop traversal, only 4 nodes are ever revisited in one episode, leaving many potentially relevant regions unreachable.
+
+We added two within-episode traversal regularizers:
+
+\begin{itemize}
+  \item \textbf{Edge damping:} effective weight is reduced by repeated traversals:
+  $w'_{ij}=w_{ij}\cdot \text{decay}^{k_{ij}}$, where $k_{ij}$ is the number of times edge $(i,j)$ has already been taken in the same episode. Only positive edges are damped; inhibitory edges remain undampened.
+  \item \textbf{Visit penalty:} revisits are discouraged by node pressure:
+  $w'_{ij}=w'_{ij}-\lambda\,v_j$, where $v_j$ is visit count of target node $j$.
+\end{itemize}
+
+Both modifiers are episode-local only; base edge weights remain unchanged after traversal. The effect is biologically analogous to synaptic fatigue (short-term depression): repeated use weakens immediate transmission, encouraging exploration within a fixed episode.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Config & Size=50 R@3 & Avg Hops & Inhib Edges \\
+\midrule
+A (depth=3) & 0.100 & 3.0 & 0 \\
+B (visit penalty) & 0.120 & 28.6 & 1 \\
+C (edge damping) & 0.140 & 30.0 & 156 \\
+D (both) & 0.100 & 28.8 & 3 \\
+\bottomrule
+\end{tabular}
+\caption{Traversal ablation on 50-node traversal behavior (R@3, average hops, inhibitory edges).}
+\label{tab:traversal-damping}
+\end{table}
+
+Key insight: edge damping produces a self-regulating trajectory. As traversals repeat, effective edge strengths fall below threshold, naturally expanding the explored frontier and suppressing runaway loops without any additional global controls.
 
 All code, experiment graphs, scenarios, and results are available at \url{https://github.com/jonathangu/crabpath}.
 

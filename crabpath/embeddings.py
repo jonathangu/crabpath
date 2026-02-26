@@ -31,6 +31,43 @@ class EmbeddingIndex:
     vectors: dict[str, list[float]] = field(default_factory=dict)  # node_id -> embedding
     dim: int = 0
 
+    @staticmethod
+    def _validate_vector_batch(
+        vectors: list[list[float]],
+        expected_batch_size: int,
+        *,
+        context: str,
+    ) -> list[list[float]]:
+        if not isinstance(vectors, list):
+            raise TypeError(
+                f"embedding function must return a list for {context}; got {type(vectors).__name__}"
+            )
+        if len(vectors) != expected_batch_size:
+            raise ValueError(
+                f"embedding function returned {len(vectors)} vectors for {context}, "
+                f"expected {expected_batch_size}"
+            )
+        for idx, vector in enumerate(vectors):
+            if not isinstance(vector, list):
+                raise TypeError(
+                    f"embedding vector at position {idx} for {context} must be a list, "
+                    f"got {type(vector).__name__}"
+                )
+            for value in vector:
+                if not isinstance(value, (int, float)):
+                    raise TypeError(
+                        f"embedding vector element at position {idx} for {context} must be numeric, "
+                        f"got {type(value).__name__}"
+                    )
+        return vectors
+
+    @staticmethod
+    def _single_vector(vectors: list[list[float]], *, context: str) -> list[float]:
+        if not vectors:
+            raise ValueError(f"embedding function returned no vectors for {context}")
+        validated = EmbeddingIndex._validate_vector_batch(vectors, 1, context=context)
+        return validated[0]
+
     def build(
         self,
         graph: Graph,
@@ -65,7 +102,11 @@ class EmbeddingIndex:
         all_vectors = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            vectors = embed_fn(batch)
+            vectors = self._validate_vector_batch(
+                embed_fn(batch),
+                expected_batch_size=len(batch),
+                context=f"build batch {i}-{i + len(batch)}",
+            )
             all_vectors.extend(vectors)
 
         # Store
@@ -97,7 +138,7 @@ class EmbeddingIndex:
         if not self.vectors:
             return {}
 
-        q_vec = embed_fn([query])[0]
+        q_vec = self._single_vector(embed_fn([query]), context=f"query seed: {query[:80]!r}")
 
         # Cosine similarity against all nodes
         scores = {}
@@ -124,13 +165,22 @@ class EmbeddingIndex:
         """Add or replace one vector in the index."""
         _ = metadata
         if isinstance(content_or_vector, list):
-            vector = content_or_vector
+            vector = self._validate_vector_batch(
+                [content_or_vector], expected_batch_size=1, context=f"upsert node_id={node_id}"
+            )[0]
         elif isinstance(content_or_vector, tuple):
-            vector = list(content_or_vector)
+            vector = self._validate_vector_batch(
+                [list(content_or_vector)],
+                expected_batch_size=1,
+                context=f"upsert node_id={node_id}",
+            )[0]
         else:
             if embed_fn is None:
                 raise TypeError("embed_fn is required when upserting from content")
-            vector = embed_fn([str(content_or_vector)])[0]
+            vector = self._single_vector(
+                embed_fn([str(content_or_vector)]),
+                context=f"upsert node_id={node_id}",
+            )
         self.vectors[node_id] = vector
         if vector:
             self.dim = len(vector)
@@ -149,7 +199,7 @@ class EmbeddingIndex:
         if not self.vectors:
             return []
 
-        q_vec = embed_fn([query])[0]
+        q_vec = self._single_vector(embed_fn([query]), context=f"query raw_scores: {query[:80]!r}")
         scores: list[tuple[str, float]] = []
         for node_id, node_vec in self.vectors.items():
             scores.append((node_id, _cosine(q_vec, node_vec)))

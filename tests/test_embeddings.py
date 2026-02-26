@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import tempfile
+import pytest
 from pathlib import Path
 
 from crabpath import EmbeddingIndex, Graph, Node
@@ -147,6 +148,45 @@ def test_seed_empty_graph():
 
     seeds = index.seed("anything", embed_fn)
     assert seeds == {}
+
+
+def test_build_raises_on_mismatched_embedding_batch_size():
+    graph = Graph()
+    graph.add_node(Node(id="n1", content="one"))
+    graph.add_node(Node(id="n2", content="two"))
+
+    def embed_fn(texts: list[str]) -> list[list[float]]:
+        return [[0.1, 0.2]]  # Wrong size on purpose.
+
+    index = EmbeddingIndex()
+    with pytest.raises(
+        ValueError, match="embedding function returned 1 vectors for build batch 0-2"
+    ):
+        index.build(graph, embed_fn, batch_size=2)
+
+
+def test_seed_raises_on_empty_embedding_output():
+    graph = Graph()
+    graph.add_node(Node(id="n1", content="sample text"))
+    index = EmbeddingIndex()
+    index.vectors = {"n1": [1.0, 0.0]}
+    with pytest.raises(ValueError, match="returned no vectors for query seed"):
+        index.seed("anything", lambda batch: [])
+
+
+def test_raw_scores_raises_on_empty_embedding_output():
+    graph = Graph()
+    graph.add_node(Node(id="n1", content="sample text"))
+    index = EmbeddingIndex()
+    index.vectors = {"n1": [1.0, 0.0]}
+    with pytest.raises(ValueError, match="returned no vectors for query raw_scores"):
+        index.raw_scores("anything", lambda batch: [])
+
+
+def test_upsert_raises_on_empty_embedding_output():
+    index = EmbeddingIndex()
+    with pytest.raises(ValueError, match="returned no vectors for upsert"):
+        index.upsert("n1", "hello", embed_fn=lambda batch: [])
 
 
 def test_save_load_roundtrip():

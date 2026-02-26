@@ -159,7 +159,10 @@ def run_query(
 ) -> Firing:
     seeds: dict[str, float] = {}
     if embed_fn is not None and index.vectors:
-        seeds = index.seed(query_text, embed_fn=embed_fn, top_k=top_k)
+        try:
+            seeds = index.seed(query_text, embed_fn=embed_fn, top_k=top_k)
+        except (TypeError, ValueError):
+            seeds = {}
 
     if not seeds:
         seeds = keyword_seed(graph, query_text)

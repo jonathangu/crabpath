@@ -89,6 +89,24 @@ def test_seed_from_text_only():
         assert seeds["check-config"] >= seeds.get("check-logs", 0.0)
 
 
+def test_seed_falls_back_to_keyword_when_index_returns_empty():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        adapter = OpenClawCrabPathAdapter(
+            str(Path(tmpdir) / "graph.json"),
+            str(Path(tmpdir) / "index.json"),
+            embed_fn=lambda batch: [],
+        )
+        adapter.graph.add_node(Node(id="check-config", content="git diff"))
+        adapter.graph.add_node(Node(id="check-logs", content="tail logs"))
+        adapter.save()
+        adapter.load()
+        adapter.index.vectors = {"check-config": [1.0, 0.0], "check-logs": [0.5, 0.5]}
+
+        seeds = adapter.seed("git", top_k=2)
+
+        assert seeds["check-config"] == 2.0
+
+
 def test_seed_with_memory_search_ids():
     with tempfile.TemporaryDirectory() as tmpdir:
         adapter = OpenClawCrabPathAdapter(
