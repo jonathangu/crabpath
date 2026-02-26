@@ -34,6 +34,7 @@ htmlcov/
 *.db
 data/
 scratch/
+!scratch/paper.tex
 
 # CrabPath data (keep in private repo)
 *.json

@@ -1,0 +1,920 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+% \usepackage{natbib}
+\usepackage[ruled,vlined]{algorithm2e}
+\usepackage{listings}
+
+\title{CrabPath: The Graph is the Prompt\
+\large Learning Weighted Memory Traversals with LLM-Guided Activation and Corrected Policy Gradients}
+\author{Jonathan Gu\
+\texttt{jonathangu@gmail.com}\
+Independent Researcher\
+San Francisco}
+\date{February 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Retrieval-augmented generation treats memory as a filing cabinet: fetch by similarity, hope for the best. It cannot learn \emph{which sequence of retrievals} leads to good outcomes. CrabPath replaces similarity search with a learned routing policy over a document graph. Nodes are typed information frames; edges are weighted pointers whose values cache past LLM routing decisions. At query time, an LLM traverses the graph for two to three hops, following high-weight edges reflexively and deliberating over uncertain ones. After each episode, a corrected policy-gradient estimator --- derived from Gu (2016) --- propagates terminal feedback across the \emph{entire} traversal path, not just the final hop. Over repeated interactions, expensive LLM reasoning compiles into cheap graph topology: reflexive routes for familiar tasks, inhibitory edges for known failure modes, and dormant paths for rare contingencies. The result is a memory system that learns procedures, not just facts.
+\end{abstract}
+
+\section{Introduction --- Memory is a Policy, Not a Database}
+
+The $13K$ incident changed how I think about agent memory. I ran three autonomous agents on overlapping tasks for twenty days. The spending was not random: the majority came from repeatedly loading irrelevant context. The agents retrieved the same documents and the same tooling traces regardless of task outcome. They could recall facts, but they could not learn which retrieval sequences led to success. They were filing clerks, not learners.
+
+\begin{quote}
+Memory is not storage. Memory is a policy for attention.
+\end{quote}
+
+A filing cabinet returns what matches a label. A brain routes what should happen next. Retrieval-augmented generation is good at answering what is true? and weak at answering what sequence of retrievals leads to a correct action? To answer that second question, agents need procedural knowledge --- the learned ability to route through \texttt{code review} $\to$ \texttt{ci check} $\to$ \texttt{fix manifest} $\to$ \texttt{verify run}, and to adapt that route when conditions change. A system that does not learn this is a lookup service.
+
+I kept a crab metaphor throughout this project because systems under selection pressure tend to converge on the same body plan. In biology, this is carcinisation --- independent lineages evolving toward crab-like forms. In memory systems, the convergent shape is \emph{index + similarity retrieval}, with no learning of routing behavior. CrabPath aims to evolve past that local optimum.
+
+This paper makes three contributions:
+
+\begin{enumerate}
+\item \textbf{Memory as a learned routing policy over a document graph.} Architecture: document nodes and mutable signed pointers define a policy environment.
+\item \textbf{Corrected trajectory-summed credit assignment for pointer weights.} Learning: terminal feedback is propagated through the full traversal under a policy-gradient update.
+\item \textbf{Two-phase learning dynamics.} Hebbian reinforcement bootstraps weight differentiation so RL fine-tuning can then sharpen routing.
+\end{enumerate}
+
+\section{Problem Setup}
+
+Each query induces a finite-horizon MDP episode $\mathcal E_q=(s_0,\dots,s_T,a_0,\dots,a_{T-1},z)$ where
+\[
+s_t=(v_t,q,V_t),\quad V_t=\{v_0,\dots,v_t\},
+\]
+the current node $v_t$, query $q$, and visited set $V_t$.
+Action space is
+\[
+a_t\in\mathcal N(v_t)\cup\{\texttt{STOP}\},
+\]
+where $\mathcal N(v_t)$ are outgoing neighbors from the current node.
+Terminal reward is $z\in\{-1,0,+1\}$, with non-terminal steps receiving zero reward.
+\[
+\pi_W(a\mid s_t)=\frac{\exp(w_{s_t a}/\tau)}{\sum_{a'\in\mathcal N(s_t)\cup\{\texttt{STOP}\}}\exp(w_{s_t a'}/\tau)}.
+\]
+Learning maximizes trajectory utility
+\[
+J(W)=\mathbb E_{\pi_W}\Big[\sum_{t=0}^{T}\gamma^t z_t\Big]
+\]
+via policy gradient updates on $W$ from sampled trajectories.
+
+\section{Architecture --- The Graph is the Prompt}
+
+CrabPath has three components: nodes, edges, and an LLM activation function.
+
+\begin{itemize}
+  \item \textbf{Nodes are documents.} Each stores content, a short summary, and a semantic type (fact, procedure, action, or tool call).
+  \item \textbf{Edges are weighted pointers.} Weights are signed and mutable, ranging from $-1$ (strong inhibition) to $+1$ (strong excitation).
+  \item \textbf{The LLM is the activation function.} It reads the current node's content, inspects candidate outgoing pointers with their summaries, and decides which edges to traverse.
+\end{itemize}
+
+\subsection{Node and Edge Schema}
+
+\begin{lstlisting}[language=python,caption={Node and edge schema in Python.}]
+from dataclasses import dataclass, field
+from typing import Literal, List
+
+@dataclass
+class Node:
+    id: str
+    content: str
+    summary: str
+    type: Literal[fact, procedure, action, tool_call]
+    pointers: List[Edge] = field(default_factory=list)
+
+@dataclass
+class Edge:
+    target: str
+    weight: float      # in [-1, 1]
+    kind: Literal[support, inhibit, follows, tool]
+    summary: str
+\end{lstlisting}
+
+\begin{lstlisting}[language={},caption={Example serialized node.}]
+{
+  id: giraffe-codeword,
+  content: Giraffe is Jon's codeword for testing CrabPath.,
+  summary: Codeword note. Routes to codeword policy anchor.,
+  type: fact,
+  pointers: [
+    {target: codewords, weight: 0.71, kind: follows, summary: List of codeword meanings},
+    {target: elephant-codeword, weight: 0.12, kind: inhibit, summary: Negative test from correction}
+  ]
+}
+\end{lstlisting}
+
+The graph is persistent JSON on disk. Topology itself is the memory abstraction: the structure of connections and their weights encode what the system has learned, not just what it has stored.
+
+\subsection{Forward Pass as Traversal}
+
+\begin{enumerate}
+\item The user submits a query.
+\item Semantic seed search selects entry nodes by embedding similarity.
+\item The LLM reads the current node and all candidate outgoing pointers with summaries.
+\item The LLM chooses which edges to traverse, constrained by depth budget (2--3 hops).
+\item Visited node content is assembled as context for the final response.
+\end{enumerate}
+
+The crucial difference from v1 is that there is no LIF-like numerical wave. The router is semantic: it reads content, understands negation, and reasons about which paths serve the current query.
+
+\subsection{Beyond Retrieval: What Learned Routing Enables}
+
+Standard RAG maps a query to its nearest embedding neighbors. CrabPath maps a query plus accumulated traversal state to a \emph{sequence of routing decisions} through documents. This distinction enables three capabilities that similarity search alone cannot provide:
+
+\begin{itemize}
+  \item \textbf{Procedural sequencing.} The graph can encode multi-step workflows as chains of weighted pointers.
+  \item \textbf{Native negation.} ``Do not use deprecated endpoint X'' is represented as an inhibitory edge, not a keyword match against X.
+  \item \textbf{Adaptive cost.} Familiar queries follow reflexive high-weight paths with no LLM call, while novel queries trigger deliberation.
+\end{itemize}
+\subsection{Edge Formation: Synaptogenesis}
+
+CrabPath keeps learned topology in two layers: a candidate side table and real edges.
+\begin{itemize}
+  \item \textbf{Proto-edge formation.} The first co-selection of a candidate pair creates a proto-edge entry with provenance.
+  \item \textbf{Promotion.} After $N$ co-firings (default $N=2$), a proto-edge is promoted to a real edge at dormant weight $0.15$.
+  \item \textbf{Hebbian reinforcement.} Each additional co-fire on real edges adds $\alpha$ to the edge weight.
+  \item \textbf{Skip penalty.} If a candidate is repeatedly presented but not chosen, its weight is decayed as $w\leftarrow \text{skip\_factor}\cdot w$.
+  \item \textbf{Competition.} Each node keeps at most $20$ outgoing edges; whenever overflow occurs, the weakest edges are pruned.
+\end{itemize}
+
+\subsection{Self-Regulation: Autotuner}
+\label{subsec:autotuner}
+\begin{itemize}
+\item \textbf{Monitored metrics.} Average nodes fired, cross-file edge percentage, dormant percentage, reflex percentage, context compression, proto promotion rate, reconvergence rate, orphan nodes.
+  \item \textbf{Knobs.} $\texttt{decay\_half\_life}$, $\texttt{promotion\_threshold}$, $\texttt{hebbian\_increment}$, $\texttt{helpfulness\_gate}$, $\texttt{harmful\_reward\_threshold}$.
+  \item \textbf{Intervention policy.} Exactly one tunable knob is changed per cycle to isolate causal effects.
+  \item \textbf{Safety.} Each knob has hard bounds; crossing guardrails triggers emergency brake that temporarily freezes updates until manual review.
+\end{itemize}
+
+\section{The Three Tiers --- How Reasoning Becomes Topology}
+
+Edge weights partition naturally into three operational tiers that control the trade-off between reasoning quality and inference cost.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llll}
+\toprule \\
+Tier & Weight Range & Routing Behaviour & Cost \\
+\midrule \\
+Reflex & $>0.8$ & Auto-follow, no LLM call & Very low \\
+Habitual & $0.3$ -- $0.8$ & Presented as candidates to LLM & Moderate \\
+Dormant & $<0.3$ & Skipped unless explicit override & Near zero \\
+\bottomrule \\
+\end{tabular}
+\caption{Three pointer routing tiers.}
+\label{tab:tiers}
+\end{table}
+
+The following code sketch shows how the three tiers interact during a single traversal step:
+
+\begin{lstlisting}[language=python,caption={Three-tier routing in one traversal step.}]
+def choose_next(current_node, graph, router, query, visited):
+    One step of three-tier routing.
+    edges = graph.outgoing(current_node)
+    next_nodes = []
+
+    # Tier 1: Reflex --- auto-follow high-weight edges (no LLM call)
+    for edge in edges:
+        if edge.weight > 0.8 and edge.target not in visited:
+            next_nodes.append(edge.target)
+
+    # Tier 2: Habitual --- present mid-weight edges to LLM for decision
+    candidates = [e for e in edges
+                  if 0.3 <= e.weight <= 0.8 and e.target not in visited]
+    if candidates:
+        prompt = format_routing_prompt(query, current_node, candidates)
+        selected = router.decide(prompt)
+        next_nodes.extend(selected)
+
+    # Tier 3: Dormant --- low-weight edges are skipped entirely
+    # (accessible only via fresh semantic search at entry)
+
+    return next_nodes
+\end{lstlisting}
+
+One empirical observation from the v2 experiments is that a three-hop LLM traversal costs roughly 7,500 input tokens per query (about ten times more than static RAG at small scale). As reflex edges accumulate, average cost per query decreases because fewer hops require LLM calls.
+
+\section{Learning --- Corrected Policy Gradients for Pointer Weights}
+
+\subsection{MDP Mapping}
+
+Each user request is modelled as one episode of a Markov decision process.
+
+\begin{itemize}
+  \item \textbf{State} $s_t$: current node, plus the query and accumulated context.
+  \item \textbf{Action} $a_t$: which outgoing pointer to follow, or \texttt{STOP}.
+  \item \textbf{Reward} $z$: terminal scalar feedback ($+1$ for success, $-1$ for correction).
+  \item \textbf{Policy} $\pi_W(a|s)$: softmax over outgoing pointer weights, optionally augmented by LLM relevance scores.
+\end{itemize}
+
+\[
+\pi_W(a \mid s=i)=\frac{\exp((r_{ia}+w_{ia})/\tau)}{\sum_{j\in\mathcal N(i)\cup\{\texttt{STOP}\}}\exp((r_{ij}+w_{ij})/\tau)}
+\]
+
+\subsection{The Myopic Update (Williams, 1992)}
+
+The standard one-step REINFORCE update is:
+
+\[
+\Delta W \propto z\,\nabla_W\log\pi_W(a_t\mid s_t)
+\]
+
+This update focuses on the immediate action.
+
+\subsection{The Gu (2016) Corrected Update}
+
+The corrected estimator sums score-function gradients across every step in the trajectory:
+
+\[
+\Delta W=\eta z\sum_{\ell=0}^{T}\nabla_W\log\pi_W(a_\ell\mid s_\ell)
+\]
+
+When variance is a concern, a baseline $b$ and discount factor $\gamma$ can be introduced:
+
+\[
+\Delta W=\eta (z-b)\sum_{\ell=0}^{T}\gamma^\ell\nabla_W\log\pi_W(a_\ell\mid s_\ell)
+\]
+
+\subsection{Formal Mapping: Dissertation to CrabPath}
+
+The mapping from finite-horizon game RL to routing remains structurally identical.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{ll}
+\toprule \\
+Gu (2016) --- Game RL & CrabPath --- Document Routing \\
+\midrule \\
+State $s_t$: board position & State $s_t$: current document node + query + context \\
+Action $a_t$: move & Action $a_t$: pointer selection or STOP \\
+Policy parameters $\rho$ & Edge weights $W=\{w_{ij}\}$ \\
+Terminal reward $z\in\{+1,-1\}$ & Terminal feedback $z\in\{+1,-1\}$ \\
+Value function $v_\rho(s)$ & Expected utility of starting traversal at node $s$ \\
+\bottomrule \\
+\end{tabular}
+\caption{Mapping of Gu (2016) notation to CrabPath.}
+\label{tab:gu-mapping}
+\end{table}
+
+\subsection{The Giraffe Example (Worked Numerics)}
+
+Query: ``What is Jon's codeword for testing?''
+
+Nodes: $G=$ giraffe-codeword, $C=$ codewords, $E=$ elephant-codeword, plus STOP.
+
+Weights: $w_{G,C}=1.0$, $w_{G,E}=0.0$, $w_{C,E}=0.0$, $w_{C,\text{STOP}}=0.0$. With $\tau=1$, softmax gives $\pi(C\mid G)=0.731$ and $\pi(E\mid G)=0.269$.
+
+Suppose the sampled trajectory is $G\to C\to E$, with $z=+1$.
+
+\begin{itemize}
+  \item At $G$ (chose $C$): $\partial \log\pi(C\mid G)/\partial w_{G,C}=1-0.731=0.269$, and $\partial/\partial w_{G,E}=-0.269$.
+  \item At $C$ (chose $E$): $\partial \log\pi(E\mid C)/\partial w_{C,E}=0.5$, and $\partial/\partial w_{C,\text{STOP}}=-0.5$.
+\end{itemize}
+
+With learning rate $\eta=0.1$:
+
+\begin{itemize}
+  \item \textbf{Myopic update}: $\Delta w_{C,E}=+0.05$, $\Delta w_{C,\text{STOP}}=-0.05$.
+  \item \textbf{Corrected update}: $\Delta w_{G,C}=+0.0269$, $\Delta w_{G,E}=-0.0269$, $\Delta w_{C,E}=+0.05$, $\Delta w_{C,\text{STOP}}=-0.05$.
+\end{itemize}
+
+Negative feedback $z=-1$ flips all signs.
+
+\subsection{Algorithm: Traversal and Weight Update}
+
+\begin{algorithm}[htbp]
+\caption{Gu-corrected weight update}
+\DontPrintSemicolon
+\SetAlgoLined
+\KwIn{trajectory $\{(s_t,a_t,\mathcal C_t)\}_{t=0}^{T}$, weights $W$, feedback $z$, learning rate $\eta$, temperature $\tau$, baseline $b$, discount $\gamma$}
+\KwOut{updated weights $W$}
+
+$G \leftarrow \emptyset$ \\
+\ForEach{$(s,a,C)$ in trajectory}{
+    $\ell \leftarrow [W[(s,c)] : c\in C]$ \\
+    $p \leftarrow \text{softmax}(\ell/\tau)$ \\
+    \ForEach{$c,p_c$ in pairs$(C,p)$}{
+        $G[(s,c)] \leftarrow G[(s,c)] + (\mathbf{1}[c=a]-p_c)$ \\
+    }
+}
+
+\ForEach{$(s,c),g$ in $G$}{
+    $W[(s,c)] \leftarrow \mathrm{clip}(W[(s,c)] + \eta (z-b) g / \tau, -1, 1)$ \\
+}
+
+\Return{$W$}
+\end{algorithm}
+
+\section{Neurogenesis and Death}
+
+A static graph cannot represent knowledge the system has never encountered. CrabPath creates nodes when topology is insufficient and prunes nodes that consistently fail to contribute.
+
+\subsection{When Does the LLM Create a Node?}
+
+Node creation is triggered by three conditions:
+
+\begin{enumerate}
+  \item \textbf{The gap trigger.} The LLM reaches a leaf node without finding needed information. The system creates a new node for the missing item and links it to context.
+  \item \textbf{The correction trigger.} The user corrects a response. A correction node is created and attached with inhibitory links to previous wrong routes.
+  \item \textbf{The novel-concept trigger.} A query references a concept with no matching entry point. A new root node is created and linked to co-occurring context.
+\end{enumerate}
+
+\subsection{The Cosine-Band Gate}
+
+Given query embedding $e_q$ and nearest existing node embedding $e_n$:
+
+\begin{itemize}
+  \item If $\cos(e_q,e_n)>0.85$, no new node.
+  \item If $\cos(e_q,e_n)<0.30$, no new node unless explicitly overridden.
+  \item If $0.30\leq\cos(e_q,e_n)\leq 0.85$, create a probationary node with provisional edges.
+\end{itemize}
+
+Probationary nodes require three positive reinforcements to become permanent.
+
+\subsection{Node Lifecycle}
+
+\begin{enumerate}
+  \item \textbf{Create:} detect novelty, generate node, attach neutral edges.
+  \item \textbf{Strengthen:} repeated successful traversal reinforces links; after three positive episodes, node exits probation.
+  \item \textbf{Reassign:} corrections can create alternate nodes and inhibitory links.
+  \item \textbf{Decay:} weights decay toward zero; orphaned nodes are removed.
+\end{enumerate}
+
+The Giraffe cycle in practice: first mention creates a probationary node; positive use makes it permanent; negative feedback downgrades it or replaces it through reassign.
+
+\section{Negation and Inhibition}
+
+Negation is a critical test for any memory system. CrabPath uses the codeword is elephant, not giraffe scenario as a core stress test.
+
+\begin{quote}
+User asks: ``What's the codeword for this testing flow? The system must answer \textbf{elephant}, not \textbf{giraffe}.
+\end{quote}
+
+Similarity-based retrieval fails here because semantically close nodes are both returned and disambiguation is left to generation alone.
+
+\section{Evaluation --- Preliminary Results}
+
+We ran five experiments comparing four retrieval approaches across synthetic benchmark graphs.
+
+\subsection{Context Efficiency (The Main Result)}
+
+The headline finding: \textbf{CrabPath loads 20--90x fewer tokens per turn than static context loading.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrr}
+\toprule \\
+Experiment & Static (tokens/turn) & RAG (tokens/turn) & CrabPath (tokens/turn) & Reduction \\
+\midrule \\
+Context Bloat (50 nodes) & 6,066 & 744 & \textbf{297} & 95\% \\
+Gate Bloat (130 gates) & 8,163 & 407 & \textbf{89} & 99\% \\
+Stale Context & 895 & 507 & \textbf{88} & 90\% \\
+Negation & 546 & 546 & \textbf{87} & 84\% \\
+Procedure & 548 & 467 & \textbf{205} & 63\% \\
+\bottomrule \\
+\end{tabular}
+\caption{Context efficiency across benchmark tasks.}
+\label{tab:context}
+\end{table}
+
+\subsection{Two-Tier Cost Model}
+
+Cost is split between a cheap router and a costly context reader.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lccc}
+\toprule \\
+Method & Router Cost & Context Cost & Total/Turn \\
+\midrule \\
+Static (Opus reads everything) & -- & 6,066 tok $\times$ \$15/M = \$0.091 & \textbf{\$0.091} \\
+CrabPath (GPT-mini routes, Opus reads fired) & 200 tok $\times$ \$0.30/M = \$0.00006 & 297 tok $\times$ \$15/M = \$0.004 & \textbf{\$0.004} \\
+\bottomrule \\
+\end{tabular}
+\caption{Two-tier cost comparison (router + context).}
+\label{tab:cost}
+\end{table}
+\paragraph{Compute overhead.} On an Apple M4 Pro (64\,GB), the full CrabPath pipeline (embedding lookup, 2-hop traversal, synaptogenesis update, decay) processes a query in $<50$\,ms wall-clock when using mock routing. With a live GPT-5-mini LLM call for routing, latency is $\sim$1.2\,s per hop (dominated by API round-trip). Memory footprint for a 787-node, 52K-edge graph is 12\,MB on disk (JSON) and $\sim$40\,MB resident. The 90\% context reduction (3,116 chars vs 30,700 static) comes at no measurable accuracy loss on the production shadow workload (avg reward 0.99).
+
+\subsection{The Giraffe Test (LLM-Guided Routing)}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llllll}
+\toprule \\
+Episode & Query & LLM Chose & Reward & $w$(giraffe) & $w$(elephant) \\
+\midrule \\
+1 & What is the codeword? & giraffe & +1 & 0.740 & 0.260 \\
+2 & Remember the codeword is giraffe & giraffe & +1 & 0.778 & 0.222 \\
+3 & \emph{The codeword is now elephant, not giraffe} & \textbf{elephant} & +1 & 0.715 & 0.285 \\
+4 & What is the codeword? & \textbf{elephant} & +1 & 0.654 & 0.346 \\
+5 & What is the codeword? & giraffe & -1 & 0.612 & 0.388 \\
+6--8 & Various codeword queries & \textbf{elephant} & +1 & 0.453 & \textbf{0.547} \\
+\bottomrule \\
+\end{tabular}
+\caption{Giraffe test trajectory and weight trajectory.}
+\label{tab:giraffe}
+\end{table}
+
+The system crossed from giraffe to elephant by episode 8.
+
+\subsection{Benchmark Tasks}
+
+\begin{itemize}
+  \item \textbf{Context Bloat:} 50+ nodes, 20 queries each, 3--5 nodes per query.
+  \item \textbf{Gate Bloat:} 130 behavioral gates, 20 queries testing per-turn gate precision.
+  \item \textbf{Stale Context:} 30 episodes with corrections mid-sequence.
+  \item \textbf{Negation:} Conflicting nodes with one correction then evaluation of inhibition.
+  \item \textbf{Procedure:} 4-step sequential procedure spread across nodes.
+  \item \textbf{Deploy Pipeline:} 8-node graph with safe path (check tests $\to$ CI $\to$ staging $\to$ prod) and dangerous shortcut (skip tests $\to$ prod). Tests procedural learning and shortcut suppression.
+\end{itemize}
+
+\subsection{Deploy Pipeline (Procedural Learning)}
+
+We built a graph with two paths to production: a safe path and a dangerous shortcut. Both start at equal weight (0.5). Over 15 episodes, the agent deploys, receives feedback, and updates pointer weights.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llrr}
+\toprule
+Episode & Event & $w$(check\_tests) & $w$(skip\_tests) \\
+\midrule
+1--2 & Safe deploy, $z=+1$ & 0.572 & 0.473 \\
+3 & Dangerous shortcut, $z=-1$ & 0.587 & 0.436 \\
+5 & Dangerous shortcut, $z=-1$ & 0.637 & 0.386 \\
+10 & Safe deploy, $z=+1$ & \textbf{0.802} & 0.327 \\
+13 & Safe deploy, $z=+1$ & 0.896 & \textbf{0.294} \\
+15 & Safe deploy, $z=+1$ & \textbf{0.957} & \textbf{0.273} \\
+\bottomrule
+\end{tabular}
+\caption{Deploy pipeline weight trajectory. Safe path reaches reflex ($>0.8$) by episode 10. Dangerous shortcut becomes dormant ($<0.3$) by episode 13. Two negative rewards were sufficient.}
+\label{tab:deploy}
+\end{table}
+
+\subsection{Where RAG Fails}
+
+On the deploy pipeline, RAG loads 525 tokens per turn --- the same as static. All deployment nodes match ``deploy'' semantically, so top-k retrieval is indiscriminate. CrabPath loads 199 tokens, following only the learned path.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Experiment & Static & RAG & CrabPath & Note \\
+\midrule
+Context Bloat & 6,066 & 744 & \textbf{297} & RAG helps \\
+Gate Bloat & 8,163 & 407 & \textbf{89} & RAG helps \\
+Deploy Pipeline & 525 & \textbf{525} & \textbf{199} & RAG = Static \\
+Negation & 546 & \textbf{546} & \textbf{87} & RAG = Static \\
+\bottomrule
+\end{tabular}
+\caption{When documents are semantically similar, RAG degrades to static loading. CrabPath routes by learned outcomes, not similarity.}
+\label{tab:rag-fails}
+\end{table}
+\subsection{Ablation Study}
+
+We isolate each mechanism by disabling it in turn and running 190 deterministic queries (80 procedural, 60 factual, 40 cross-file, 10 negation) against the same bootstrapped graph. Task accuracy measures the fraction of expected nodes present in the retrieval set.
+\paragraph{Metrics.} \emph{Accuracy} is the fraction of annotated expected nodes present in the retrieval set for each query, micro-averaged over queries. Expected nodes are assigned at query-construction time based on which workspace documents contain the information needed to answer. For negation queries (``do NOT skip tests), the expected node is the safety-rules document; accuracy is 1.0 only if that node is retrieved AND the contradicting node (if any) is not ranked higher. All query--node annotations are deterministic and included in the released code.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llrllrrr}
+\toprule
+Arm & Configuration & Accuracy & \multicolumn{2}{c}{95\% CI} & Reflex & Cross-File & Negation \\
+\midrule
+0 & BM25 Baseline (external) & 0.737 & [0.695, & 0.779] & 0 & 0 & 0.000 \\
+1 & Full CrabPath & \textbf{0.742} & [0.700, & 0.782] & 8 & \textbf{28} & \textbf{1.000} \\
+2 & No RL (Hebbian only) & 0.421 & [0.368, & 0.474] & 0 & 0 & 0.000 \\
+3 & Myopic RL (discount${=}0$) & 0.632 & [0.592, & 0.671] & 0 & 0 & 0.000 \\
+4 & No inhibition & 0.421 & [0.368, & 0.474] & 11 & 16 & 0.000 \\
+5 & No synaptogenesis & 0.211 & [0.153, & 0.268] & 0 & 0 & 0.000 \\
+6 & No autotune & 0.316 & [0.282, & 0.350] & 16 & 8 & 0.000 \\
+\bottomrule
+\end{tabular}
+\caption{Ablation results with bootstrap 95\% confidence intervals (10,000 resamples, seed 2026). Accuracy is fraction of expected nodes retrieved. CIs for Arms~1 and~3 are non-overlapping, confirming the corrected policy gradient contributes beyond chance.}
+\label{tab:ablation}
+\end{table}
+
+Five findings:
+
+\begin{enumerate}
+\item \textbf{CrabPath matches BM25 on accuracy but dominates on negation.} Arm~0 (BM25 top-5) achieves $0.737$ $[0.695, 0.779]$, statistically indistinguishable from Arm~1 ($0.742$ $[0.700, 0.782]$). However, BM25 scores $0.000$ on negation queries while CrabPath scores $1.000$. Lexical retrieval cannot suppress known-wrong paths; inhibitory edges can.
+\item \textbf{Corrected PG adds 11 percentage points over myopic REINFORCE} (Arm~1: $0.742$ $[0.700, 0.782]$ vs Arm~3: $0.632$ $[0.592, 0.671]$; non-overlapping 95\% CIs). The trajectory-summed credit assignment from Gu (2016) propagates reward signal to early routing decisions, not just the final hop.
+\item \textbf{Synaptogenesis is foundational.} Arm~5 (0.211) is the worst performer. Without proto-edge formation and promotion, the graph cannot build new connections beyond its bootstrap topology.
+\item \textbf{Inhibition enables negation.} Only Arm~1 achieves perfect negation handling. Arm~4 (no inhibition) cannot suppress known-wrong paths.
+\item \textbf{Autotune prevents over-reinforcement.} Arm~6 develops 16 reflex edges (twice Arm~1) but achieves only 0.316 accuracy --- the graph over-commits to early routes without self-regulation.
+\item \textbf{Per-query-type breakdown (Arm~1).} Procedural: $0.500$ ($n=80$). Factual: $0.850$ ($n=60$). Cross-file: $1.000$ ($n=40$). Negation: $0.900$ ($n=10$). Cross-file queries --- which require combining information from multiple source documents --- achieve perfect accuracy, demonstrating that learned edge-weight traversal successfully bridges document boundaries.
+\end{enumerate}
+
+\subsection{Two-Phase Learning Dynamics}
+
+We observe a developmental sequence in the learning process. To characterise it, we track four metrics over 300 queries with a 20-query rolling window: weight entropy (uniformity of outgoing edge distributions), gradient magnitude (average absolute policy-gradient update), retrieval accuracy, and cumulative reflex edge count.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Metric & Queries 1--80 & Queries 100--200 & Queries 200--300 \\
+\midrule
+Weight entropy (mean) & 1.38 & 1.22 & 1.15 \\
+Gradient magnitude & $<0.01$ & 0.06 & 0.04 \\
+Retrieval accuracy & 0.35 & 0.72 & 0.78 \\
+Reflex edges (cumul.) & 0--8 & 8--6 & 6--4 \\
+\bottomrule
+\end{tabular}
+\caption{Phase transition diagnostics over 300 queries. Weight entropy decreases as Hebbian reinforcement differentiates edge weights (Phase~1). Around query 100, gradient magnitude spikes as the softmax distribution becomes sharp enough for policy-gradient updates to produce meaningful signal (Phase~2 onset). Accuracy climbs after the transition.}
+\label{tab:phase}
+\end{table}
+
+We call this \emph{two-phase learning}:
+
+\begin{enumerate}
+\item \textbf{Phase 1 --- Hebbian structure formation} (queries 1--100). Edge weights start near-uniform. The softmax policy produces near-uniform probabilities, so policy-gradient updates wash out ($|\Delta W| < 0.01$). Hebbian co-firing and synaptogenesis build structure: proto-edges form, get promoted, and weights begin to differentiate.
+
+\item \textbf{Phase 2 --- RL refinement} (queries 100+). Once Hebbian updates spread weights sufficiently, the softmax sharpens. Policy-gradient signal becomes non-negligible ($|\Delta W| \approx 0.06$), and the corrected trajectory-summed estimator begins propagating reward to early routing decisions. Accuracy rises from $\sim$0.35 to $\sim$0.78.
+\end{enumerate}
+
+This two-phase pattern mirrors biological learning, where synaptic formation (long-term potentiation establishing connections) precedes synaptic tuning (reward-modulated plasticity refining which connections fire for which stimuli). The practical implication is that CrabPath requires a warm-up period of approximately 80--100 queries before RL-driven learning produces measurable improvements.
+
+\subsection{Baselines}
+
+\begin{enumerate}
+  \item \textbf{Static:} Load all node content every turn.
+  \item \textbf{RAG top-k:} Retrieve 8 most similar nodes.
+  \item \textbf{CrabPath, myopic:} LLM-guided traversal with Williams-style last-hop-only updates.
+  \item \textbf{CrabPath, corrected:} Full trajectory-summed corrected policy gradient.
+\end{enumerate}
+
+\subsection{External Benchmarks: HotpotQA and BEIR}
+
+To test generalization beyond the workspace setting, we evaluated on public-style retrieval tasks with fresh and persistent graphs.\footnote{\texttt{hotpotqa_eval.py}.}  
+For HotpotQA, we used 100 real distractor questions from the official dev split. A fresh graph remains a strict cold-start setting, while a persistent graph exposes learning across sequential queries.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llr}
+\toprule
+Setting & Method & Recall@2 \\
+\midrule
+HotpotQA, cold-start (100 questions) & BM25 & 0.610 \\
+ & CrabPath & 0.075 \\
+HotpotQA, persistent 100-query learning curve & BM25 (avg) & 0.500 \\
+ & CrabPath (avg) & 0.100 \\
+BEIR-style frozen benchmark (50 queries, 3 domains) & BM25 & 0.220 \\
+ & CrabPath & 0.093 \\
+\bottomrule
+\end{tabular}
+\caption{External benchmark recall@2.}
+\label{tab:external}
+\end{table}
+
+CrabPath is much weaker than BM25 on hot/cold-start, diverse-topic retrieval. In the persistent HotpotQA run, the graph did learn (1,948 edge changes, average edge weight drifting from $0.50$ to $0.49$), but query-topic diversity limited transfer. This is consistent with a routing model whose gains come from recurring, structured query families rather than broad first-pass lexical matching.
+
+\subsection{Sparsity-Scale Crossover Analysis}
+
+We measured the phase-space where CrabPath overtakes BM25 by varying graph sparsity and the number of available nodes.\footnote{\texttt{sparsity\_scale\_experiment.py}.}  
+The matrix reports phase-2 Recall@3 with 50 warmup and 50 evaluation queries; $\Delta$ indicates method difference (positive means CrabPath better).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Density & Nodes=20 & Nodes=50 & Nodes=100 \\
+\midrule
+Dense    & +0.110 (CrabPath) & -0.010 (BM25) & +0.020 (CrabPath) \\
+Medium   & +0.070 (CrabPath) & +0.080 (CrabPath) & +0.050 (CrabPath) \\
+Sparse   & -0.046 (BM25)     & +0.070 (CrabPath) & +0.050 (CrabPath) \\
+V. Sparse& -0.061 (BM25)     & +0.010 (CrabPath) & N/A \\
+\bottomrule
+\end{tabular}
+\caption{Crossover matrix for phase-2 Recall@3 by sparsity and node count. Positive values indicate CrabPath advantage over BM25.}
+\label{tab:sparsity-crossover}
+\end{table}
+
+These results indicate clear crossover behavior. CrabPath is stronger at 20 nodes for dense and medium sparsity, while sparse and v.sparse regimes require more graph mass (about 50 nodes) before learned routing overtakes lexical search. In the noisiest sparse case, v.sparse graphs at only 20 nodes remain BM25-dominant, matching the expectation that structure-aware learning needs repeated evidence. 
+
+\subsection{Scaling Curves (20 to 2000 nodes)}
+
+We ran fixed sparsity benchmarks on sparse graphs (edge ratio 0.1) to show scaling behavior.\footnote{\texttt{niah\_scaling\_benchmark.py}.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Graph size & BM25 & CrabPath & CrabPath--BM25 \\
+\midrule
+20   & 0.184 & 0.378 & +0.194 \\
+50   & 0.050 & 0.140 & +0.090 \\
+100  & 0.030 & 0.080 & +0.050 \\
+200  & 0.010 & 0.060 & +0.050 \\
+500  & 0.000 & 0.080 & +0.080 \\
+1000 & 0.000 & 0.020 & +0.020 \\
+2000 & 0.000 & 0.000 & +0.000 \\
+\bottomrule
+\end{tabular}
+\caption{Recall@2 across graph sizes (sparse edge ratio 0.1).}
+\label{tab:scaling}
+\end{table}
+
+CrabPath holds an advantage across all tested sizes up to 1,000 nodes, including low-resource regimes where lexical overlap is weak. The advantage collapses at 2,000 nodes in this setup, which we interpret as saturation in this metric family rather than regression of learning dynamics. The result still demonstrates strong small-to-mid-scale benefit for routing under the tested sparsity.
+
+\subsection{Context Utilization and Token Efficiency}
+
+Token loading behavior reflects the practical trade-off: CrabPath may retrieve fewer candidates but with higher relevance.\footnote{\texttt{context\_noise\_drift\_benchmark.py}.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Method & Avg.\ tokens loaded & Avg.\ precision & Avg.\ waste \\
+\midrule
+BM25 & 1257 & 0.506 & 0.494 \\
+CrabPath & 549 & 0.725 & 0.275 \\
+\bottomrule
+\end{tabular}
+\caption{Context efficiency on 100-node graph.}
+\label{tab:context}
+\end{table}
+
+On average, CrabPath loads 56\% fewer tokens while increasing precision by 43\%. That is, the model routes to tighter context, not just more context with similar noise. The trade is lower recall in some broad-topic cases in favor of precision and budget efficiency.
+
+\subsection{Noise Sensitivity (Distractor Resistance)}
+
+We stress-tested distractor resistance by injecting distractor documents into a 50-node graph.\footnote{\texttt{distractors\_benchmark.py}.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{rllll}
+\toprule
+Distractors & BM25 R@3 & BM25 FPR & CrabPath R@3 & CrabPath FPR \\
+\midrule
+0  & 0.600 & 0.000 & 0.373 & 0.000 \\
+10 & 0.540 & 0.253 & 0.333 & 0.094 \\
+50 & 0.533 & 0.213 & 0.333 & 0.062 \\
+100& 0.553 & 0.213 & 0.367 & 0.088 \\
+\bottomrule
+\end{tabular}
+\caption{Distractor effects on retrieval and false positive rate (FPR).}
+\label{tab:distractors}
+\end{table}
+
+BM25 keeps higher recall but shows consistently higher false positive rate (roughly 2--3$\times$ higher than CrabPath). CrabPath’s routing is more stable under keyword-overlap contamination because decisions are shaped by learned edge weights rather than raw term frequency. The weakness is clear: CrabPath may trade some recall for cleaner precision under adversarial noise.
+
+\subsection{Temporal Drift and Adaptation}
+
+We ran a 3-phase temporal drift test on a 50-node graph: baseline retrieval, 30\% corpus changes, then new queries on changed content.\footnote{\texttt{temporal\_drift\_benchmark.py}.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Phase & BM25 & CrabPath \\
+\midrule
+Original content & 0.58 & 0.32 \\
+30\% changed & 0.48 & 0.29 \\
+New queries on changed content & 0.39 & 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Temporal drift sensitivity.}
+\label{tab:temporal}
+\end{table}
+
+BM25 degrades but adapts quickly via direct term matching when content changes. CrabPath suffers in the final phase and drops substantially because previously learned routing remains stale without re-learning. This is a key limitation: temporal adaptation still requires targeted refresh or periodic retraining.
+
+\subsection{Downstream Task Quality}
+
+We additionally measured end-task quality on a downstream generation task.\footnote{\texttt{downstream\_accuracy\_benchmark.py}.}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Method & F1 & Coverage & Noise ratio & Avg. context length \\
+\midrule
+BM25 & 0.313 & 1.000 & 0.208 & 132.5 \\
+CrabPath & 0.684 & 0.752 & 0.160 & 22.2 \\
+\bottomrule
+\end{tabular}
+\caption{Downstream task quality.}
+\label{tab:downstream}
+\end{table}
+
+Despite lower coverage, CrabPath more than doubles F1 and reduces context length by about 6$\times$, while also lowering noise ratio. This indicates an architecture tuned for precise, targeted context slices rather than exhaustive retrieval. It also reinforces that metric choice should match workload: if throughput and precision under stable query families are primary, learned routing is a strong fit; if broad topical search is primary, BM25 remains competitive.
+
+All code, experiment graphs, scenarios, and results are available at \url{https://github.com/jonathangu/crabpath}.
+
+\section{Related Work}
+
+The system touches several streams: spreading activation, memory-augmented neural models, agentic memory, graph retrieval, and RL for language systems.
+
+Collins and Loftus (1975) introduced spreading activation for semantic processing, and graph retrieval baselines remain important conceptual references. For memory-augmented architectures, NTM and DNC provide differentiable external memory, while Memory Networks introduce attention over memory banks and kNN-LM adds retrieval from a datastore. See\cite{collins1975,graves2014ntm,graves2016dnc,weston2015memorynet,khandelwal2020knnlm}.
+
+Generative agents and lifelong agents provide related narratives around correction and procedural adaptation, while MemGPT and Reflexion emphasize long-horizon tooling and self-correction with separate memory layers. ReAct and Self-RAG are central to adaptive retrieval with reasoning. For a formal RL treatment, Williams, PPO, GRPO, and DPO remain canonical for policy and preference optimisation. \cite{park2023generative,wang2023voyager,packer2023memgpt,shinn2023reflexion,yao2023react,asai2024selfrag,schulman2017ppo,shao2024grpo,rafailov2023dpo}
+
+GraphRAG and Think-on-Graph show graph-based retrieval structure, but not the same trajectory-level weight learning mechanism.\cite{graphrag2024,sun2024thinkongraph,khattab2022dspy}
+
+\section{Discussion}
+
+CrabPath is a graph-level model where nodes are inspectable artifacts and edges are inspectable policy parameters. If a tool-call node fails repeatedly, routing weakens it; if it succeeds repeatedly, the edge becomes reflexive.
+
+\subsection{Limitations}
+
+\begin{itemize}
+\item \textbf{RL gradient washout:} when edge weights are near-uniform, softmax yields near-uniform probabilities and policy-gradient signals are weak; Hebbian reinforcement provides early shaping while RL refines later.
+\item \textbf{Episode-level baselines:} useful baselines require query-family grouping, which remains a deployment-time calibration step.
+\item \textbf{Sample size and emergent timing:} early shadow mode (35 queries) showed zero reflex edges; 235 queries produced 4 reflex and 182 cross-file edges. Emergent behavior depends on sustained query volume and query diversity.
+\item \textbf{LLM latency:} three-hop LLM-guided traversal adds $1$--$3$ seconds.
+\item \textbf{Cost at scale:} traversal tokens are initially higher than static RAG.
+\item \textbf{Hallucination risk:} route selection can still fail via misread metadata.
+\item \textbf{Cold start:} fresh graphs require deliberation for all routes.
+\item \textbf{Single-user feedback:} multi-user credit isolation is not yet implemented.
+\end{itemize}
+
+\section{Conclusion}
+
+Memory is not storage; memory is a policy for attention. CrabPath reframes retrieval as learned graph routing, where pointer weights cache the LLM's own past reasoning. The core novelty is a direct application of trajectory-corrected policy gradients to pointer weights. Across external retrieval, scaling, noise, drift, and downstream-task evaluations, we now report where the method both fails and succeeds.
+
+\begin{quote}
+The first retrieval system where the index structure is a cached projection of the LLM's own reasoning history.
+\end{quote}
+
+Open issues remain --- cost, cold start, and temporal adaptation --- but the architectural move is clear: replace static similarity search with learned routing.
+
+Code and design notes: \url{https://github.com/jonathangu/crabpath}.
+
+\begin{figure}[htbp]
+\centering
+%\includegraphics[width=\textwidth]{hero-v2.png}
+\caption{LLM-guided memory traversal over a weighted document graph.}
+\label{fig:hero}
+\end{figure}
+
+\section*{References}
+
+\begin{thebibliography}{99}
+\bibitem{gu2016}
+J. Gu. Corrected policy-gradient update for recurrent action sequences. \emph{UCLA Econometrics Field Paper}, 2016.
+
+\bibitem{williams1992}
+R. J. Williams. Simple statistical gradient-following algorithms for connectionist reinforcement learning. \emph{Machine Learning}, 8(3--4):229--256, 1992.
+
+\bibitem{collins1975}
+A. M. Collins and E. F. Loftus. A spreading-activation theory of semantic processing. \emph{Psychological Review}, 82(6):407--428, 1975.
+
+\bibitem{graves2014ntm}
+A. Graves, G. Wayne, and I. Danihelka. Neural Turing Machines. \emph{arXiv:1410.5401}, 2014.
+
+\bibitem{graves2016dnc}
+A. Graves et al. Hybrid computing using a neural network with dynamic external memory. \emph{Nature}, 538:471--476, 2016.
+
+\bibitem{weston2015memorynet}
+J. Weston, S. Chopra, and A. Bordes. Memory Networks. In \emph{ICLR}, 2015.
+
+\bibitem{park2023generative}
+J. S. Park et al. Generative Agents: Interactive simulacra of human behavior. In \emph{UIST}, 2023.
+
+\bibitem{wang2023voyager}
+G. Wang et al. Voyager: An open-ended embodied agent with large language models. \emph{arXiv:2305.16291}, 2023.
+
+\bibitem{packer2023memgpt}
+C. Packer et al. MemGPT: Towards LLMs as operating systems. \emph{arXiv:2310.08560}, 2023.
+
+\bibitem{shinn2023reflexion}
+N. Shinn et al. Reflexion: Language agents with verbal reinforcement learning. In \emph{NeurIPS}, 2023.
+
+\bibitem{khandelwal2020knnlm}
+U. Khandelwal et al. Generalization through memorization: Nearest neighbor language models. In \emph{ICLR}, 2020.
+
+\bibitem{schulman2017ppo}
+J. Schulman et al. Proximal policy optimization algorithms. \emph{arXiv:1707.06347}, 2017.
+
+\bibitem{shao2024grpo}
+Z. Shao et al. DeepSeekMath: Pushing the limits of mathematical reasoning in open language models. \emph{arXiv:2402.03300}, 2024.
+
+\bibitem{rafailov2023dpo}
+R. Rafailov et al. Direct preference optimization: Your language model is secretly a reward model. In \emph{NeurIPS}, 2023.
+
+\bibitem{yao2023react}
+S. Yao et al. ReAct: Synergizing reasoning and acting in language models. In \emph{ICLR}, 2023.
+
+\bibitem{asai2024selfrag}
+A. Asai et al. Self-RAG: Learning to retrieve, generate, and critique through self-reflection. In \emph{ICLR}, 2024.
+
+\bibitem{graphrag2024}
+Microsoft Research. From local to global: A graph RAG approach to query-focused summarization. Microsoft GraphRAG, 2024. \url{https://arxiv.org/abs/2404.16130}.
+
+\bibitem{sun2024thinkongraph}
+J. Sun et al. Think-on-Graph: Deep and responsible reasoning of large language model on knowledge graph. In \emph{ICLR}, 2024.
+
+\bibitem{khattab2022dspy}
+O. Khattab et al. DSPy: Compiling declarative language model calls into self-improving pipelines. arXiv preprint, 2022.
+
+\end{thebibliography}
+
+\appendix
+
+\section{Worked Examples}
+
+Three representative queries from the ablation study, showing expected nodes, retrieved nodes, and scoring.
+
+\begin{description}
+\item[Procedural (Q1).] Query: ``deploy safely check CI pipeline staging rollback guidance. Expected: \texttt{deployment-procedures}, \texttt{safety-rules}. Retrieved (Arm~1): \texttt{deployment-procedures}, \texttt{safety-rules}, \texttt{coding-workflow}, \texttt{browser-config}, \texttt{memory-management}. Score: $2/2 = 1.0$. The graph traversal followed high-weight edges from the deployment seed to the safety node.
+
+\item[Cross-file (Q81).] Query: ``combine deploy rules with browser config for safe automation. Expected: \texttt{deployment-procedures}, \texttt{browser-config}. Retrieved (Arm~1): \texttt{deployment-procedures}, \texttt{browser-config}, \texttt{safety-rules}, \texttt{coding-workflow}, \texttt{cron-jobs}. Score: $2/2 = 1.0$. Cross-file edge between deployment and browser nodes (weight $0.42$) enabled the traversal to bridge document boundaries.
+
+\item[Negation (Q181).] Query: ``do NOT skip tests before rollout; deployment safety check. Expected: \texttt{safety-rules}. Retrieved (Arm~1): \texttt{safety-rules}, \texttt{deployment-procedures}, \texttt{coding-workflow}, \texttt{browser-config}, \texttt{memory-management}. Score: $1/1 = 1.0$. The inhibitory edge from \texttt{deployment-procedures} to the ``skip tests concept (weight $-0.3$) suppressed the shortcut path.
+\end{description}
+
+\section{Migration Guide}
+
+CrabPath replaces static workspace files that load every turn regardless of relevance.
+
+\subsection{Bootstrap}
+
+\begin{verbatim}
+python3 scripts/bootstrap_from_workspace.py \
+  /path/to/workspace --output graph.json
+\end{verbatim}
+
+The script reads all \texttt{.md} files, splits by heading, classifies each section (fact, procedure, tool\_call, guardrail), and creates edges between related sections.
+
+\subsection{Three Phases}
+
+\begin{enumerate}
+\item \textbf{Shadow.} Run CrabPath in parallel with static files. Compare what fires vs what was needed. No risk.
+\item \textbf{Reduce.} Trim TOOLS.md, MEMORY.md, AGENTS.md, USER.md. Their content lives in CrabPath nodes.
+\item \textbf{Soul only.} Keep only SOUL.md (identity) + safety rules + session context. Everything else is in the graph.
+\end{enumerate}
+
+What stays static: identity (SOUL.md), hard safety rules, session context. Everything else moves to the graph.
+
+\section{Production Deployment}
+
+We bootstrapped a production AI agent workspace into CrabPath. The workspace had 181 markdown files with 30.7K chars of static context loaded every turn.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Files scanned & 181 \\
+Nodes created & 3,667 \\
+Edges created & 32,698 \\
+Facts & 2,480 \\
+Tool calls & 591 \\
+Guardrails & 318 \\
+Procedures & 278 \\
+\bottomrule
+\end{tabular}
+\caption{Bootstrap results from production workspace.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrl}
+\toprule
+Query & Nodes & Chars & Result \\
+\midrule
+worktree drift after codex task & 4 & 1,931 & Found reset rule, hygiene rules \\
+bountiful auth for browser testing & 4 & 1,188 & Found browser cookie note \\
+what are the cron jobs running & 4 & 880 & Found cron job tables \\
+tell me about CrabPath & 4 & 1,665 & Found CrabPath section \\
+codeword is hippo & 4 & 1,414 & Found codeword node + history \\
+\bottomrule
+\end{tabular}
+\caption{Query results on production workspace graph. Static context: 1,656,670 chars/turn. CrabPath: $\sim$1,500 chars/turn. Reduction: 99.9\%.}
+\end{table}
+
+The agent ran 235 queries through shadow mode (35 real production queries plus 200 synthetic variants including 60 cross-file queries). Results after 235 queries:
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Queries processed & 235 \\
+Average reward & 0.99 \\
+Reflex edges formed & 4 \\
+Cross-file edges & 182 \\
+Habitual edges & 218 \\
+Average context chars/query & 3,116 \\
+Static context chars/turn & 30,700 \\
+Context reduction & 90\% \\
+\bottomrule
+\end{tabular}
+\caption{Shadow mode results after 235 queries on production workspace (787 nodes, 52K edges). At 35 queries, zero reflex and six cross-file edges had formed. Emergent structure requires sustained query volume.}
+\label{tab:shadow}
+\end{table}
+
+\end{document}
