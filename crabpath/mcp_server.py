@@ -56,6 +56,107 @@ def _result(req_id: Any, result: dict[str, Any]) -> None:
     _emit({"jsonrpc": "2.0", "id": req_id, "result": result})
 
 
+def _coerce_str(value: Any, name: str, *, default: str | None = None) -> str:
+    if value is None:
+        if default is None:
+            raise ValueError(f"{name} is required")
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    if not value:
+        raise ValueError(f"{name} must not be empty")
+    return value
+
+
+def _coerce_bool(value: Any, name: str, *, default: bool | None = None) -> bool:
+    if value is None:
+        if default is None:
+            raise ValueError(f"{name} is required")
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
+def _coerce_int(
+    value: Any,
+    name: str,
+    *,
+    default: int | None = None,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    if value is None:
+        if default is None:
+            raise ValueError(f"{name} is required")
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer, got bool")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer")
+
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
+    return parsed
+
+
+def _coerce_float(
+    value: Any,
+    name: str,
+    *,
+    default: float | None = None,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    if value is None:
+        if default is None:
+            raise ValueError(f"{name} is required")
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number, got bool")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number")
+
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
+    return parsed
+
+
+def _coerce_path(value: Any, name: str, *, default: str | None = None) -> str:
+    path = _coerce_str(value, name, default=default)
+    parts = Path(path).parts
+    if any(part == ".." for part in parts):
+        raise ValueError(f"unsafe path traversal in {name}: {path!r}")
+    return path
+
+
+def _coerce_optional_path(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    return _coerce_path(value, name)
+
+
+def _coerce_string_list(value: Any, name: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list")
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(f"{name} entries must be strings")
+        if not item:
+            raise ValueError(f"{name} entries must not be empty")
+        items.append(item)
+    return items
+
+
 def _load_graph(path: str) -> Graph:
     try:
         return load_graph(path)
@@ -75,6 +176,15 @@ def _load_query_stats(path: str | None) -> tuple[dict[str, Any], bool]:
         return load_query_stats(path), path is not None
     except (FileNotFoundError, ValueError) as exc:
         raise ValueError(str(exc)) from exc
+
+
+def _coerce_query_stats(value: Any) -> tuple[dict[str, Any], bool]:
+    if value is None:
+        return {}, False
+    if isinstance(value, dict):
+        return value, True
+    path = _coerce_path(value, "query_stats")
+    return _load_query_stats(path)
 
 
 def _load_mitosis_state(path: str | None) -> MitosisState:
@@ -98,16 +208,12 @@ def _load_snapshot_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def mcp_query(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
-    index = _load_index(arguments.get("index", "crabpath_embeddings.json"))
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph", default="crabpath_graph.json"))
+    index = _load_index(_coerce_path(arguments.get("index"), "index", default="crabpath_embeddings.json"))
     embed_fn = _safe_openai_embed_fn() if os.getenv("OPENAI_API_KEY") else None
-    firing = run_query(
-        graph,
-        index,
-        arguments["query"],
-        top_k=arguments.get("top", 12),
-        embed_fn=embed_fn,
-    )
+    query = _coerce_str(arguments.get("query"), "query")
+    top_k = _coerce_int(arguments.get("top"), "top", default=12, minimum=1)
+    firing = run_query(graph, index, query, top_k=top_k, embed_fn=embed_fn)
     return {
         "fired": [
             {"id": node.id, "content": node.content, "energy": score}
@@ -120,20 +226,34 @@ def mcp_query(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_migrate(arguments: dict[str, Any]) -> dict[str, Any]:
     config = MigrateConfig(
-        include_memory=arguments.get("include_memory", True),
-        include_docs=arguments.get("include_docs", False),
+        include_memory=_coerce_bool(arguments.get("include_memory"), "include_memory", default=True),
+        include_docs=_coerce_bool(arguments.get("include_docs"), "include_docs", default=False),
+    )
+    workspace = _coerce_path(arguments.get("workspace"), "workspace")
+    session_logs = (
+        _coerce_string_list(arguments.get("session_logs"), "session_logs")
+        if arguments.get("session_logs") is not None
+        else None
     )
     graph, info = run_migration(
-        workspace_dir=arguments["workspace"],
-        session_logs=arguments.get("session_logs"),
+        workspace_dir=workspace,
+        session_logs=session_logs,
         config=config,
         verbose=False,
     )
 
-    graph_path = arguments.get("output_graph") or arguments.get("graph") or "crabpath_graph.json"
+    graph_path = _coerce_path(
+        arguments.get("output_graph") or arguments.get("graph"),
+        "output_graph",
+        default="crabpath_graph.json",
+    )
     graph.save(graph_path)
 
-    embeddings_path = arguments.get("output_embeddings")
+    embeddings_path = (
+        _coerce_path(arguments.get("output_embeddings"), "output_embeddings")
+        if arguments.get("output_embeddings") is not None
+        else None
+    )
     embeddings_output = None
     if embeddings_path:
         embed_fn = _safe_openai_embed_fn()
@@ -153,9 +273,9 @@ def mcp_migrate(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_learn(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
-    fired_ids = split_csv(arguments["fired_ids"])
-    outcome = float(arguments["outcome"])
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph"))
+    fired_ids = split_csv(_coerce_str(arguments.get("fired_ids"), "fired_ids"))
+    outcome = _coerce_float(arguments.get("outcome"), "outcome", minimum=-1.0, maximum=1.0)
 
     before = {(edge.source, edge.target): edge.weight for edge in graph.edges()}
     firing = build_firing(graph, fired_ids)
@@ -171,22 +291,22 @@ def mcp_learn(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_stats(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph"))
     return graph_stats(graph)
 
 
 def mcp_split(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph"))
     state = MitosisState()
     result = split_node(
         graph=graph,
-        node_id=arguments["node_id"],
+        node_id=_coerce_str(arguments.get("node_id"), "node_id"),
         llm_call=fallback_llm_split,
         state=state,
         config=MitosisConfig(),
     )
     if result is None:
-        raise ValueError(f"could not split node: {arguments['node_id']}")
+        raise ValueError(f"could not split node: {_coerce_str(arguments.get('node_id'), 'node_id')}")
 
     if arguments.get("save", False):
         graph.save(arguments["graph"])
@@ -202,22 +322,27 @@ def mcp_split(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_add(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph_path = Path(arguments["graph"])
+    graph_path = Path(_coerce_path(arguments.get("graph"), "graph"))
     if graph_path.exists():
-        graph = Graph.load(arguments["graph"])
+        graph = Graph.load(str(graph_path))
     else:
         graph = Graph()
 
-    node_id = arguments["id"]
+    node_id = _coerce_str(arguments.get("id"), "id")
     if graph.get_node(node_id) is not None:
         node = graph.get_node(node_id)
-        node.content = arguments["content"]
-        if arguments.get("threshold") is not None:
-            node.threshold = arguments["threshold"]
-        graph.save(arguments["graph"])
+        node.content = _coerce_str(arguments.get("content"), "content")
+        threshold = arguments.get("threshold")
+        if threshold is not None:
+            node.threshold = _coerce_float(threshold, "threshold")
+        graph.save(str(graph_path))
         return {"ok": True, "action": "updated", "id": node_id}
 
-    threshold = arguments.get("threshold") if arguments.get("threshold") is not None else 0.5
+    threshold = (
+        _coerce_float(arguments.get("threshold"), "threshold", default=0.5)
+        if arguments.get("threshold") is not None
+        else 0.5
+    )
     from .graph import Node
 
     graph.add_node(Node(id=node_id, content=arguments["content"], threshold=threshold))
@@ -230,29 +355,32 @@ def mcp_add(arguments: dict[str, Any]) -> dict[str, Any]:
             graph.add_edge(Edge(source=target_id, target=node_id, weight=0.5))
             edges_added += 2
 
-    graph.save(arguments["graph"])
+    graph.save(str(graph_path))
     return {"ok": True, "action": "created", "id": node_id, "edges_added": edges_added}
 
 
 def mcp_remove(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
-    if graph.get_node(arguments["id"]) is None:
-        raise ValueError(f"node not found: {arguments['id']}")
-    graph.remove_node(arguments["id"])
-    graph.save(arguments["graph"])
-    return {"ok": True, "action": "removed", "id": arguments["id"]}
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph"))
+    node_id = _coerce_str(arguments.get("id"), "id")
+    if graph.get_node(node_id) is None:
+        raise ValueError(f"node not found: {node_id}")
+    graph.remove_node(node_id)
+    graph.save(_coerce_path(arguments.get("graph"), "graph"))
+    return {"ok": True, "action": "removed", "id": node_id}
 
 
 def mcp_health(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
-    state = _load_mitosis_state(arguments.get("mitosis_state"))
-    query_stats, has_query_stats = _load_query_stats(arguments.get("query_stats"))
+    graph_path = _coerce_path(arguments.get("graph"), "graph", default="crabpath_graph.json")
+    graph = _load_graph(graph_path)
+    state_path = _coerce_optional_path(arguments.get("mitosis_state"), "mitosis_state")
+    state = _load_mitosis_state(state_path)
+    query_stats, has_query_stats = _coerce_query_stats(arguments.get("query_stats"))
     health = measure_health(graph, state, query_stats)
     metrics = build_health_rows(health, has_query_stats)
 
     return {
         "ok": True,
-        "graph": arguments.get("graph", "crabpath_graph.json"),
+        "graph": graph_path,
         "query_stats_provided": has_query_stats,
         "mitosis_state": arguments.get("mitosis_state"),
         "metrics": metrics,
@@ -260,8 +388,11 @@ def mcp_health(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_evolve(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments.get("graph", "crabpath_graph.json"))
-    snapshots_path = arguments.get("snapshots")
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph", default="crabpath_graph.json"))
+    snapshots_path = _coerce_path(
+        arguments.get("snapshots"),
+        "snapshots",
+    )
     if not snapshots_path:
         raise ValueError("--snapshots is required for evolve")
 
@@ -284,21 +415,23 @@ def mcp_evolve(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_consolidate(arguments: dict[str, Any]) -> dict[str, Any]:
-    graph = _load_graph(arguments["graph"])
-    result = graph.consolidate(min_weight=arguments.get("min_weight", 0.05))
-    graph.save(arguments["graph"])
+    graph_path = _coerce_path(arguments.get("graph"), "graph")
+    graph = _load_graph(graph_path)
+    min_weight = _coerce_float(arguments.get("min_weight"), "min_weight", default=0.05, minimum=0.0)
+    result = graph.consolidate(min_weight=min_weight)
+    graph.save(graph_path)
     return {"ok": True, **result}
 
 
 def mcp_sim(arguments: dict[str, Any]) -> dict[str, Any]:
     files, queries = workspace_scenario()
-    selected_queries = queries[: int(arguments.get("queries", 100))]
+    selected_queries = queries[: _coerce_int(arguments.get("queries"), "queries", default=100, minimum=1)]
     if not selected_queries:
         raise ValueError("queries must be a positive integer")
 
     config = SimConfig(
-        decay_interval=int(arguments.get("decay_interval", 5)),
-        decay_half_life=int(arguments.get("decay_half_life", 80)),
+        decay_interval=_coerce_int(arguments.get("decay_interval"), "decay_interval", default=5, minimum=1),
+        decay_half_life=_coerce_int(arguments.get("decay_half_life"), "decay_half_life", default=80, minimum=1),
     )
     result = run_simulation(files, selected_queries, config=config)
 
@@ -313,12 +446,14 @@ def mcp_sim(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def mcp_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
-    _load_graph(arguments["graph"])
-    fired_ids = split_csv(arguments["fired_ids"])
+    graph = _load_graph(_coerce_path(arguments.get("graph"), "graph"))
+    session = _coerce_str(arguments.get("session"), "session")
+    turn = _coerce_int(arguments.get("turn"), "turn", minimum=0)
+    fired_ids = split_csv(_coerce_str(arguments.get("fired_ids"), "fired_ids"))
 
     record = {
-        "session_id": arguments["session"],
-        "turn_id": arguments["turn"],
+        "session_id": session,
+        "turn_id": turn,
         "timestamp": time.time(),
         "fired_ids": fired_ids,
         "fired_scores": [1.0 for _ in fired_ids],
@@ -337,11 +472,11 @@ def mcp_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def mcp_feedback(arguments: dict[str, Any]) -> dict[str, Any]:
     snapshot = map_correction_to_snapshot(
-        session_id=arguments["session"],
-        turn_window=int(arguments.get("turn_window", 5)),
+        session_id=_coerce_str(arguments.get("session"), "session"),
+        turn_window=_coerce_int(arguments.get("turn_window"), "turn_window", default=5, minimum=1),
     )
     if snapshot is None:
-        raise ValueError(f"no attributable snapshot found for session: {arguments['session']}")
+        raise ValueError(f"no attributable snapshot found for session: {_coerce_str(arguments.get('session'), 'session')}")
 
     turns_since_fire = snapshot.get("turns_since_fire", 0)
     return {
@@ -466,7 +601,12 @@ TOOLS = [
             "properties": {
                 "graph": {"type": "string"},
                 "mitosis_state": {"type": "string"},
-                "query_stats": {"type": "object"},
+                "query_stats": {
+                    "oneOf": [
+                        {"type": "object"},
+                        {"type": "string"},
+                    ]
+                },
             },
             "required": ["graph"],
         },
@@ -566,7 +706,7 @@ def _handle_tools_call(req_id: Any, params: dict[str, Any] | None) -> None:
     if not isinstance(name, str) or name not in HANDLERS:
         raise ValueError(f"Unknown tool: {name}")
 
-    args = params.get("arguments") or {}
+    args = params.get("arguments")
     if not isinstance(args, dict):
         raise ValueError("Arguments must be an object")
 
@@ -596,7 +736,7 @@ def _handle_request(request: dict[str, Any]) -> None:
             _handle_tools_call(req_id, params_dict)
         else:
             _error(req_id, -32601, f"Unknown method: {method}")
-    except ValueError as exc:
+    except (ValueError, TypeError, KeyError) as exc:
         _error(req_id, -32602, str(exc))
     except Exception as exc:  # pragma: no cover - thin transport wrapper
         _error(req_id, -32000, f"Internal error: {exc}")

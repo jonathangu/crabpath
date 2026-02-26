@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from crabpath import Edge, Graph, Node, mcp_server
 from crabpath import __version__
@@ -41,6 +42,21 @@ def _handle_tools_call(name: str, arguments: dict, monkeypatch) -> dict:
     mcp_server._handle_request(request)
     assert captured and "result" in captured[-1]
     return json.loads(captured[-1]["result"]["content"][0]["text"])
+
+
+def _handle_request_raw(name: str, arguments: dict, monkeypatch, req_id: str = "req-1") -> dict[str, Any]:
+    captured: list[dict] = []
+    monkeypatch.setattr(mcp_server, "_emit", lambda payload: captured.append(payload))
+
+    request = {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "method": "tools/call",
+        "params": {"name": name, "arguments": arguments},
+    }
+    mcp_server._handle_request(request)
+    assert captured
+    return captured[-1]
 
 
 def test_tools_list_is_complete(monkeypatch):
@@ -147,6 +163,49 @@ def test_tools_call_missing_graph_emits_error(monkeypatch, tmp_path):
     assert captured and "error" in captured[-1]
     assert captured[-1]["error"]["code"] == -32602
     assert "graph file not found" in captured[-1]["error"]["message"]
+
+
+def test_query_validation_rejects_bad_inputs(monkeypatch):
+    response = _handle_request_raw(
+        "query",
+        {"query": "runbook", "graph": "ignored", "index": "ignored", "top": "fast"},
+        monkeypatch,
+    )
+
+    assert response["error"]["code"] == -32602
+    assert "top must be an integer" in response["error"]["message"]
+
+
+def test_query_validation_blocks_path_traversal(monkeypatch):
+    response = _handle_request_raw(
+        "query",
+        {
+            "query": "runbook",
+            "graph": "../../etc/crabpath_graph.json",
+            "index": "ignored",
+        },
+        monkeypatch,
+    )
+
+    assert response["error"]["code"] == -32602
+    assert "path traversal" in response["error"]["message"]
+
+
+def test_health_accepts_inline_query_stats(monkeypatch):
+    graph = _build_graph()
+    monkeypatch.setattr(mcp_server, "_load_graph", lambda _path: graph)
+
+    payload = _handle_tools_call(
+        "health",
+        {
+            "graph": "ignored",
+            "query_stats": {"avg_nodes_fired_per_query": 9.0},
+        },
+        monkeypatch,
+    )
+
+    assert payload["ok"] is True
+    assert payload["query_stats_provided"] is True
 
 
 def test_initialize_reports_current_package_version(monkeypatch):
