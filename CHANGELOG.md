@@ -2,6 +2,38 @@
 
 All notable changes to CrabPath are documented here.
 
+## [2.0.0] — 2026-02-26
+
+### Repositioned for Users
+- **README rewritten** — 413 → 91 lines, outcome-focused, not research-focused
+- **Repo cleaned** — 17 internal design docs moved to `docs/internal/`, research artifacts to `docs/research/`, stale files deleted
+- **Root is now clean**: README, CHANGELOG, CONTRIBUTING, LICENSE, PLAYBOOK, pyproject.toml + package dirs
+
+### Onboarding Fixes (from agent testing)
+- **Embedding errors now actionable** — each provider failure includes specific fix instructions
+- **PEP 668 / venv** in all install instructions (README, SKILL.md, PLAYBOOK.md)
+- **Fresh health cold-start note** — "Graph is freshly initialized — metrics improve after 20-100 queries"
+- **`--sessions` auto-suggestion** — init detects OpenClaw sessions and suggests replay when not provided
+- **Batch embedding** — 262 nodes in 1.7s (was 3+ minutes with per-node API calls)
+- **`install-hook`** uses portable `~` paths + includes `--index` for embeddings
+- **"Which Interface" table** — CLI vs MemoryController vs Adapter (deprecated)
+- **Learning signal explained** — concrete +1/-1 reward rules in SKILL.md
+
+### Distribution
+- **Published on PyPI** — `pip install crabpath`, GitHub Actions OIDC auto-publish on tag
+- **Published on ClawHub** — `clawhub install crabpath`
+- **Paper page updated** — PyPI + ClawHub badges, install box
+
+### CLI Improvements
+- `_format_user_path()` — all user-facing paths use `~` for portability
+- `init --sessions` — accepts directories (auto-globs *.jsonl)
+- `init --no-embeddings` — explicit opt-out, embeddings required by default
+- `install-hook --dry-run` — preview before mutating AGENTS.md
+- `extract-sessions` — warns on empty results
+- `_io.py` loaders expand `~` paths
+- `explain` detects traversal loops, suggests session replay
+- 360 tests
+
 ## [1.0.0] — 2026-02-26
 
 ### Architecture
