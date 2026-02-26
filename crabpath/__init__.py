@@ -72,6 +72,7 @@ from .mitosis import (
     split_node,
     split_with_llm,
 )
+from .controller import ControllerConfig, MemoryController, QueryResult
 from .shadow_logger import ShadowLog
 from .synaptogenesis import (
     ProtoEdge,
@@ -140,6 +141,9 @@ __all__ = [
     "split_node",
     "split_with_llm",
     "should_merge",
+    "ControllerConfig",
+    "MemoryController",
+    "QueryResult",
     "should_create_node",
     "create_node",
     "find_co_firing_families",
