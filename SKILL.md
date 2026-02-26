@@ -15,7 +15,7 @@ Pure graph engine for retrieval routing. Zero deps. Zero network calls. Caller p
 ## Install
 
 ```bash
-pip install crabpath[embeddings]
+pip install crabpath
 ```
 
 ## Quick Start
@@ -74,7 +74,7 @@ Install `crabpath[embeddings]` to enable local embeddings (`all-MiniLM-L6-v2`) b
 If installed, `init` and `query` automatically use local embeddings when `--embed-command` is not supplied.
 
 ```bash
-pip install crabpath[embeddings]
+pip install crabpath
 crabpath init --workspace ./ws --output ./data
 crabpath query "how do i deploy" --graph ./data/graph.json --index ./data/index.json
 ```

@@ -5,7 +5,7 @@ CrabPath is a pure in-memory graph engine for retrieval routing that can learn f
 ## Install
 
 ```bash
-pip install crabpath[embeddings]
+pip install crabpath
 ```
 
 ## Python API (pure callbacks)
@@ -57,14 +57,16 @@ crabpath query "how do i deploy" --graph ./crabpath-data/graph.json --index ./cr
 cat /tmp/query.vec | crabpath query "deploy" --graph ./crabpath-data/graph.json --index ./crabpath-data/index.json --route-command 'python3 route_cb.py' --embed-command 'python3 embed_cb.py'
 ```
 
-## Local Embeddings (no API key)
+## Embeddings
+
+Included. `pip install crabpath` brings `all-MiniLM-L6-v2` (local, 80MB, CPU). No API key.
 
 ```bash
-pip install crabpath[embeddings]
 crabpath init --workspace ./ws --output ./data
+# → embeds automatically
 ```
 
-Uses `all-MiniLM-L6-v2` (80MB, CPU). No API key needed.
+To use your own embeddings instead, pass `--embed-command`.
 
 ## Batch callbacks
 

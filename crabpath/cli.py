@@ -266,16 +266,8 @@ def _build_index_from_texts(
     return index
 
 
-def _resolve_local_embed_batch_fn() -> Callable[[list[tuple[str, str]]], dict[str, list[float]]] | None:
-    try:
-        from .embeddings import local_embed_batch_fn
-    except ImportError:
-        return None
-    if "sentence_transformers" in sys.modules:
-        return local_embed_batch_fn
-    probe = subprocess.run([sys.executable, "-c", "import sentence_transformers"], capture_output=True, text=True)
-    if probe.returncode != 0:
-        return None
+def _resolve_local_embed_batch_fn() -> Callable[[list[tuple[str, str]]], dict[str, list[float]]]:
+    from .embeddings import local_embed_batch_fn
     return local_embed_batch_fn
 
 
