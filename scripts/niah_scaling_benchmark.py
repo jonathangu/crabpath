@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import math
@@ -24,8 +25,20 @@ from scripts import ablation_study
 SEED = 2026
 RESULTS_PATH = ROOT / "scripts" / "niah_scaling_results.json"
 
-NIAH_SIZES = [50, 100, 200, 500, 1000]
-SCALING_SIZES = [20, 50, 100, 200, 500, 1000, 2000]
+NIAH_SIZES = [50, 100, 200, 500, 1000, 2000, 5000]
+SCALING_SIZES = [20, 50, 100, 200, 500, 1000, 2000, 5000]
+QUICK_NIAH_SIZES = [50, 200, 1000]
+QUICK_SCALING_SIZES = [20, 100, 500]
+DEFAULT_NIAH_QUERY_COUNT = 30
+QUICK_NIAH_QUERY_COUNT = 10
+DEFAULT_SCALING_QUERY_COUNT = 100
+QUICK_SCALING_QUERY_COUNT = 30
+DEFAULT_NIAH_WARMUP = 15
+QUICK_NIAH_WARMUP = 5
+DEFAULT_SCALING_WARMUP = 50
+QUICK_SCALING_WARMUP = 15
+DEFAULT_SCALING_QUERY_DISTRIBUTION = {1: 60, 2: 30, 3: 10}
+QUICK_SCALING_QUERY_DISTRIBUTION = {1: 15, 2: 10, 3: 5}
 NIAH_K_VALUES = [1, 2, 3, 5]
 CLUSTERS = {
     "deploy": {
@@ -343,6 +356,7 @@ def _build_multi_needle_configuration(
     size: int,
     k: int,
     rng: random.Random,
+    query_count: int,
 ) -> tuple[Graph, dict[str, DocSpec], list[QueryCase], list[str]]:
     graph, specs, ordered_docs = _build_cluster_graph(size, edge_ratio=0.1, rng=rng)
     base_node_ids = list(specs.keys())
@@ -405,7 +419,7 @@ def _build_multi_needle_configuration(
     expected = list(needle_ids)
     queries: list[QueryCase] = []
 
-    for q_idx in range(30):
+    for q_idx in range(query_count):
         clauses = []
         for path in needle_paths:
             if not path:
@@ -556,18 +570,22 @@ def _run_multi_needle_queries(
         "query_results": per_query,
     }
 
-
-def _run_niah_benchmarks() -> list[dict[str, Any]]:
+def _run_niah_benchmarks(
+    sizes: list[int],
+    query_count: int,
+    warmup_queries: int,
+) -> list[dict[str, Any]]:
     rng = random.Random(SEED)
     all_results: list[dict[str, Any]] = []
 
-    for size in NIAH_SIZES:
+    for size in sizes:
         for k in NIAH_K_VALUES:
             run_seed = rng.randint(0, 2**31 - 1)
             graph, specs, queries, expected = _build_multi_needle_configuration(
                 size=size,
                 k=k,
                 rng=random.Random(run_seed),
+                query_count=query_count,
             )
 
             bm25 = _run_multi_needle_queries(
@@ -575,7 +593,7 @@ def _run_niah_benchmarks() -> list[dict[str, Any]]:
                 specs=copy.deepcopy(specs),
                 queries=queries,
                 k=k,
-                warmup=15,
+                warmup=warmup_queries,
                 use_crab=False,
             )
             crab = _run_multi_needle_queries(
@@ -583,7 +601,7 @@ def _run_niah_benchmarks() -> list[dict[str, Any]]:
                 specs=copy.deepcopy(specs),
                 queries=queries,
                 k=k,
-                warmup=15,
+                warmup=warmup_queries,
                 use_crab=True,
             )
 
@@ -607,8 +625,9 @@ def _build_scaling_queries(
     graph: Graph,
     specs: dict[str, DocSpec],
     rng: random.Random,
+    query_distribution: dict[int, int],
 ) -> list[QueryCase]:
-    query_counts = {1: 60, 2: 30, 3: 10}
+    query_counts = dict(query_distribution)
     node_ids = [node_id for node_id in specs.keys()]
     queries: list[QueryCase] = []
     seen: set[tuple[str, ...]] = set()
@@ -660,10 +679,22 @@ def _build_scaling_queries(
     return queries[:100]
 
 
-def _run_scale_configuration(size: int, seed: int) -> dict[str, Any]:
+def _run_scale_configuration(
+    size: int,
+    seed: int,
+    query_distribution: dict[int, int],
+    query_count: int,
+    warmup_queries: int,
+) -> dict[str, Any]:
     rng = random.Random(seed)
     graph, specs, _ = _build_cluster_graph(size, edge_ratio=0.1, rng=rng)
-    queries = _build_scaling_queries(graph=graph, specs=specs, rng=rng)
+    queries = _build_scaling_queries(
+        graph=graph,
+        specs=specs,
+        rng=rng,
+        query_distribution=query_distribution,
+    )
+    queries = queries[:query_count]
 
     bm25 = _run_scaling_suite(
         graph=copy.deepcopy(graph),
@@ -674,7 +705,7 @@ def _run_scale_configuration(size: int, seed: int) -> dict[str, Any]:
     crab = _run_scaling_suite(
         graph=copy.deepcopy(graph),
         queries=queries,
-        warmup=50,
+        warmup=warmup_queries,
         use_crab=True,
     )
 
@@ -682,6 +713,7 @@ def _run_scale_configuration(size: int, seed: int) -> dict[str, Any]:
         "size": size,
         "seed": seed,
         "query_count": len(queries),
+        "query_distribution": query_distribution,
         "bm25": bm25,
         "crabpath": crab,
     }
@@ -816,16 +848,63 @@ def _run_scaling_suite(
     }
 
 
-def _run_scaling_benchmarks() -> list[dict[str, Any]]:
+def _run_scaling_benchmarks(
+    sizes: list[int],
+    query_distribution: dict[int, int],
+    query_count: int,
+    warmup_queries: int,
+) -> list[dict[str, Any]]:
     rng = random.Random(SEED)
     results: list[dict[str, Any]] = []
-    for size in SCALING_SIZES:
+    for size in sizes:
         seed = rng.randint(0, 2**31 - 1)
-        results.append(_run_scale_configuration(size=size, seed=seed))
+        results.append(
+            _run_scale_configuration(
+                size=size,
+                seed=seed,
+                query_distribution=query_distribution,
+                query_count=query_count,
+                warmup_queries=warmup_queries,
+            )
+        )
     return results
 
 
-def _print_niah_summary(results: list[dict[str, Any]]) -> None:
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run NIAH and scaling benchmarks for CrabPath vs BM25."
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Use reduced problem sizes and query counts for faster execution.",
+    )
+    parser.add_argument(
+        "--max-size",
+        type=int,
+        default=None,
+        help="Maximum graph size to include for both NIAH and scaling runs.",
+    )
+    return parser.parse_args()
+
+
+def _select_sizes(base_sizes: list[int], limit: int | None) -> list[int]:
+    if limit is None:
+        return base_sizes
+    return [size for size in base_sizes if size <= limit]
+
+
+def _normalize_scaling_distribution(total_queries: int) -> dict[int, int]:
+    if total_queries <= 0:
+        return {1: 0, 2: 0, 3: 0}
+    # Keep a simple 1-hop / 2-hop / 3-hop workload shape from 60/30/10.
+    one_hop = math.floor(total_queries * 0.6)
+    two_hop = math.floor(total_queries * 0.3)
+    three_hop = max(0, total_queries - one_hop - two_hop)
+    return {1: one_hop, 2: two_hop, 3: three_hop}
+
+
+def _print_niah_summary(results: list[dict[str, Any]], sizes: list[int]) -> None:
     print("\nNeedle-in-a-Haystack (Multi-Needle) Recall@K")
     header = ["Size"]
     for k in NIAH_K_VALUES:
@@ -840,7 +919,7 @@ def _print_niah_summary(results: list[dict[str, Any]]) -> None:
         k_bucket["bm25"] = result["bm25"]["metrics"]["recall@K"]["mean"]
         k_bucket["crab"] = result["crabpath"]["metrics"]["recall@K"]["mean"]
 
-    for size in NIAH_SIZES:
+    for size in sizes:
         row = [str(size)]
         for k in NIAH_K_VALUES:
             values = by_size.get(size, {}).get(k, {})
@@ -851,7 +930,7 @@ def _print_niah_summary(results: list[dict[str, Any]]) -> None:
     print("\nNeedle-in-a-Haystack (Multi-Needle) partial recall and MRR (last 15 eval queries)")
     print("Size | K=1 Partial BM25 | K=1 Partial CRAB | K=1 MRR BM25 | K=1 MRR CRAB | ...")
     print("-" * 95)
-    for size in NIAH_SIZES:
+    for size in sizes:
         row = [str(size)]
         for k in NIAH_K_VALUES:
             values = by_size.get(size, {}).get(k, {})
@@ -893,25 +972,64 @@ def _print_scaling_summary(results: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    niah_results = _run_niah_benchmarks()
-    scaling_results = _run_scaling_benchmarks()
+    args = _parse_args()
+
+    if args.quick:
+        niah_sizes = QUICK_NIAH_SIZES
+        scaling_sizes = QUICK_SCALING_SIZES
+        niah_query_count = QUICK_NIAH_QUERY_COUNT
+        scaling_query_count = QUICK_SCALING_QUERY_COUNT
+        niah_warmup = QUICK_NIAH_WARMUP
+        scaling_warmup = QUICK_SCALING_WARMUP
+        scaling_distribution = QUICK_SCALING_QUERY_DISTRIBUTION
+    else:
+        niah_sizes = NIAH_SIZES
+        scaling_sizes = SCALING_SIZES
+        niah_query_count = DEFAULT_NIAH_QUERY_COUNT
+        scaling_query_count = DEFAULT_SCALING_QUERY_COUNT
+        niah_warmup = DEFAULT_NIAH_WARMUP
+        scaling_warmup = DEFAULT_SCALING_WARMUP
+        scaling_distribution = DEFAULT_SCALING_QUERY_DISTRIBUTION
+
+    scaling_distribution = {
+        hop: count
+        for hop, count in scaling_distribution.items()
+        if count > 0
+    }
+    if sum(scaling_distribution.values()) != scaling_query_count:
+        scaling_distribution = _normalize_scaling_distribution(scaling_query_count)
+
+    niah_sizes = _select_sizes(niah_sizes, args.max_size)
+    scaling_sizes = _select_sizes(scaling_sizes, args.max_size)
+
+    niah_results = _run_niah_benchmarks(
+        sizes=niah_sizes,
+        query_count=niah_query_count,
+        warmup_queries=niah_warmup,
+    )
+    scaling_results = _run_scaling_benchmarks(
+        sizes=scaling_sizes,
+        query_distribution=scaling_distribution,
+        query_count=scaling_query_count,
+        warmup_queries=scaling_warmup,
+    )
 
     payload = {
         "seed": SEED,
         "niah": {
-            "sizes": NIAH_SIZES,
+            "sizes": niah_sizes,
             "k_values": NIAH_K_VALUES,
-            "query_count": 30,
-            "warmup_queries": 15,
-            "evaluate_last": 15,
+            "query_count": niah_query_count,
+            "warmup_queries": niah_warmup,
+            "evaluate_last": niah_query_count - niah_warmup,
             "results": niah_results,
         },
         "scaling": {
-            "sizes": SCALING_SIZES,
-            "query_distribution": {"1-hop": 60, "2-hop": 30, "3-hop": 10},
-            "query_count": 100,
-            "warmup_queries": 50,
-            "evaluate_last": 50,
+            "sizes": scaling_sizes,
+            "query_distribution": {f"{k}-hop": v for k, v in scaling_distribution.items()},
+            "query_count": scaling_query_count,
+            "warmup_queries": scaling_warmup,
+            "evaluate_last": scaling_query_count - scaling_warmup,
             "results": scaling_results,
         },
     }
@@ -919,7 +1037,7 @@ def main() -> None:
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     RESULTS_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    _print_niah_summary(niah_results)
+    _print_niah_summary(niah_results, niah_sizes)
     _print_scaling_summary(scaling_results)
     print(f"\nWrote detailed benchmark output to {RESULTS_PATH}")
 
