@@ -914,14 +914,25 @@ def cmd_install_hook(args: argparse.Namespace) -> dict[str, Any]:
             "data_dir": str(data_dir),
         }
 
+    # Use ~ shorthand for portability
+    home = Path.home()
+    display_dir = str(data_dir)
+    if display_dir.startswith(str(home)):
+        display_dir = "~" + display_dir[len(str(home)):]
+    display_graph = f"{display_dir}/graph.json"
+    display_index = f"{display_dir}/embed.json"
+    embed_path = data_dir / "embed.json"
+    has_embeddings = embed_path.exists()
+
+    index_flag = f" --index {display_index}" if has_embeddings else ""
     block = (
         "\n## CrabPath Memory Graph (auto-installed)\n\n"
         "Before answering questions about prior work, context, or decisions, query the CrabPath memory graph:\n"
         "```bash\n"
-        f"crabpath query '<summary of user message>' --graph {graph_path} --top 8 --json\n"
+        f"crabpath query '<summary of user message>' --graph {display_graph}{index_flag} --top 8 --json\n"
         "```\n"
         "Use the returned context to supplement your memory files. CrabPath runs in shadow mode — it suggests context but never modifies your responses directly.\n\n"
-        f"To check graph health: `crabpath health --graph {graph_path}`\n"
+        f"To check graph health: `crabpath health --graph {display_graph}`\n"
         "To remove: delete this section from AGENTS.md and run `pip uninstall crabpath`\n"
     )
 
