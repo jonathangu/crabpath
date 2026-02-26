@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -240,6 +241,44 @@ def test_init_graph_texts_written_when_embedding_fails(tmp_path) -> None:
     assert code == 0
     assert (output / "graph.json").exists()
     assert (output / "texts.json").exists()
+
+
+def test_init_command_with_local_embeddings(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("local embedding test", encoding="utf-8")
+    output = tmp_path / "out"
+
+    class FakeSentenceTransformer:
+        class _Vector(list):
+            def tolist(self):  # type: ignore[override]
+                return list(self)
+
+        def __init__(self, model_name: str) -> None:
+            assert model_name == "all-MiniLM-L6-v2"
+
+        def encode(self, texts: str | list[str]) -> "FakeSentenceTransformer._Vector":
+            if isinstance(texts, list):
+                return FakeSentenceTransformer._Vector([self._vector() for _ in texts])
+            return FakeSentenceTransformer._Vector(self._vector())
+
+        @staticmethod
+        def _vector() -> list[float]:
+            return [7.0, 1.0]
+
+    module = types.ModuleType("sentence_transformers")
+    module.SentenceTransformer = FakeSentenceTransformer
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+    sys.modules.pop("crabpath.embeddings", None)
+
+    code = main(["init", "--workspace", str(workspace), "--output", str(output), "--embed-local"])
+    assert code == 0
+    index_path = output / "index.json"
+    assert index_path.exists()
+
+    index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+    assert index_payload
+    assert all(entry == [7.0, 1.0] for entry in index_payload.values())
 
 
 def test_learn_command_updates_graph_weights(tmp_path, capsys) -> None:

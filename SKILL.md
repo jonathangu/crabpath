@@ -58,14 +58,25 @@ If batch fn not provided, CrabPath parallelizes single calls via ThreadPoolExecu
 ## CLI
 
 ```
-crabpath init --workspace W --output O [--embed-command CMD]
-crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--route-command CMD]
+crabpath init --workspace W --output O [--embed-command CMD] [--embed-local]
+crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--route-command CMD] [--embed-command CMD] [--embed-local]
 crabpath learn --graph G --outcome N --fired-ids a,b,c
 crabpath replay --graph G --sessions S
 crabpath health --graph G
 crabpath merge --graph G
 crabpath connect --graph G
 crabpath journal [--stats]
+```
+
+## Local embeddings option
+
+Use `--embed-local` on `init` or `query` to embed with an in-repo wrapper around
+`sentence-transformers` (`all-MiniLM-L6-v2`) without running an external script.
+
+```bash
+pip install crabpath[embeddings]
+crabpath init --workspace ./ws --output ./data --embed-local
+crabpath query "how do i deploy" --graph ./data/graph.json --index ./data/index.json --embed-local
 ```
 
 ## Paper

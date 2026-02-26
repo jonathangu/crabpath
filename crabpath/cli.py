@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from pathlib import Path
 
 from ._batch import batch_or_single_embed
@@ -42,6 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
     i.add_argument("--output", required=True)
     i.add_argument("--sessions")
     i.add_argument("--embed-command")
+    i.add_argument("--embed-local", action="store_true")
     i.add_argument("--route-command")
     i.add_argument("--llm-split", choices=("auto", "always", "never"), default="auto")
     i.add_argument("--llm-split-max-files", type=int, default=30)
@@ -66,6 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     q.add_argument("--parallel", type=int, default=8)
     q.add_argument("--route-command")
     q.add_argument("--embed-command")
+    q.add_argument("--embed-local", action="store_true")
     q.add_argument("--auto-merge", action="store_true")
     q.add_argument("--json", action="store_true")
     l = sub.add_parser("learn")
@@ -206,21 +209,41 @@ def _run_embedding_batch(command: list[str] | str, batch: list[tuple[str, str]])
     return output
 
 
-def _build_index_from_texts(texts: dict[str, str], embed_command: str, parallel: int) -> VectorIndex:
+def _build_index_from_texts(
+    texts: dict[str, str],
+    parallel: int,
+    embed_command: str | None = None,
+    embed_batch_fn: Callable[[list[tuple[str, str]]], dict[str, list[float]]] | None = None,
+    embed_fn: Callable[[str], list[float]] | None = None,
+) -> VectorIndex:
     if parallel <= 0:
         raise SystemExit("--parallel must be >= 1")
     index = VectorIndex()
     if not texts:
         return index
+
+    if embed_command is None and embed_batch_fn is None and embed_fn is None:
+        return index
+    if embed_command is not None and (embed_batch_fn is not None or embed_fn is not None):
+        raise SystemExit("--embed-command cannot be used with local embedding callbacks")
+
     text_items = list(texts.items())
 
     def _embed_one(text: str) -> list[float]:
+        if embed_fn is not None:
+            return embed_fn(text)
+        if embed_command is None:
+            raise SystemExit("local embedding requires an embed callback")
         result = _run_embedding_batch(embed_command, [("query", text)])
         if "query" not in result:
             raise SystemExit("embedding output missing query response")
         return result["query"]
 
     def _embed_batch(items: list[tuple[str, str]]) -> dict[str, list[float]]:
+        if embed_batch_fn is not None:
+            return embed_batch_fn(items)
+        if embed_command is None:
+            raise SystemExit("local embedding requires an embed callback")
         return _run_embedding_batch(embed_command, items)
 
     batches = [text_items[i:i + _EMBED_BATCH_SIZE] for i in range(0, len(text_items), _EMBED_BATCH_SIZE)]
@@ -229,7 +252,7 @@ def _build_index_from_texts(texts: dict[str, str], embed_command: str, parallel:
         return batch_or_single_embed(
             texts=batch,
             embed_fn=_embed_one,
-            embed_batch_fn=_embed_batch if len(batch) > 1 else None,
+            embed_batch_fn=_embed_batch,
             max_workers=parallel,
         )
 
@@ -245,7 +268,11 @@ def _build_index_from_texts(texts: dict[str, str], embed_command: str, parallel:
     return index
 
 
-def _embed_query_text(query_text: str, embed_command: str | None) -> list[float]:
+def _embed_query_text(query_text: str, embed_command: str | None, embed_local: bool) -> list[float]:
+    if embed_local:
+        from .embeddings import local_embed_fn
+
+        return local_embed_fn(query_text)
     if embed_command is None:
         raise SystemExit("query embedding requires --embed-command")
     result = _run_embedding_batch(embed_command, [("query", query_text)])
@@ -380,8 +407,14 @@ def cmd_init(args: argparse.Namespace) -> int:
             graph.get_node(node_id).summary = summary if graph.get_node(node_id) else summary
         _write_graph(graph_path, graph)
 
+    if args.embed_command and args.embed_local:
+        raise SystemExit("use either --embed-command or --embed-local")
     if args.embed_command:
-        _build_index_from_texts(texts, args.embed_command, args.parallel).save(str(output_dir / "index.json"))
+        _build_index_from_texts(texts, args.parallel, embed_command=args.embed_command).save(str(output_dir / "index.json"))
+    elif args.embed_local:
+        from .embeddings import local_embed_batch_fn
+
+        _build_index_from_texts(texts, args.parallel, embed_batch_fn=local_embed_batch_fn).save(str(output_dir / "index.json"))
 
     if args.json:
         print(json.dumps({"graph": str(graph_path), "texts": str(text_path), "index": str(output_dir / "index.json") if (output_dir / "index.json").exists() else None}))
@@ -390,7 +423,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_embed(args: argparse.Namespace) -> int:
     texts = _load_texts(args.texts)
-    index = _build_index_from_texts(texts, args.embed_command, args.parallel)
+    index = _build_index_from_texts(texts, args.parallel, embed_command=args.embed_command)
     output = Path(args.output).expanduser()
     if output.suffix != ".json" or output.is_dir():
         output = output / "index.json"
@@ -414,8 +447,12 @@ def cmd_query(args: argparse.Namespace) -> int:
             if not args.index:
                 raise SystemExit("query-vector-stdin requires --index")
             query_vec = _load_query_vector_from_stdin()
+        elif args.embed_local:
+            if args.embed_command is not None:
+                raise SystemExit("use either --embed-command or --embed-local")
+            query_vec = _embed_query_text(args.text, None, embed_local=True)
         elif args.embed_command is not None and args.index is not None:
-            query_vec = _embed_query_text(args.text, args.embed_command)
+            query_vec = _embed_query_text(args.text, args.embed_command, embed_local=False)
 
     if query_vec is not None:
         if not args.index:

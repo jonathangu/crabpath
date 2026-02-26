@@ -40,6 +40,7 @@ apply_outcome(graph=graph, fired_nodes=result.fired, outcome=1.0)
 ```bash
 # Build graph, texts, and optional index from a callback
 crabpath init --workspace ./workspace --output ./crabpath-data --embed-command 'python3 embed_cb.py'
+crabpath init --workspace ./workspace --output ./crabpath-data --embed-local
 
 # Build index only
 crabpath embed --texts ./crabpath-data/texts.json --output ./crabpath-data/index.json --command 'python3 embed_cb.py'
@@ -49,10 +50,21 @@ crabpath query "how do i deploy" --graph ./crabpath-data/graph.json --top 5
 
 # Query by vector payload file
 crabpath query "noop" --graph ./crabpath-data/graph.json --index ./crabpath-data/index.json --query-vector-stdin < vec.json
+# Query by local embedding
+crabpath query "how do i deploy" --graph ./crabpath-data/graph.json --index ./crabpath-data/index.json --embed-local
 
 # Optional route callback and query scoring callback wiring
 cat /tmp/query.vec | crabpath query "deploy" --graph ./crabpath-data/graph.json --index ./crabpath-data/index.json --route-command 'python3 route_cb.py' --embed-command 'python3 embed_cb.py'
 ```
+
+## Local Embeddings (no API key)
+
+```bash
+pip install crabpath[embeddings]
+crabpath init --workspace ./ws --output ./data --embed-local
+```
+
+Uses `all-MiniLM-L6-v2` (80MB, CPU). No API key needed.
 
 ## Batch callbacks
 
@@ -60,6 +72,7 @@ Batching is available for both embedding and callback APIs using the same CLI en
 
 ```bash
 crabpath init --workspace ./workspace --output ./crabpath-data --embed-command 'python3 embed_batch.py'
+crabpath init --workspace ./workspace --output ./crabpath-data --embed-local
 crabpath query "deploy" --graph ./crabpath-data/graph.json --route-command 'python3 route_batch.py' --json
 ```
 
