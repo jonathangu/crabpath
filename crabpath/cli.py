@@ -35,6 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
     embed_init_group = init.add_mutually_exclusive_group(required=False)
     embed_init_group.add_argument("--embed-command")
     embed_init_group.add_argument("--embed-provider", choices=("openai", "ollama"))
+    init.add_argument("--route-provider", choices=("openai", "ollama"))
     init.add_argument("--json", action="store_true")
     init.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
 
@@ -54,6 +55,9 @@ def _build_parser() -> argparse.ArgumentParser:
     query.add_argument("--json", action="store_true")
     query.add_argument("--query-vector", nargs="+", required=False)
     query.add_argument("--query-vector-stdin", action="store_true")
+    query_route_group = query.add_mutually_exclusive_group(required=False)
+    query_route_group.add_argument("--route-command")
+    query_route_group.add_argument("--route-provider", choices=("openai", "ollama"))
     query.add_argument("--no-log", action="store_true", help="disable query/learn/replay/health logging")
 
     learn = sub.add_parser("learn", help="apply outcome update")
@@ -224,6 +228,115 @@ for line in sys.stdin:
     raise SystemExit(f"unsupported provider: {provider}")
 
 
+def _route_provider_script(provider: str) -> str:
+    if provider == "openai":
+        return """import json
+import re
+import sys
+
+from openai import OpenAI
+
+
+client = OpenAI()
+req = json.loads(sys.stdin.read())
+candidates = '\\n'.join(f'- {c[\"id\"]}: {c[\"content\"][:100]}' for c in req['candidates'])
+resp = client.chat.completions.create(
+    model='gpt-5-mini',
+    messages=[
+        {'role': 'system', 'content': 'You are a memory router. Given a query and candidates, select which are most relevant. Return JSON: {\"selected\": [\"id1\", \"id2\"]}'},
+        {'role': 'user', 'content': f'Query: {req[\"query\"]}\\n\\nCandidates:\\n{candidates}'},
+    ],
+    temperature=0.0,
+    max_tokens=200,
+)
+
+content = resp.choices[0].message.content
+try:
+    result = json.loads(content)
+except:
+    match = re.search(r'\\{[^}]+\\}', content)
+    result = json.loads(match.group()) if match else {'selected': [c['id'] for c in req['candidates'][:3]]}
+print(json.dumps(result))
+"""
+    if provider == "ollama":
+        return """import json
+import re
+import sys
+
+import requests
+
+
+req = json.loads(sys.stdin.read())
+candidates = '\\n'.join(f'- {c[\"id\"]}: {c[\"content\"][:100]}' for c in req['candidates'])
+resp = requests.post(
+    'http://localhost:11434/api/generate',
+    json={
+        'model': 'llama3',
+        'prompt': f'Select the most relevant candidates for this query. Return JSON {\"selected\": [\"id1\"]}\\n\\nQuery: {req[\"query\"]}\\n\\nCandidates:\\n{candidates}',
+        'stream': False,
+    },
+)
+content = resp.json()['response']
+match = re.search(r'\\{[^}]+\\}', content)
+result = json.loads(match.group()) if match else {'selected': [c['id'] for c in req['candidates'][:3]]}
+print(json.dumps(result))
+"""
+    raise SystemExit(f"unsupported route provider: {provider}")
+
+
+def _build_route_command(route_command: str | None, route_provider: str | None) -> tuple[list[str], str | None]:
+    if route_command is None and route_provider is None:
+        raise SystemExit("provide either --route-command or --route-provider for routing")
+    if route_command is not None and route_provider is not None:
+        raise SystemExit("provide only one of --route-command or --route-provider")
+    if route_command is not None:
+        return shlex.split(route_command), None
+
+    script_code = _route_provider_script(route_provider)
+    fd, script_path = tempfile.mkstemp(prefix="crabpath_route_", suffix=".py")
+    os.close(fd)
+    Path(script_path).write_text(script_code, encoding="utf-8")
+    return [sys.executable, script_path], script_path
+
+
+def _run_route_command(
+    command: list[str],
+    query_text: str,
+    candidates: list[dict[str, str | float]],
+) -> list[str]:
+    payload = {"query": query_text, "candidates": candidates}
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    stdout_data, stderr_data = proc.communicate(json.dumps(payload))
+    if proc.returncode != 0:
+        message = (stderr_data or "").strip() or f"exit code {proc.returncode}"
+        raise SystemExit(f"route command failed: {message}")
+    if not stdout_data.strip():
+        raise SystemExit("route command returned no candidates")
+    data = json.loads(stdout_data)
+    selected = data.get("selected")
+    if not isinstance(selected, list):
+        raise SystemExit("route output must contain selected list")
+    return [str(item) for item in selected]
+
+
+def _build_route_candidates(graph: Graph, candidate_ids: list[str]) -> list[dict[str, str | float]]:
+    payload: list[dict[str, str | float]] = []
+    for node_id in candidate_ids:
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        incoming = graph.incoming(node_id)
+        weight = max((edge.weight for _, edge in incoming), default=0.5)
+        payload.append({"id": node.id, "content": node.content, "weight": weight})
+    return payload
+
+
 def _build_embed_command(
     embed_command: str | None,
     embed_provider: str | None,
@@ -378,10 +491,14 @@ def cmd_init(args: argparse.Namespace) -> int:
         payload = {"graph": str(graph_path), "texts": str(texts_path)}
         if args.embed_command is not None or args.embed_provider is not None:
             payload["index"] = str(output_dir / "index.json")
+        if args.route_provider is not None:
+            payload["route_provider"] = args.route_provider
         print(json.dumps(payload))
     else:
         print(f"graph_path: {graph_path}")
         print(f"texts_path: {texts_path}")
+        if args.route_provider is not None:
+            print(f"route_provider: {args.route_provider}")
         if args.embed_command is not None or args.embed_provider is not None:
             print(f"index_path: {output_dir / 'index.json'}")
     return 0
@@ -440,7 +557,36 @@ def cmd_query(args: argparse.Namespace) -> int:
     else:
         seeds = _keyword_seeds(graph=graph, text=args.text, top_k=args.top)
 
-    result = traverse(graph=graph, seeds=seeds, config=TraversalConfig(max_hops=15), route_fn=None)
+    route_fn = None
+    route_temp_script = None
+    if args.route_command is not None or args.route_provider is not None:
+        route_command, route_temp_script = _build_route_command(
+            route_command=args.route_command,
+            route_provider=args.route_provider,
+        )
+
+        def route_fn_impl(query_text: str | None, candidate_ids: list[str]) -> list[str]:
+            payload = _build_route_candidates(graph=graph, candidate_ids=candidate_ids)
+            return _run_route_command(
+                command=route_command,
+                query_text=query_text or "",
+                candidates=payload,
+            )
+
+        route_fn = route_fn_impl
+
+    try:
+        result = traverse(
+            graph=graph,
+            seeds=seeds,
+            config=TraversalConfig(max_hops=15),
+            query_text=args.text,
+            route_fn=route_fn,
+        )
+    finally:
+        if route_temp_script is not None and Path(route_temp_script).exists():
+            Path(route_temp_script).unlink()
+
     if not args.no_log:
         log_query(query_text=args.text, fired_ids=result.fired, node_count=graph.node_count())
 

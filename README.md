@@ -80,6 +80,26 @@ crabpath init --workspace ./my-workspace --output ./crabpath-data --embed-provid
 # CLI also supports --query-vector for vector inputs in production use
 crabpath query 'how do I deploy' --graph graph.json --index index.json --top 8 --json
 
+### LLM Routing (for full mode)
+
+With an LLM router, CrabPath makes smart traversal decisions instead of following edges by weight:
+
+```bash
+# Query with LLM routing
+crabpath query 'how do I deploy' \
+  --graph ~/.crabpath/graph.json \
+  --index ~/.crabpath/index.json \
+  --route-provider openai \
+  --json
+
+# Or one-shot with everything:
+crabpath init --workspace ~/.openclaw/workspace \
+  --output ~/.crabpath \
+  --sessions ~/.openclaw/agents/main/sessions/ \
+  --embed-provider openai \
+  --route-provider openai
+```
+
 # Learn from feedback
 crabpath learn --graph graph.json --outcome 1.0 --fired-ids node1,node2,node3
 

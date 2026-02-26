@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,76 @@ def _write_graph_payload(path: Path) -> None:
 
 def _write_index(path: Path) -> None:
     path.write_text(json.dumps({"a": [1, 0], "b": [0, 1]}), encoding="utf-8")
+
+
+def _write_route_openai_stub(path: Path, selected_id: str) -> None:
+    path.write_text(
+        f"""import json
+
+
+_SELECTED = {json.dumps([selected_id])}
+
+
+class _Message:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _Choice:
+    def __init__(self, content: str) -> None:
+        self.message = _Message(content)
+
+
+class _Resp:
+    def __init__(self, selected):
+        self.choices = [_Choice(json.dumps({{'selected': selected}}))]
+
+
+class _Completions:
+    def create(self, **kwargs):
+        return _Resp(_SELECTED)
+
+
+class _Chat:
+    def __init__(self) -> None:
+        self.completions = _Completions()
+
+
+class OpenAI:
+    def __init__(self) -> None:
+        self.chat = _Chat()
+""",
+        encoding="utf-8",
+    )
+
+
+def _write_route_graph_payload(path: Path) -> None:
+    payload = {
+        "graph": {
+            "nodes": [
+                {"id": "a", "content": "deploy start", "summary": "", "metadata": {}},
+                {"id": "b", "content": "database setup", "summary": "", "metadata": {}},
+                {"id": "c", "content": "deployment checklist", "summary": "", "metadata": {}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "weight": 0.5, "kind": "sibling", "metadata": {}},
+                {"source": "a", "target": "c", "weight": 0.5, "kind": "sibling", "metadata": {}},
+            ],
+        }
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_route_command(path: Path, selected_id: str) -> None:
+    path.write_text(
+        f"""import json
+import sys
+
+req = json.loads(sys.stdin.read())
+print(json.dumps({{'selected': [{json.dumps(selected_id)}]}}))
+""",
+        encoding="utf-8",
+    )
 
 
 def test_init_command_creates_workspace_graph(tmp_path, capsys) -> None:
@@ -56,6 +128,29 @@ def test_init_command_with_empty_workspace(tmp_path) -> None:
     graph_data = json.loads((output / "graph.json").read_text(encoding="utf-8"))
     assert graph_data["nodes"] == []
     assert graph_data["edges"] == []
+
+
+def test_init_command_with_route_provider_no_embed(tmp_path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.md").write_text("## A\nHello", encoding="utf-8")
+    output = tmp_path / "out"
+
+    code = main(
+        [
+            "init",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(output),
+            "--route-provider",
+            "openai",
+        ]
+    )
+    assert code == 0
+    assert (output / "graph.json").exists()
+    assert (output / "texts.json").exists()
+    assert not (output / "index.json").exists()
 
 
 def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
@@ -101,6 +196,101 @@ def test_query_command_keywords_without_index(tmp_path, capsys) -> None:
     out = json.loads(capsys.readouterr().out.strip())
     assert out["fired"]
     assert out["fired"][0] == "a"
+
+
+def test_route_provider_openai(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    _write_route_graph_payload(graph_path)
+
+    stub_dir = tmp_path / "stubs"
+    stub_dir.mkdir()
+    _write_route_openai_stub(stub_dir / "openai.py", selected_id="c")
+    env_path = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(stub_dir), env_path]) if env_path else str(stub_dir))
+
+    code = main(
+        [
+            "query",
+            "deploy",
+            "--graph",
+            str(graph_path),
+            "--top",
+            "1",
+            "--route-provider",
+            "openai",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fired"][0] == "a"
+    assert "c" in out["fired"]
+    assert "b" not in out["fired"]
+
+
+def test_query_with_route_command(tmp_path, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    _write_route_graph_payload(graph_path)
+    command_script = tmp_path / "route.py"
+    _write_route_command(command_script, selected_id="b")
+
+    code = main(
+        [
+            "query",
+            "deploy",
+            "--graph",
+            str(graph_path),
+            "--top",
+            "1",
+            "--route-command",
+            f"{sys.executable} {command_script}",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fired"][0] == "a"
+    assert "b" in out["fired"]
+    assert "c" not in out["fired"]
+
+
+def test_query_with_route_provider(tmp_path, monkeypatch, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    index_path = tmp_path / "index.json"
+    _write_route_graph_payload(graph_path)
+    index_path.write_text(
+        json.dumps({"a": [1, 0], "b": [0, 0], "c": [0, 0]}),
+        encoding="utf-8",
+    )
+
+    stub_dir = tmp_path / "route_stubs"
+    stub_dir.mkdir()
+    _write_route_openai_stub(stub_dir / "openai.py", selected_id="b")
+    env_path = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(stub_dir), env_path]) if env_path else str(stub_dir))
+
+    code = main(
+        [
+            "query",
+            "deploy",
+            "--graph",
+            str(graph_path),
+            "--index",
+            str(index_path),
+            "--query-vector",
+            "1,0",
+            "--top",
+            "1",
+            "--route-provider",
+            "openai",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fired"][0] == "a"
+    assert "b" in out["fired"]
+    assert "c" not in out["fired"]
 
 
 def test_learn_command_updates_graph_weights(tmp_path, capsys) -> None:

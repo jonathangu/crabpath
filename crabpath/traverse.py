@@ -56,6 +56,7 @@ def traverse(
     seeds: list[tuple[str, float]],
     config: TraversalConfig | None = None,
     route_fn: RouteFn | None = None,
+    query_text: str | None = None,
 ) -> TraversalResult:
     """Traverse graph from seed nodes using edge tiers and fatigue damping.
 
@@ -112,7 +113,7 @@ def traverse(
         selected: list[tuple[str, str, float, float, str]] = []
 
         if route_fn is not None and habitual:
-            wanted = set(route_fn(None, [target_id for _, target_id, _, _, _ in habitual]))
+            wanted = set(route_fn(query_text, [target_id for _, target_id, _, _, _ in habitual]))
             if wanted:
                 selected.extend(item for item in habitual if item[1] in wanted)
         else:
