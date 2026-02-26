@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crabpath"
-version = "2.3.0"
+version = "2.3.1"
 description = "🦀 Memory store for AI agents that learns what to retrieve — and what to suppress — from experience."
 readme = "README.md"
 license = "Apache-2.0"

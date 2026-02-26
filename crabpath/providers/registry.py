@@ -20,6 +20,36 @@ def _env_has_value(name: str) -> bool:
     return bool((value or "").strip())
 
 
+def _try_find_key(name: str) -> str | None:
+    """Try to find an API key from env, then common dotenv files."""
+    # 1. Direct env var
+    val = (os.getenv(name) or "").strip()
+    if val:
+        return val
+
+    # 2. Check common .env file locations
+    from pathlib import Path
+
+    dotenv_paths = [
+        Path.home() / ".env",
+        Path.cwd() / ".env",
+        Path.home() / ".config" / "openai" / "key",
+    ]
+    for p in dotenv_paths:
+        try:
+            if p.is_file():
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith(f"{name}="):
+                        val = line.split("=", 1)[1].strip().strip("\"'")
+                        if val:
+                            return val
+        except (OSError, PermissionError):
+            continue
+
+    return None
+
+
 def auto_detect_providers() -> tuple[EmbeddingProvider | None, RouterProvider]:
     """Auto-detect best available providers."""
     embedding_provider: EmbeddingProvider | None = None
@@ -54,7 +84,10 @@ def auto_detect_providers() -> tuple[EmbeddingProvider | None, RouterProvider]:
         # 2) Gemini
         # 3) Ollama
         # 4) Local TF-IDF fallback
-        if _env_has_value("OPENAI_API_KEY"):
+        # Try to find API keys from env or common dotenv files
+        openai_key = _try_find_key("OPENAI_API_KEY")
+        if openai_key:
+            os.environ["OPENAI_API_KEY"] = openai_key  # make available to provider
             from .openai_provider import OpenAIEmbeddingProvider
 
             try:
@@ -62,9 +95,10 @@ def auto_detect_providers() -> tuple[EmbeddingProvider | None, RouterProvider]:
             except Exception:
                 embedding_provider = None
 
-        if embedding_provider is None and (
-            _env_has_value("GEMINI_API_KEY") or _env_has_value("GOOGLE_API_KEY")
-        ):
+        gemini_key = _try_find_key("GEMINI_API_KEY") or _try_find_key("GOOGLE_API_KEY")
+        if embedding_provider is None and gemini_key:
+            if not os.getenv("GEMINI_API_KEY"):
+                os.environ["GEMINI_API_KEY"] = gemini_key
             from .gemini_provider import GeminiEmbeddingProvider
 
             try:
@@ -80,8 +114,17 @@ def auto_detect_providers() -> tuple[EmbeddingProvider | None, RouterProvider]:
                 embedding_provider = candidate
 
         if embedding_provider is None:
+            import warnings
+
             from .tfidf_provider import TfidfEmbeddingProvider
 
+            warnings.warn(
+                "CrabPath: No real embedding provider found. Falling back to local TF-IDF "
+                "(keyword-based, lower quality). Strongly recommended: set OPENAI_API_KEY, "
+                "GEMINI_API_KEY, run Ollama locally, or set CRABPATH_EMBEDDINGS_URL to "
+                "any OpenAI-compatible endpoint.",
+                stacklevel=2,
+            )
             embedding_provider = TfidfEmbeddingProvider()
 
     # Routing provider

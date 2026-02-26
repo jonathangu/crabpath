@@ -21,23 +21,27 @@ pip install crabpath[openai]     # or: pip install crabpath[google]
 
 Zero required dependencies. Python 3.10+. macOS Homebrew Python needs a venv (PEP 668).
 
-### Custom LLM Endpoint (optional)
+### LLM Access (recommended)
 
-Point CrabPath at any OpenAI-compatible API:
+CrabPath's smart routing needs a real LLM. Without one, it falls back to basic retrieval (like RAG). Provide access via any of:
 
 ```bash
-# Routing LLM (for smart graph traversal)
-export CRABPATH_LLM_URL=http://localhost:8080/v1/chat/completions
-export CRABPATH_LLM_TOKEN=your-token  # optional
-export CRABPATH_LLM_MODEL=gpt-5-mini  # optional
+# Option 1: Direct API key (easiest)
+export OPENAI_API_KEY=sk-...          # also checks ~/.env automatically
 
-# Embeddings (for semantic retrieval) 
+# Option 2: Any OpenAI-compatible endpoint (most flexible)
+export CRABPATH_LLM_URL=http://localhost:8080/v1/chat/completions
 export CRABPATH_EMBEDDINGS_URL=http://localhost:8080/v1/embeddings
-export CRABPATH_EMBEDDINGS_TOKEN=your-token  # optional
-export CRABPATH_EMBEDDINGS_MODEL=text-embedding-3-small  # optional
+export CRABPATH_LLM_TOKEN=your-token  # if endpoint needs auth
+
+# Option 3: Local Ollama (free, private)
+ollama pull nomic-embed-text          # embeddings
+ollama pull llama3                     # routing
 ```
 
-Works with: OpenAI, Ollama, LiteLLM, vLLM, OpenRouter, or any OpenAI-compatible proxy.
+Works with: OpenAI, Gemini, Ollama, LiteLLM, vLLM, OpenRouter — anything OpenAI-compatible.
+
+**Without LLM access**, CrabPath still works using local TF-IDF embeddings and heuristic routing — but you're missing the learned routing that makes it better than RAG.
 
 ## Quick Start (60 seconds)
 
