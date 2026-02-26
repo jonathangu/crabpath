@@ -1,52 +1,125 @@
 # 🦀 CrabPath
 
-Memory graph for AI agents. Learns what to retrieve — and what to suppress.
+Memory graph for AI agents that learns what to retrieve — and what to suppress.
 
-## Why?
+## Why CrabPath?
 
-- RAG loads by similarity. CrabPath loads by learned routes.
-- Positive outcomes strengthen paths. Negative outcomes create inhibitory edges.
-- The graph gets smarter with every query. Unused paths decay.
+The problem in 3 bullets:
+- Static context loading wastes tokens (loads everything every turn)
+- RAG retrieves by similarity, not usefulness (can't learn from feedback)
+- CrabPath builds learned routes: positive outcomes strengthen paths, negative outcomes create inhibitory edges
+
+The result: in simulation, active context drops from 30 nodes to 2.7 per query (91% reduction). Deploy procedure compiles from habitual to reflex in 50 queries. Bad paths get suppressed to -0.94 weight.
+
+## Drawbacks (honest)
+
+- **Cold start is slow**: 100% habitual at bootstrap, everything requires deliberation until enough queries accumulate
+- **Embedding quality matters**: CrabPath is only as good as the vectors you give it
+- **No production deployment yet**: all results are from simulation
+- **Small workspaces (< 10 files) see limited benefit**
+- **Not for one-shot queries**: CrabPath shines with recurring patterns over time
 
 ## Install
 
+```bash
 pip install crabpath
-
-Python 3.10+. Zero dependencies.
-
-## Quick Start
-
-```python
-from crabpath import Graph, Node, Edge, traverse, TraversalConfig
-from crabpath.learn import apply_outcome
-
-g = Graph()
-g.add_node(Node("a", "Deploy to production"))
-g.add_node(Node("b", "Rollback procedure"))
-g.add_edge(Edge("a", "b", 0.7))
-
-result = traverse(g, seeds=[("a", 1.0)], config=TraversalConfig(max_hops=3))
-print(result.fired)
-
-apply_outcome(g, result.fired, outcome=1.0)
 ```
 
-## For AI Agents (CLI)
+Python 3.10+. Zero dependencies. Pure stdlib.
 
-- `crabpath init --workspace <dir> --output <path>`
-- `crabpath query <text> --graph <path> --index <path> [--top N] [--json]`
-- `crabpath learn --graph <path> --outcome <float> --fired-ids <id1,id2,...>`
-- `crabpath health --graph <path>`
+## Getting Started
+
+### As a Python library
+
+```python
+from crabpath import Graph, Node, Edge
+from crabpath.split import split_workspace
+from crabpath.traverse import traverse, TraversalConfig
+from crabpath.learn import apply_outcome
+
+# 1. Build graph from workspace
+graph, texts = split_workspace('~/.openclaw/workspace')
+
+# 2. Caller embeds texts (CrabPath never does this)
+# vectors = {node_id: your_embed_fn(text) for node_id, text in texts.items()}
+
+# 3. Traverse from seeds
+result = traverse(graph, seeds=[('deploy-node', 1.0)], config=TraversalConfig())
+print(result.fired)  # nodes that were visited
+print(result.context)  # assembled context string
+
+# 4. Learn from outcome
+apply_outcome(graph, fired_nodes=result.fired, outcome=1.0)  # +1 good, -1 bad
+
+# 5. Save
+graph.save('graph.json')
+```
+
+### As a CLI (for AI agents)
+
+```bash
+# Split workspace into graph + node texts for embedding
+crabpath init --workspace ./my-workspace --output ./crabpath-data.json
+
+# Query (provide seeds from your own index/embedding)
+# CLI also supports --query-vector for vector inputs in production use
+crabpath query 'how do I deploy' --graph graph.json --index index.json --top 8 --json
+
+# Learn from feedback
+crabpath learn --graph graph.json --outcome 1.0 --fired-ids node1,node2,node3
+
+# Check health
+crabpath health --graph graph.json
+```
+
+### The key insight: CrabPath is a pure graph engine
+
+CrabPath NEVER makes network calls. It doesn't compute embeddings or call LLMs. You provide:
+- **Embeddings**: embed node texts with whatever you have (OpenAI, Gemini, Ollama, local)
+- **Routing decisions** (optional): a callback that picks which edges to follow
+
+This means CrabPath works everywhere — air-gapped, CI, local dev. Zero API keys required.
 
 ## How It Works
 
-- `split_workspace` scans markdown, creates nodes, and sibling edges.
-- `VectorIndex` stores caller-provided embeddings and performs cosine search.
-- `traverse` follows reflex/habitual/dormant tiers with edge damping.
-- `apply_outcome` applies policy-style updates and Hebbian co-firing.
-- `apply_decay` slowly forgets weak unused edges.
-- `autotune` suggests safe defaults from graph health metrics.
+- Workspace files split into nodes, connected by weighted edges
+- Three tiers: **reflex** (>0.8, auto-follow), **habitual** (0.3-0.8, deliberate), **dormant** (<0.3, suppressed)
+- **Edge damping**: w' = w × 0.3^k prevents traversal loops without hard limits
+- **Learning**: +1 outcomes strengthen paths (policy gradient). -1 outcomes create inhibitory edges
+- **Decay**: unused edges fade over time (configurable half-life)
+- **Autotune**: self-regulating health metrics keep the graph bounded
+
+## Key Results (from simulation)
+
+| Claim | Result |
+|-------|--------|
+| Context reduction | 30 → 2.7 nodes (91%) |
+| Procedural compilation | 0.27 → 1.0 weight in 50 queries |
+| Negation suppression | bad path → -0.94 weight |
+| Selective forgetting | 93.3% dormant after 100 queries |
+| Loop prevention | edge damping discovers branches |
+| Domain separation | 5 cross-file bridges emerge |
+| Brain death recovery | autotune detects + recovers |
+| Individuation | 27 edges diverge between twin agents |
+
+## Paper
+
+Full technical details, math, and methodology: [jonathangu.com/crabpath/](https://jonathangu.com/crabpath/)
 
 ## Links
 
-Paper / GitHub / PyPI
+- Paper: [jonathangu.com/crabpath/](https://jonathangu.com/crabpath/)
+- PyPI: [pypi.org/project/crabpath/](https://pypi.org/project/crabpath/)
+- ClawHub: [clawhub.ai](https://clawhub.ai/) (search 'crabpath')
+
+## License
+
+Apache 2.0
+
+## Notes on reproducibility
+
+This project intentionally keeps the README focused on behavior and interfaces.
+
+- Benchmarks and tuning constants live in code and tests.
+- Simulation claims come from deterministic runs in the repository test suite.
+- If you are building an automation loop, persist `graph.json` after learning so weight updates remain stateful.
