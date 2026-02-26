@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crabpath"
-version = "1.0.1"
+version = "1.0.2"
 description = "🦀 CrabPath: The Graph is the Prompt. LLM-guided memory traversal with learned pointer weights."
 readme = "README.md"
 license = "Apache-2.0"
