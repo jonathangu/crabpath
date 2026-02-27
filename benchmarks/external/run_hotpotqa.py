@@ -11,7 +11,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from crabpath import Edge, Graph, LearningConfig, Node, TraversalConfig, VectorIndex, apply_outcome, apply_outcome_pg, traverse
+from openclawbrain import Edge, Graph, LearningConfig, Node, TraversalConfig, VectorIndex, apply_outcome, apply_outcome_pg, traverse
 
 
 EMBED_MODEL = "text-embedding-3-small"

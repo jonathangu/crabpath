@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crabpath.graph import Edge, Graph, Node, remove_from_state
-from crabpath.index import VectorIndex
+from openclawbrain.graph import Edge, Graph, Node, remove_from_state
+from openclawbrain.index import VectorIndex
 
 
 def _simple_graph() -> Graph:

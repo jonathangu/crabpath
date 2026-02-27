@@ -10,7 +10,7 @@ The fix is simple:
 3. Penalize those fired nodes immediately and optionally inject a `CORRECTION` node.
 
 `correct.py` and `learn_correction.py` only handle `CORRECTION` nodes.
-For `TEACHING` (new factual additions), use `crabpath inject --type TEACHING` directly.
+For `TEACHING` (new factual additions), use `openclawbrain inject --type TEACHING` directly.
 
 ## Example scripts
 

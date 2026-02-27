@@ -10,10 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openai import OpenAI
-from crabpath import Node, VectorIndex, load_state, save_state, split_workspace
-from crabpath._batch import batch_or_single_embed
-from crabpath.autotune import measure_health
-from crabpath.replay import extract_queries, extract_queries_from_dir, replay_queries
+from openclawbrain import Node, VectorIndex, load_state, save_state, split_workspace
+from openclawbrain._batch import batch_or_single_embed
+from openclawbrain.autotune import measure_health
+from openclawbrain.replay import extract_queries, extract_queries_from_dir, replay_queries
 
 from connect_learnings import apply_correction_inhibitions, connect_learning_nodes
 

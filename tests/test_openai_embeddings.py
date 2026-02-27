@@ -8,9 +8,9 @@ import json
 import sys
 import types
 
-from crabpath.cli import _resolve_embedder
-from crabpath.cli import _resolve_llm
-from crabpath.cli import main
+from openclawbrain.cli import _resolve_embedder
+from openclawbrain.cli import _resolve_llm
+from openclawbrain.cli import main
 
 
 def _install_fake_openai(monkeypatch, vector_fn):
@@ -41,7 +41,7 @@ def _install_fake_openai(monkeypatch, vector_fn):
     fake_openai.OpenAI = FakeOpenAI
     monkeypatch.setitem(sys.modules, "openai", fake_openai)
 
-    module_name = "crabpath.openai_embeddings"
+    module_name = "openclawbrain.openai_embeddings"
     sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
     return calls, module
@@ -85,7 +85,7 @@ def _install_fake_openai_llm(monkeypatch, responses):
     fake_openai.OpenAI = FakeOpenAI
     monkeypatch.setitem(sys.modules, "openai", fake_openai)
 
-    module_name = "crabpath.openai_llm"
+    module_name = "openclawbrain.openai_llm"
     sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
     module._client = None

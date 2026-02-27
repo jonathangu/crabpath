@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from crabpath.hasher import HashEmbedder, default_embed_batch
+from openclawbrain.hasher import HashEmbedder, default_embed_batch
 
 
 def test_hash_embedder_deterministic() -> None:

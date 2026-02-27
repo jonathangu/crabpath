@@ -1,14 +1,36 @@
-"""State persistence helpers for CrabPath."""
+"""State persistence helpers for OpenClawBrain."""
 
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .graph import Edge, Graph, Node
 from .hasher import HashEmbedder
 from .index import VectorIndex
+
+DEFAULT_STATE_ROOT = (Path.home() / ".openclawbrain").resolve()
+LEGACY_STATE_ROOT = (Path.home() / ".crabpath").resolve()
+
+
+def resolve_default_state_path(profile: str = "main") -> str:
+    """Resolve the default state path for a profile with crabpath compatibility fallback."""
+    safe_profile = Path(profile).name
+    openclaw_profile = DEFAULT_STATE_ROOT / safe_profile
+    crabpath_profile = LEGACY_STATE_ROOT / safe_profile
+
+    if not openclaw_profile.exists() and crabpath_profile.exists():
+        warnings.warn(
+            f"Default state directory ~/.openclawbrain/{safe_profile} was not found. "
+            f"Falling back to existing legacy directory ~/.crabpath/{safe_profile}.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        openclaw_profile = crabpath_profile
+
+    return str(openclaw_profile / "state.json")
 
 
 class ManagedState:

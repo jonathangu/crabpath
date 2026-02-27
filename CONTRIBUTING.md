@@ -38,7 +38,7 @@ Use the deterministic simulation harness to validate behavior after graph and CL
 
 1. Bump version in both:
    - `pyproject.toml`
-   - `crabpath/__init__.py`
+   - `openclawbrain/__init__.py`
 2. Create a release commit/tag:
    - `git tag vX.Y.Z`
 3. Push commits and tags:

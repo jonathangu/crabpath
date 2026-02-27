@@ -1,3 +1,14 @@
+## v12.0.0 (2026-02-27)
+
+### Rename and compatibility
+- Rebranded package from `crabpath` to `openclawbrain` (formerly CrabPath).
+- `pyproject.toml` metadata updated: `name`, `version`, `description`, keywords, and scripts.
+- Added compatibility entry points in `pyproject.toml` for `openclawbrain`, `ocb`, and `crabpath`.
+- Added `crabpath` shim package that re-exports `openclawbrain` with deprecation warnings.
+- Added default-state behavior for `~/.openclawbrain/` with fallback to `~/.crabpath/` when migrating.
+- Updated CLI state resolution and daemon/progress naming to the new package.
+- Added backward-compatibility tests for shim imports and warning behavior.
+
 ## v11.2.0 (2026-02-27)
 
 ### New: Persistent worker daemon (`crabpath daemon`)

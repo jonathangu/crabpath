@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from crabpath import TraversalConfig, apply_outcome, load_state, save_state, traverse
-from crabpath.journal import log_learn, log_query
+from openclawbrain import TraversalConfig, apply_outcome, load_state, save_state, traverse
+from openclawbrain.journal import log_learn, log_query
 from callbacks import make_embed_fn
 
 

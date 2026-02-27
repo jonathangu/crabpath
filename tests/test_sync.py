@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crabpath import DEFAULT_AUTHORITY_MAP, VectorIndex, load_state, save_state
-from crabpath.cli import main
-from crabpath.hasher import HashEmbedder, default_embed
-from crabpath.graph import Graph
-from crabpath.split import split_workspace
-from crabpath.sync import sync_workspace
+from openclawbrain import DEFAULT_AUTHORITY_MAP, VectorIndex, load_state, save_state
+from openclawbrain.cli import main
+from openclawbrain.hasher import HashEmbedder, default_embed
+from openclawbrain.graph import Graph
+from openclawbrain.split import split_workspace
+from openclawbrain.sync import sync_workspace
 
 
 def _write_state(path: Path, graph: Graph, index: VectorIndex) -> None:

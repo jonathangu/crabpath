@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from crabpath import HashEmbedder, apply_outcome, inject_correction, load_state, save_state
+from openclawbrain import HashEmbedder, apply_outcome, inject_correction, load_state, save_state
 
 
 CORRECTION_LOG = "injected_corrections.jsonl"

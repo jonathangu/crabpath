@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from crabpath import (
+from openclawbrain import (
     DecayConfig,
     Edge,
     Graph,

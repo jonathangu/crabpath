@@ -6,7 +6,7 @@ import json
 import random
 from pathlib import Path
 
-from crabpath import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, traverse
+from openclawbrain import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, traverse
 
 
 RESULT_PATH = Path(__file__).with_name("noise_robustness_results.json")

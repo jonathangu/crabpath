@@ -6,12 +6,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from crabpath.cli import main
-from crabpath.decay import DecayConfig, apply_decay
-from crabpath.graph import Edge, Graph, Node
-from crabpath.learn import apply_outcome
-from crabpath.split import split_workspace
-from crabpath.traverse import TraversalConfig, traverse
+from openclawbrain.cli import main
+from openclawbrain.decay import DecayConfig, apply_decay
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.learn import apply_outcome
+from openclawbrain.split import split_workspace
+from openclawbrain.traverse import TraversalConfig, traverse
 
 
 

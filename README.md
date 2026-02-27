@@ -1,8 +1,10 @@
-# CrabPath — learned retrieval routing for AI agents
+# OpenClawBrain (formerly CrabPath)
+
+> Migration note: this project was renamed from `crabpath` to `openclawbrain`. Legacy `crabpath` imports continue to work via a warning-only compatibility shim.
 
 > Your retrieval routes become the prompt — assembled by learned routing, not top-k similarity.
 
-**Current release: v11.2.0**
+**Current release: v12.0.0**
 
 **Setup:** [Setup Guide](docs/setup-guide.md)
 
@@ -21,7 +23,7 @@
 ## Install
 
 ```bash
-pip install crabpath
+pip install openclawbrain
 ```
 
 See also: [Setup Guide](docs/setup-guide.md) for a complete local configuration walkthrough.
@@ -38,10 +40,10 @@ See also: [Setup Guide](docs/setup-guide.md) for a complete local configuration 
 
 ```bash
 # 1. Build a brain from the sample workspace
-crabpath init --workspace examples/sample_workspace --output /tmp/brain
+openclawbrain init --workspace examples/sample_workspace --output /tmp/brain
 
 # 2. Check state health
-crabpath doctor --state /tmp/brain/state.json
+openclawbrain doctor --state /tmp/brain/state.json
 # output
 # PASS: python_version
 # PASS: state_file_exists
@@ -49,27 +51,27 @@ crabpath doctor --state /tmp/brain/state.json
 # Summary: 8/9 checks passed
 
 # 3. Query (text output includes node IDs)
-crabpath query "how do I deploy" --state /tmp/brain/state.json --top 3 --json
+openclawbrain query "how do I deploy" --state /tmp/brain/state.json --top 3 --json
 # output (abbrev.)
 # {"fired": ["deploy.md::0", "deploy.md::1", "deploy.md::2"], ...}
 
 # 4. Teach it (good path)
-crabpath learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "deploy.md::0,deploy.md::1"
+openclawbrain learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "deploy.md::0,deploy.md::1"
 # output
 # {"edges_updated": 2, "max_weight_delta": 0.155}
 
 # 5. Inject a correction
-crabpath inject --state /tmp/brain/state.json \
+openclawbrain inject --state /tmp/brain/state.json \
   --id "fix::1" --content "Never skip CI for hotfixes" --type CORRECTION
 
 # 5b. Add new knowledge (no correction needed, just a new fact)
-crabpath inject --state /tmp/brain/state.json \
+openclawbrain inject --state /tmp/brain/state.json \
   --id "teaching::monitoring-tip" \
   --content "Check Grafana dashboards before every deploy" \
   --type TEACHING
 
 # 6. Query again and see the route change
-crabpath query "can I skip CI" --state /tmp/brain/state.json --top 3
+openclawbrain query "can I skip CI" --state /tmp/brain/state.json --top 3
 # output
 # fix::1
 # ~~~~~~
@@ -77,7 +79,7 @@ crabpath query "can I skip CI" --state /tmp/brain/state.json --top 3
 # ...
 
 # 7. Re-check health for a quick signal
-crabpath health --state /tmp/brain/state.json
+openclawbrain health --state /tmp/brain/state.json
 ```
 
 ## Correcting mistakes (the main workflow)
@@ -85,7 +87,7 @@ crabpath health --state /tmp/brain/state.json
 When your agent retrieves wrong context, teach CrabPath in one command:
 
 ```bash
-crabpath inject --state brain/state.json \
+openclawbrain inject --state brain/state.json \
   --id "correction::42" \
   --content "Never show API keys in chat messages" \
   --type CORRECTION
@@ -104,7 +106,7 @@ To add knowledge without suppressing anything, use `--type TEACHING` instead.
 When you learn something that isn't in any workspace file, inject it directly:
 
 ```bash
-crabpath inject --state brain/state.json \
+openclawbrain inject --state brain/state.json \
   --id "teaching::codex-spark" \
   --content "Use Codex CLI with gpt-5.3-codex-spark for coding tasks — free on Pro plan" \
   --type TEACHING
@@ -125,14 +127,14 @@ You can also reinforce good retrievals:
 
 ```bash
 # After a query returns helpful context, strengthen those paths
-crabpath learn --state brain/state.json --outcome 1.0 \
+openclawbrain learn --state brain/state.json --outcome 1.0 \
   --fired-ids "deploy.md::0,deploy.md::1"
 ```
 
 Or weaken bad ones:
 
 ```bash
-crabpath learn --state brain/state.json --outcome -1.0 \
+openclawbrain learn --state brain/state.json --outcome -1.0 \
   --fired-ids "monitoring.md::2"
 ```
 
@@ -140,16 +142,16 @@ crabpath learn --state brain/state.json --outcome -1.0 \
 
 ```bash
 # Before learning
-crabpath query "how do we handle incidents" --state /tmp/brain/state.json --top 3
+openclawbrain query "how do we handle incidents" --state /tmp/brain/state.json --top 3
 
 # After one good learn on the best route
-crabpath learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "incidents.md::0,deploy.md::1"
+openclawbrain learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "incidents.md::0,deploy.md::1"
 
 # After one negative learn on a bad route
-crabpath learn --state /tmp/brain/state.json --outcome -1.0 --fired-ids "monitoring.md::2,incidents.md::0"
+openclawbrain learn --state /tmp/brain/state.json --outcome -1.0 --fired-ids "monitoring.md::2,incidents.md::0"
 
 # Query again to observe new routing
-crabpath query "incident runbook for deploy failures" --state /tmp/brain/state.json --top 4
+openclawbrain query "incident runbook for deploy failures" --state /tmp/brain/state.json --top 4
 ```
 
 ## How it compares
@@ -183,7 +185,7 @@ Offline hash embeddings work for trying the product, but real deployments genera
 
 ```python
 from openai import OpenAI
-from crabpath import split_workspace, VectorIndex
+from openclawbrain import split_workspace, VectorIndex
 
 client = OpenAI()
 
@@ -229,12 +231,12 @@ See `examples/openai_embedder/` for a complete example.
 | `info` | Show brain info (nodes, edges, embedder) |
 | `daemon` | Start persistent worker (JSON-RPC over stdio, state loaded once) |
 
-## Persistent Worker (`crabpath daemon`)
+## Persistent Worker (`openclawbrain daemon`)
 
 For production use, run CrabPath as a long-lived daemon that keeps state hot in memory:
 
 ```bash
-crabpath daemon --state ~/.crabpath/main/state.json
+openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
 - Loads `state.json` once at startup (~100-800ms saved per call)
@@ -270,13 +272,13 @@ See `examples/ops/client_example.py` for a Python client and `docs/architecture.
 - Use `apply_outcome_pg` when you want smoother, probability-based updates across alternatives; use `apply_outcome` for a simpler sparse update that only touches traversed edges.
 
 ```python
-from crabpath import apply_outcome_pg, LearningConfig
+from openclawbrain import apply_outcome_pg, LearningConfig
 
 config = LearningConfig(learning_rate=0.1, temperature=1.0, baseline=0.0)
 updates = apply_outcome_pg(graph, fired_nodes=["a", "b", "c"], outcome=1.0, config=config)
 ```
 
-Full derivation: https://jonathangu.com/crabpath/gu2016/
+Full derivation: https://jonathangu.com/openclawbrain/gu2016/
 
 ## Write policy summary
 
@@ -284,7 +286,7 @@ Full derivation: https://jonathangu.com/crabpath/gu2016/
 |-----------|--------|
 | Durable fact | Edit file → sync re-embeds |
 | Correction | Edit file + learn_correction.py |
-| Soft teaching | crabpath inject --type TEACHING |
+| Soft teaching | openclawbrain inject --type TEACHING |
 | Wrong retrieval | learn_correction.py (graph-only) |
 | New rule | Edit AGENTS.md or SOUL.md |
 
@@ -310,7 +312,7 @@ Full derivation: https://jonathangu.com/crabpath/gu2016/
 | `edge_damping` | `0.3` | Per-reuse decay (`weight × 0.3^k`) |
 
 ```python
-from crabpath import traverse, TraversalConfig
+from openclawbrain import traverse, TraversalConfig
 
 result = traverse(
     graph,
@@ -340,7 +342,7 @@ python3 benchmarks/external/run_hotpotqa.py --limit 50
 ## Python API
 
 ```python
-from crabpath import (
+from openclawbrain import (
     split_workspace,
     traverse,
     apply_outcome,
@@ -365,22 +367,22 @@ from crabpath import (
 - **How big:** ~180KB for 20 nodes (hash), ~60MB for 1,600 nodes (OpenAI embeddings)
 - **When to rebuild:** after major workspace restructuring or embedder changes
 - **Embedder changes:** CrabPath stores the embedder name + dimension in state metadata and hard-fails on mismatch — no silent corruption
-- **Merging:** use `crabpath merge` to consolidate similar nodes as the graph grows
+- **Merging:** use `openclawbrain merge` to consolidate similar nodes as the graph grows
 
 ## Cost control
 
 - **Free tier:** hash embeddings work offline with zero API calls. Good for trying CrabPath and small workspaces.
 - **Budget tier:** use OpenAI `text-embedding-3-small` (~$0.02/1M tokens). Embed once at init, cache in state.json.
 - **LLM routing:** optional. `gpt-5-mini` for routing/scoring decisions. Only called during query, not at rest.
-- **Batch init:** `crabpath init` embeds all workspace files in one batch call. Subsequent queries reuse cached vectors.
-- **Upgrade path:** start with hash, switch to real embeddings later by rebuilding state with `crabpath init`.
+- **Batch init:** `openclawbrain init` embeds all workspace files in one batch call. Subsequent queries reuse cached vectors.
+- **Upgrade path:** start with hash, switch to real embeddings later by rebuilding state with `openclawbrain init`.
 
 ## Optional: warm start from sessions
 
 If you have prior conversation logs, replay them:
 
 ```bash
-crabpath replay --state /tmp/brain/state.json --sessions ./sessions/
+openclawbrain replay --state /tmp/brain/state.json --sessions ./sessions/
 ```
 
 Skip this if you are just getting started.
@@ -405,9 +407,9 @@ Three brains run in production on a Mac Mini M4 Pro:
 
 ## Paper + links
 
-[jonathangu.com/crabpath](https://jonathangu.com/crabpath/) — 8 deterministic simulations + production deployment data.
+[jonathangu.com/openclawbrain](https://jonathangu.com/openclawbrain/) — 8 deterministic simulations + production deployment data.
 
-- PyPI: `pip install crabpath`
-- GitHub: [jonathangu/crabpath](https://github.com/jonathangu/crabpath)
-- ClawHub: `clawhub install crabpath`
+- PyPI: `pip install openclawbrain`
+- GitHub: [jonathangu/openclawbrain](https://github.com/jonathangu/openclawbrain)
+- ClawHub: `clawhub install openclawbrain`
 - Benchmarks: `python3 benchmarks/run_benchmark.py` (deterministic per commit; timings vary by machine)

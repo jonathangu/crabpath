@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from crabpath import (
+from openclawbrain import (
     HashEmbedder,
     TraversalConfig,
     VectorIndex,
@@ -20,7 +20,7 @@ from crabpath import (
     split_workspace,
     traverse,
 )
-from crabpath.replay import default_keyword_seed_fn
+from openclawbrain.replay import default_keyword_seed_fn
 
 WORD_RE = re.compile(r"[A-Za-z0-9']+")
 

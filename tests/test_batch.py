@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath._batch import batch_or_single, batch_or_single_embed
-from crabpath.graph import Graph, Node
-from crabpath.split import generate_summaries, split_workspace
+from openclawbrain._batch import batch_or_single, batch_or_single_embed
+from openclawbrain.graph import Graph, Node
+from openclawbrain.split import generate_summaries, split_workspace
 
 
 def test_batch_or_single_uses_batch_fn() -> None:

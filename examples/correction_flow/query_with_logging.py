@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-from crabpath import HashEmbedder, load_state, traverse
+from openclawbrain import HashEmbedder, load_state, traverse
 
 
 FIRE_LOG_TTL_SECONDS = 7 * 24 * 60 * 60

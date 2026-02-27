@@ -6,7 +6,7 @@ import json
 import random
 from pathlib import Path
 
-from crabpath import (
+from openclawbrain import (
     Edge,
     Graph,
     LearningConfig,

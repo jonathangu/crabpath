@@ -8,7 +8,7 @@ import json
 
 from dataclasses import asdict
 
-from crabpath import DEFAULT_AUTHORITY_MAP, sync_workspace
+from openclawbrain import DEFAULT_AUTHORITY_MAP, sync_workspace
 from callbacks import make_embed_fn
 
 

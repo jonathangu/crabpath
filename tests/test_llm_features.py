@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath.graph import Edge, Graph, Node
-from crabpath.learn import maybe_create_node
-from crabpath.merge import apply_merge, suggest_merges
-from crabpath.score import score_retrieval
-from crabpath.split import generate_summaries, split_workspace
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.learn import maybe_create_node
+from openclawbrain.merge import apply_merge, suggest_merges
+from openclawbrain.score import score_retrieval
+from openclawbrain.split import generate_summaries, split_workspace
 
 
 def test_score_retrieval_with_llm_scores() -> None:

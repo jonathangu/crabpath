@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
-from crabpath.split import split_workspace
+from openclawbrain.split import split_workspace
 
 
 def test_split_by_headers_creates_chunked_nodes(tmp_path: Path) -> None:

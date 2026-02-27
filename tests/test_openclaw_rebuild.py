@@ -6,7 +6,7 @@ import types
 from pathlib import Path
 import sys
 
-from crabpath import Graph, Node, VectorIndex, load_state, save_state
+from openclawbrain import Graph, Node, VectorIndex, load_state, save_state
 
 
 def _load_module(path: Path, name: str):

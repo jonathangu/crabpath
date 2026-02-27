@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, traverse
+from openclawbrain import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, traverse
 
 
 RESULT_PATH = Path(__file__).with_name("negation_results.json")

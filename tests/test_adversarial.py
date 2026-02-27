@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crabpath.graph import Edge, Graph, Node
-from crabpath.replay import replay_queries
-from crabpath.split import split_workspace
-from crabpath.traverse import TraversalConfig, traverse
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.replay import replay_queries
+from openclawbrain.split import split_workspace
+from openclawbrain.traverse import TraversalConfig, traverse
 
 
 def test_traverse_handles_empty_content_node() -> None:
