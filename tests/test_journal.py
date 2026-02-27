@@ -30,6 +30,22 @@ def test_log_learn_appends(tmp_path: Path) -> None:
     assert entries[0]["outcome"] == 0.75
 
 
+def test_log_query_and_learn_include_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "journal.jsonl"
+    log_query(
+        query_text="deploy",
+        fired_ids=["a"],
+        node_count=1,
+        journal_path=str(path),
+        metadata={"session_id": "abc"},
+    )
+    log_learn(fired_ids=["a"], outcome=1.0, journal_path=str(path), metadata={"session_id": "abc"})
+
+    entries = read_journal(journal_path=str(path))
+    assert entries[0]["metadata"] == {"session_id": "abc"}
+    assert entries[1]["metadata"] == {"session_id": "abc"}
+
+
 def test_read_journal_last_n(tmp_path: Path) -> None:
     path = tmp_path / "journal.jsonl"
     for idx in range(5):

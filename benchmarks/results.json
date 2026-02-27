@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-02-27T00:59:27.971643+00:00",
+  "generated_at": "2026-02-27T01:35:25.771905+00:00",
   "workspace": "/Users/guclaw/crabpath",
   "query_source": "benchmarks/queries.json",
   "query_count": 20,
-  "graph_nodes": 36,
-  "chunks": 36,
+  "graph_nodes": 49,
+  "chunks": 49,
   "embedder": "hash-v1",
   "embedder_dim": 1024,
   "traversal": {
@@ -15,10 +15,10 @@
   "methods": {
     "keyword_overlap": {
       "scores": {
-        "Recall@3": 0.9416666666666667,
-        "Recall@5": 1.0,
-        "Precision@3": 0.5833333333333333,
-        "MRR": 0.9
+        "Recall@3": 0.8583333333333332,
+        "Recall@5": 0.9583333333333333,
+        "Precision@3": 0.5166666666666667,
+        "MRR": 0.8916666666666666
       },
       "per_query": [
         {
@@ -27,16 +27,17 @@
             "README.md"
           ],
           "predicted_files": [
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md",
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md",
             "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
             "Recall@5": 1.0,
             "Precision@3": 0.3333333333333333,
-            "MRR": 1.0
+            "MRR": 0.3333333333333333
           }
         },
         {
@@ -50,7 +51,7 @@
             "SKILL.md",
             "README.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/hash_embedder/README.md"
           ],
           "scores": {
@@ -69,9 +70,9 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -87,9 +88,9 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md",
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
             "examples/hash_embedder/README.md"
           ],
@@ -109,8 +110,8 @@
           ],
           "predicted_files": [
             "README.md",
-            "REPRODUCE.md",
             "examples/hash_embedder/README.md",
+            "examples/openclaw_adapter/README.md",
             "SKILL.md",
             "examples/openai_embedder/README.md"
           ],
@@ -128,17 +129,17 @@
             "examples/openai_embedder/README.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
-            "REPRODUCE.md",
-            "examples/hash_embedder/README.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
             "Recall@5": 1.0,
             "Precision@3": 0.6666666666666666,
-            "MRR": 0.5
+            "MRR": 1.0
           }
         },
         {
@@ -148,10 +149,11 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md",
-            "examples/openai_embedder/README.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -166,17 +168,17 @@
             "README.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
             "Recall@5": 1.0,
             "Precision@3": 0.3333333333333333,
-            "MRR": 0.5
+            "MRR": 1.0
           }
         },
         {
@@ -186,10 +188,10 @@
           ],
           "predicted_files": [
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "SKILL.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -207,13 +209,13 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
-            "SKILL.md",
             "examples/hash_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 0.5,
-            "Recall@5": 1.0,
+            "Recall@5": 0.5,
             "Precision@3": 0.3333333333333333,
             "MRR": 0.5
           }
@@ -225,8 +227,9 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
+            "SKILL.md",
             "REPRODUCE.md",
             "examples/openai_embedder/README.md"
           ],
@@ -245,15 +248,16 @@
             "REPRODUCE.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md",
-            "examples/openai_embedder/README.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
+            "examples/hash_embedder/README.md",
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 1.0,
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
             "MRR": 1.0
           }
         },
@@ -264,10 +268,10 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
-            "SKILL.md",
-            "README.md",
-            "examples/hash_embedder/README.md"
+            "examples/hash_embedder/README.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -286,13 +290,14 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "SKILL.md",
             "examples/openai_embedder/README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.6666666666666666,
             "Recall@5": 1.0,
-            "Precision@3": 1.0,
+            "Precision@3": 0.6666666666666666,
             "MRR": 1.0
           }
         },
@@ -303,17 +308,17 @@
             "README.md"
           ],
           "predicted_files": [
-            "REPRODUCE.md",
-            "examples/hash_embedder/README.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md",
             "SKILL.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.5,
             "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 0.5
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
           }
         },
         {
@@ -325,9 +330,9 @@
           "predicted_files": [
             "README.md",
             "examples/openai_embedder/README.md",
-            "REPRODUCE.md",
+            "examples/openclaw_adapter/README.md",
             "examples/hash_embedder/README.md",
-            "SKILL.md"
+            "REPRODUCE.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -344,10 +349,10 @@
           ],
           "predicted_files": [
             "SKILL.md",
-            "README.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "README.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -363,17 +368,17 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
-            "README.md",
-            "REPRODUCE.md",
             "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "SKILL.md",
+            "REPRODUCE.md",
+            "README.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.5,
             "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -383,10 +388,10 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/openai_embedder/README.md",
-            "SKILL.md",
-            "examples/hash_embedder/README.md"
+            "examples/hash_embedder/README.md",
+            "README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -401,27 +406,27 @@
             "REPRODUCE.md"
           ],
           "predicted_files": [
-            "REPRODUCE.md",
             "SKILL.md",
+            "REPRODUCE.md",
             "README.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openclaw_adapter/README.md",
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
             "Recall@5": 1.0,
             "Precision@3": 0.3333333333333333,
-            "MRR": 1.0
+            "MRR": 0.5
           }
         }
       ]
     },
     "hash_embed_similarity": {
       "scores": {
-        "Recall@3": 0.9333333333333332,
-        "Recall@5": 0.9833333333333332,
-        "Precision@3": 0.5833333333333334,
-        "MRR": 0.9333333333333332
+        "Recall@3": 0.8416666666666666,
+        "Recall@5": 0.9583333333333333,
+        "Precision@3": 0.5166666666666667,
+        "MRR": 0.85
       },
       "per_query": [
         {
@@ -431,9 +436,10 @@
           ],
           "predicted_files": [
             "README.md",
+            "examples/openclaw_adapter/agents_hook.md",
             "SKILL.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -452,12 +458,14 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
+            "examples/hash_embedder/README.md",
+            "examples/openclaw_adapter/README.md",
             "REPRODUCE.md"
           ],
           "scores": {
-            "Recall@3": 0.6666666666666666,
-            "Recall@5": 0.6666666666666666,
-            "Precision@3": 0.6666666666666666,
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
             "MRR": 1.0
           }
         },
@@ -468,11 +476,11 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md",
-            "examples/hash_embedder/README.md",
-            "examples/openai_embedder/README.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "examples/hash_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -492,7 +500,7 @@
             "README.md",
             "examples/hash_embedder/README.md",
             "examples/openai_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -509,11 +517,11 @@
             "examples/hash_embedder/README.md"
           ],
           "predicted_files": [
-            "README.md",
             "examples/hash_embedder/README.md",
+            "README.md",
             "SKILL.md",
             "examples/openai_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -532,8 +540,8 @@
             "README.md",
             "SKILL.md",
             "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "examples/hash_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -551,7 +559,9 @@
           "predicted_files": [
             "SKILL.md",
             "README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md",
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -570,7 +580,7 @@
             "SKILL.md",
             "examples/hash_embedder/README.md",
             "examples/openai_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -587,7 +597,9 @@
           "predicted_files": [
             "README.md",
             "REPRODUCE.md",
-            "SKILL.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -603,17 +615,17 @@
             "SKILL.md"
           ],
           "predicted_files": [
+            "examples/openclaw_adapter/README.md",
             "README.md",
-            "examples/openai_embedder/README.md",
-            "SKILL.md",
             "examples/hash_embedder/README.md",
-            "REPRODUCE.md"
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -623,17 +635,17 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
             "README.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "SKILL.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.5,
             "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
           }
         },
         {
@@ -644,16 +656,17 @@
             "REPRODUCE.md"
           ],
           "predicted_files": [
+            "examples/openclaw_adapter/agents_hook.md",
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md",
+            "examples/openclaw_adapter/README.md",
             "examples/hash_embedder/README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 1.0,
-            "MRR": 1.0
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 0.5
           }
         },
         {
@@ -664,8 +677,8 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "examples/hash_embedder/README.md",
-            "SKILL.md",
             "examples/openai_embedder/README.md"
           ],
           "scores": {
@@ -684,14 +697,15 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "SKILL.md",
             "README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openclaw_adapter/agents_hook.md",
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.6666666666666666,
             "Recall@5": 1.0,
-            "Precision@3": 1.0,
+            "Precision@3": 0.6666666666666666,
             "MRR": 1.0
           }
         },
@@ -706,7 +720,7 @@
             "examples/openai_embedder/README.md",
             "SKILL.md",
             "README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 0.5,
@@ -724,14 +738,14 @@
           "predicted_files": [
             "examples/openai_embedder/README.md",
             "examples/hash_embedder/README.md",
+            "examples/openclaw_adapter/README.md",
             "README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "SKILL.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
+            "Recall@3": 0.5,
             "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
+            "Precision@3": 0.3333333333333333,
             "MRR": 1.0
           }
         },
@@ -744,7 +758,9 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md",
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -760,8 +776,8 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "examples/hash_embedder/README.md",
             "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md",
             "SKILL.md",
             "README.md",
             "REPRODUCE.md"
@@ -781,9 +797,9 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
+            "examples/openclaw_adapter/README.md",
             "SKILL.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -799,10 +815,10 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
             "REPRODUCE.md",
-            "examples/openai_embedder/README.md",
-            "examples/hash_embedder/README.md"
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -815,10 +831,10 @@
     },
     "crabpath_traverse": {
       "scores": {
-        "Recall@3": 0.8916666666666666,
-        "Recall@5": 0.9166666666666666,
-        "Precision@3": 0.55,
-        "MRR": 0.9333333333333332
+        "Recall@3": 0.825,
+        "Recall@5": 0.825,
+        "Precision@3": 0.5,
+        "MRR": 0.85
       },
       "per_query": [
         {
@@ -828,7 +844,7 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md"
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -847,12 +863,12 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md"
+            "examples/hash_embedder/README.md"
           ],
           "scores": {
-            "Recall@3": 0.6666666666666666,
-            "Recall@5": 0.6666666666666666,
-            "Precision@3": 0.6666666666666666,
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
             "MRR": 1.0
           }
         },
@@ -863,8 +879,9 @@
             "SKILL.md"
           ],
           "predicted_files": [
+            "README.md",
             "SKILL.md",
-            "README.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -899,8 +916,8 @@
             "examples/hash_embedder/README.md"
           ],
           "predicted_files": [
-            "README.md",
             "examples/hash_embedder/README.md",
+            "README.md",
             "SKILL.md"
           ],
           "scores": {
@@ -937,7 +954,7 @@
           "predicted_files": [
             "SKILL.md",
             "README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -970,7 +987,8 @@
           ],
           "predicted_files": [
             "README.md",
-            "REPRODUCE.md"
+            "REPRODUCE.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -986,15 +1004,14 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "README.md",
-            "examples/openai_embedder/README.md",
-            "SKILL.md"
+            "examples/openclaw_adapter/README.md",
+            "README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -1004,14 +1021,16 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
-            "README.md"
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
+            "README.md",
+            "REPRODUCE.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
           }
         },
         {
@@ -1022,14 +1041,14 @@
             "REPRODUCE.md"
           ],
           "predicted_files": [
-            "README.md",
-            "SKILL.md"
+            "examples/openclaw_adapter/agents_hook.md",
+            "README.md"
           ],
           "scores": {
-            "Recall@3": 0.6666666666666666,
-            "Recall@5": 0.6666666666666666,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.3333333333333333,
+            "Recall@5": 0.3333333333333333,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -1039,7 +1058,8 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "README.md"
+            "README.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1057,13 +1077,12 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "SKILL.md",
             "README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 1.0,
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
             "MRR": 1.0
           }
         },
@@ -1075,8 +1094,7 @@
           ],
           "predicted_files": [
             "examples/hash_embedder/README.md",
-            "examples/openai_embedder/README.md",
-            "SKILL.md"
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 0.5,
@@ -1110,7 +1128,8 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1126,14 +1145,13 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "examples/hash_embedder/README.md",
             "examples/openai_embedder/README.md",
-            "SKILL.md",
-            "README.md"
+            "examples/hash_embedder/README.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 0.5,
-            "Recall@5": 1.0,
+            "Recall@5": 0.5,
             "Precision@3": 0.3333333333333333,
             "MRR": 0.3333333333333333
           }
@@ -1145,7 +1163,8 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "README.md"
+            "README.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1161,8 +1180,9 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1175,10 +1195,10 @@
     },
     "crabpath_with_replay": {
       "scores": {
-        "Recall@3": 0.9083333333333332,
-        "Recall@5": 0.9583333333333333,
-        "Precision@3": 0.5666666666666668,
-        "MRR": 0.9333333333333332
+        "Recall@3": 0.825,
+        "Recall@5": 0.85,
+        "Precision@3": 0.5,
+        "MRR": 0.85
       },
       "per_query": [
         {
@@ -1188,8 +1208,7 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/agents_hook.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1208,12 +1227,12 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md"
+            "examples/hash_embedder/README.md"
           ],
           "scores": {
-            "Recall@3": 0.6666666666666666,
-            "Recall@5": 0.6666666666666666,
-            "Precision@3": 0.6666666666666666,
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
             "MRR": 1.0
           }
         },
@@ -1224,9 +1243,9 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
             "README.md",
-            "REPRODUCE.md"
+            "SKILL.md",
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1245,7 +1264,7 @@
             "SKILL.md",
             "README.md",
             "examples/hash_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1262,10 +1281,9 @@
             "examples/hash_embedder/README.md"
           ],
           "predicted_files": [
-            "README.md",
             "examples/hash_embedder/README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "README.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1283,8 +1301,7 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "examples/openai_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1302,7 +1319,7 @@
           "predicted_files": [
             "SKILL.md",
             "README.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1319,8 +1336,7 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "examples/hash_embedder/README.md",
-            "REPRODUCE.md"
+            "examples/hash_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1336,7 +1352,8 @@
           ],
           "predicted_files": [
             "README.md",
-            "REPRODUCE.md"
+            "REPRODUCE.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1352,16 +1369,14 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "README.md",
-            "examples/openai_embedder/README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -1371,15 +1386,16 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "SKILL.md",
+            "examples/openclaw_adapter/README.md",
+            "examples/openclaw_adapter/agents_hook.md",
             "README.md",
             "REPRODUCE.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 0.6666666666666666,
-            "MRR": 1.0
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
           }
         },
         {
@@ -1390,15 +1406,14 @@
             "REPRODUCE.md"
           ],
           "predicted_files": [
-            "README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/agents_hook.md",
+            "README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 1.0,
-            "MRR": 1.0
+            "Recall@3": 0.3333333333333333,
+            "Recall@5": 0.3333333333333333,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
           }
         },
         {
@@ -1409,7 +1424,7 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
-            "SKILL.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1427,13 +1442,12 @@
           ],
           "predicted_files": [
             "REPRODUCE.md",
-            "SKILL.md",
             "README.md"
           ],
           "scores": {
-            "Recall@3": 1.0,
-            "Recall@5": 1.0,
-            "Precision@3": 1.0,
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
             "MRR": 1.0
           }
         },
@@ -1445,13 +1459,11 @@
           ],
           "predicted_files": [
             "examples/hash_embedder/README.md",
-            "examples/openai_embedder/README.md",
-            "SKILL.md",
-            "README.md"
+            "examples/openai_embedder/README.md"
           ],
           "scores": {
             "Recall@3": 0.5,
-            "Recall@5": 1.0,
+            "Recall@5": 0.5,
             "Precision@3": 0.3333333333333333,
             "MRR": 1.0
           }
@@ -1482,7 +1494,7 @@
           "predicted_files": [
             "README.md",
             "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1498,11 +1510,10 @@
             "SKILL.md"
           ],
           "predicted_files": [
-            "examples/hash_embedder/README.md",
             "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md",
             "SKILL.md",
-            "README.md",
-            "REPRODUCE.md"
+            "README.md"
           ],
           "scores": {
             "Recall@3": 0.5,
@@ -1519,7 +1530,7 @@
           "predicted_files": [
             "REPRODUCE.md",
             "README.md",
-            "SKILL.md"
+            "examples/openclaw_adapter/README.md"
           ],
           "scores": {
             "Recall@3": 1.0,
@@ -1535,8 +1546,9 @@
           ],
           "predicted_files": [
             "README.md",
-            "SKILL.md",
-            "REPRODUCE.md"
+            "examples/openclaw_adapter/README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
           ],
           "scores": {
             "Recall@3": 1.0,

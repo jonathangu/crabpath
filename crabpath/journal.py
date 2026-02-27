@@ -19,7 +19,13 @@ def log_event(event: dict, journal_path: str | None = None) -> None:
         f.write(json.dumps(event, default=str) + "\n")
 
 
-def log_query(query_text: str, fired_ids: list[str], node_count: int, journal_path: str | None = None) -> None:
+def log_query(
+    query_text: str,
+    fired_ids: list[str],
+    node_count: int,
+    journal_path: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
     log_event(
         {
             "type": "query",
@@ -27,17 +33,24 @@ def log_query(query_text: str, fired_ids: list[str], node_count: int, journal_pa
             "fired": fired_ids,
             "fired_count": len(fired_ids),
             "node_count": node_count,
+            "metadata": metadata,
         },
         journal_path,
     )
 
 
-def log_learn(fired_ids: list[str], outcome: float, journal_path: str | None = None) -> None:
+def log_learn(
+    fired_ids: list[str],
+    outcome: float,
+    journal_path: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> None:
     log_event(
         {
             "type": "learn",
             "fired": fired_ids,
             "outcome": outcome,
+            "metadata": metadata,
         },
         journal_path,
     )

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crabpath.graph import Edge, Graph, Node
+from crabpath.graph import Edge, Graph, Node, remove_from_state
+from crabpath.index import VectorIndex
 
 
 def _simple_graph() -> Graph:
@@ -56,6 +57,23 @@ def test_graph_remove_nonexistent_node_is_noop() -> None:
     graph = _simple_graph()
     graph.remove_node("missing")
     assert graph.node_count() == 3
+    assert graph.edge_count() == 0
+
+
+def test_remove_from_state_removes_graph_node_and_index_entry() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_node(Node("b", "B"))
+    graph.add_edge(Edge("a", "b", 0.5))
+
+    index = VectorIndex()
+    index.upsert("a", [1.0, 0.0])
+    index.upsert("b", [0.0, 1.0])
+
+    remove_from_state(graph, index, "a")
+
+    assert graph.get_node("a") is None
+    assert "a" not in index._vectors
     assert graph.edge_count() == 0
 
 

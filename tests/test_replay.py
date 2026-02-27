@@ -94,6 +94,39 @@ def test_extract_queries_from_directory(tmp_path: Path) -> None:
     assert extract_queries_from_dir(sessions) == ["one", "two", "three"]
 
 
+def test_extract_queries_filtering_since_timestamp(tmp_path: Path) -> None:
+    path = tmp_path / "session.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "one", "ts": 100}),
+                json.dumps({"role": "user", "content": "two", "ts": 200}),
+                json.dumps({"role": "user", "content": "three", "ts": 300}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert extract_queries(path, since_ts=150.0) == ["two", "three"]
+
+
+def test_replay_queries_filters_by_since_ts() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "beta chunk", metadata={"file": "a.md"}))
+    graph.add_edge(Edge("a", "b", 0.5))
+
+    stats = replay_queries(
+        graph=graph,
+        queries=[("alpha", 1.0), ("alpha", 2.0), ("alpha", 3.0)],
+        config=TraversalConfig(max_hops=1),
+        since_ts=2.0,
+    )
+
+    assert stats["queries_replayed"] == 1
+    assert stats["last_replayed_ts"] == 3.0
+
+
 def test_replay_strengthens_edges() -> None:
     graph = Graph()
     graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
@@ -122,3 +155,20 @@ def test_replay_creates_cross_file_edges() -> None:
     assert graph._edges["b"]["a"].source == "b"
     assert graph._edges["b"]["a"].target == "a"
 
+
+def test_replay_queries_supports_outcome_fn_negative_learning() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
+    graph.add_node(Node("bad", "bad", metadata={"file": "a.md"}))
+    graph.add_edge(Edge("a", "bad", 0.8))
+
+    stats = replay_queries(
+        graph=graph,
+        queries=["bad example", "normal"],
+        config=TraversalConfig(max_hops=1),
+        outcome_fn=lambda query: -1.0 if "bad" in query else 1.0,
+    )
+
+    assert stats["queries_replayed"] == 2
+    assert graph._edges["a"]["bad"].kind == "inhibitory"
+    assert graph._edges["a"]["bad"].weight < 0.8

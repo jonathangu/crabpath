@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import fnmatch
 import os
+import json
+import re
 from collections.abc import Callable
 from collections.abc import Iterable
 import threading
@@ -38,6 +40,19 @@ SPLIT_PROMPT = (
     "concept or topic. Return JSON: {\"sections\": [\"section1 text\", \"section2 text\"]}"
 )
 SUMMARY_PROMPT = 'Write a one-line summary for this node. Return JSON: {"summary": "..."}'
+SUPPORTED_FILE_EXTENSIONS = (
+    ".md",
+    ".txt",
+    ".py",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".rst",
+    ".html",
+)
 
 
 def _extract_sections(raw: str) -> list[str]:
@@ -50,7 +65,24 @@ def _extract_sections(raw: str) -> list[str]:
                 return parsed
     except (Exception, SystemExit):  # noqa: BLE001
         pass
-    return []
+    return [] 
+
+
+def _normalize_extensions(file_extensions: Iterable[str] | None = None) -> set[str]:
+    if file_extensions is None:
+        return set(SUPPORTED_FILE_EXTENSIONS)
+
+    normalized = set()
+    for extension in file_extensions:
+        if not extension:
+            continue
+        ext = extension.lower()
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        normalized.add(ext)
+    if not normalized:
+        return set(SUPPORTED_FILE_EXTENSIONS)
+    return normalized
 
 
 def generate_summaries(
@@ -151,6 +183,77 @@ def _chunk_markdown(content: str) -> list[str]:
     return chunks or [content]
 
 
+def _chunk_python(content: str) -> list[str]:
+    """Split Python source on def/class declarations, fallback to markdown style."""
+
+    lines = content.splitlines()
+    chunks: list[str] = []
+    current: list[str] = []
+    saw_blocks = False
+
+    def is_block_start(line: str) -> bool:
+        return bool(re.match(r"^\s*(def|class)\s+\w+", line))
+
+    for line in lines:
+        if is_block_start(line):
+            chunk = "\n".join(current).strip()
+            if chunk:
+                chunks.append(chunk)
+            current = [line]
+            saw_blocks = True
+            continue
+        current.append(line)
+
+    final = "\n".join(current).strip()
+    if final:
+        chunks.append(final)
+
+    return chunks if saw_blocks else _chunk_markdown(content)
+
+
+def _chunk_json(content: str) -> list[str]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return [content]
+
+    if not isinstance(payload, dict):
+        return [content]
+    if len(payload) <= 1 or len(content) < 3200:
+        return [content]
+
+    chunks: list[str] = []
+    for key, value in payload.items():
+        chunks.append(f"{key}:\n{json.dumps(value, indent=2, ensure_ascii=False)}")
+    return chunks
+
+
+def _chunk_config_like(content: str) -> list[str]:
+    """Fallback key-based splitting for YAML/TOML style documents."""
+    lines = content.splitlines()
+    if len(content) < 3200 or len(lines) < 12:
+        return [content]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    has_split = False
+    for line in lines:
+        is_key = bool(re.match(r"^\w[\w-]*\s*:", line)) and not line.startswith(" ")
+        is_section = bool(re.match(r"^\[.+\]", line.strip()))
+        if (is_key or is_section) and current:
+            chunk = "\n".join(current).strip()
+            if chunk:
+                chunks.append(chunk)
+                has_split = True
+            current = []
+        current.append(line)
+
+    tail = "\n".join(current).strip()
+    if tail:
+        chunks.append(tail)
+    return chunks if has_split else [content]
+
+
 def _sibling_weight(file_id: str, idx: int) -> float:
     """Return deterministic sibling baseline weight around ``0.5`` with tiny jitter."""
     digest = hashlib.sha256(f"{file_id}:{idx}".encode("utf-8")).hexdigest()[:8]
@@ -243,11 +346,12 @@ def split_workspace(
     should_use_llm_for_file: Callable[[str, str], bool] | None = None,
     split_progress: Callable[[int, int, str, str], None] | None = None,
     llm_parallelism: int = 8,
+    file_extensions: Iterable[str] | None = None,
 ) -> tuple[Graph, dict[str, str]]:
-    """Read markdown files from workspace and convert them into a graph.
+    """Split workspace files and convert them into a graph.
 
     Args:
-        workspace_dir: Directory containing markdown source files.
+        workspace_dir: Directory containing source files.
 
     Returns:
         ``(graph, texts)`` where each ``texts[node_id]`` is the chunk content for
@@ -260,6 +364,7 @@ def split_workspace(
         raise ValueError("max_depth must be >= 0")
 
     excludes = _normalize_excludes(exclude)
+    extensions = _normalize_extensions(file_extensions)
     gitignore_patterns = _load_gitignore_patterns(workspace)
 
     if llm_parallelism <= 0:
@@ -286,7 +391,7 @@ def split_workspace(
         for filename in sorted(file_names):
             rel = (rel_dir / filename).as_posix() if rel_dir.parts else filename
             file_path = Path(dir_path) / filename
-            if not file_path.is_file() or file_path.suffix.lower() != ".md":
+            if not file_path.is_file() or file_path.suffix.lower() not in extensions:
                 continue
             if _should_skip_path(rel, excludes, gitignore_patterns):
                 continue
@@ -324,7 +429,17 @@ def split_workspace(
     llm_request_map: dict[str, tuple[int, str, str]] = {}
     for idx, rel, text, use_llm in split_plan:
         if not use_llm:
-            text_chunks_by_index[idx] = _chunk_markdown(text)
+            suffix = Path(rel).suffix.lower()
+            if suffix == ".py":
+                text_chunks_by_index[idx] = _chunk_python(text)
+            elif suffix in {".txt", ".rst", ".md", ".html"}:
+                text_chunks_by_index[idx] = _chunk_markdown(text)
+            elif suffix == ".json":
+                text_chunks_by_index[idx] = _chunk_json(text)
+            elif suffix in {".yaml", ".yml", ".toml", ".cfg", ".ini"}:
+                text_chunks_by_index[idx] = _chunk_config_like(text)
+            else:
+                text_chunks_by_index[idx] = _chunk_markdown(text)
             _report(rel, "heuristic")
             continue
         llm_requests.append({"id": rel, "system": SPLIT_PROMPT, "user": text})
@@ -345,7 +460,17 @@ def split_workspace(
         chunks = _extract_sections(response) if response else []
         mode = "llm" if chunks else "heuristic"
         if not chunks:
-            chunks = _chunk_markdown(text)
+            suffix = Path(rel).suffix.lower()
+            if suffix == ".py":
+                chunks = _chunk_python(text)
+            elif suffix in {".txt", ".rst", ".md", ".html"}:
+                chunks = _chunk_markdown(text)
+            elif suffix == ".json":
+                chunks = _chunk_json(text)
+            elif suffix in {".yaml", ".yml", ".toml", ".cfg", ".ini"}:
+                chunks = _chunk_config_like(text)
+            else:
+                chunks = _chunk_markdown(text)
         text_chunks_by_index[idx] = chunks
         _report(source_rel, mode)
 

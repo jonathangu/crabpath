@@ -18,6 +18,7 @@ CrabPath v8.0.0 is a deterministic graph engine that builds traversable context 
 
 ```bash
 pip install crabpath
+clawhub install crabpath         # ClawHub (for OpenClaw agents)
 ```
 
 ## 4. Quick Start (out of the box)

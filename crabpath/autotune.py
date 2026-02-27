@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .graph import Graph
+from .decay import DecayConfig
+from .learn import LearningConfig
 
 
 @dataclass
@@ -72,7 +74,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
     """Return suggested adjustments for the four health knobs.
 
     Knobs:
-    - ``decay_half_life``
+    - ``half_life``
     - ``hebbian_increment``
     - ``reflex_threshold``
     - ``promotion_threshold``
@@ -82,7 +84,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
     if health.dormant_pct > 0.65:
         deltas.append(
             {
-                "knob": "decay_half_life",
+                "knob": "half_life",
                 "suggested_adjustment": "decrease",
                 "value": 10,
                 "reason": "Many dormant edges; slow decay to preserve low-signal paths longer.",
@@ -110,7 +112,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
     if health.reflex_pct > 0.8:
         deltas.append(
             {
-                "knob": "decay_half_life",
+                "knob": "half_life",
                 "suggested_adjustment": "increase",
                 "value": 15,
                 "reason": "Predominantly reflex traffic; relax decay to avoid over-pruning.",
@@ -138,3 +140,39 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
         )
 
     return deltas
+
+
+def _clamp_half_life(value: float) -> int:
+    return max(10, min(500, int(round(value))))
+
+
+def apply_autotune(
+    graph: Graph,
+    suggestions: list[dict],
+    decay_config: DecayConfig | None = None,
+    learning_config: LearningConfig | None = None,
+) -> tuple[DecayConfig, LearningConfig]:
+    """Apply suggestions and return the resulting tuning configurations."""
+    del graph
+    decay_cfg = DecayConfig() if decay_config is None else DecayConfig(**decay_config.__dict__)
+    learning_cfg = LearningConfig() if learning_config is None else LearningConfig(**learning_config.__dict__)
+
+    for suggestion in suggestions:
+        knob = suggestion.get("knob")
+        adjustment = suggestion.get("suggested_adjustment")
+        value = suggestion.get("value")
+        if knob is None or adjustment not in {"increase", "decrease"} or not isinstance(value, (int, float)):
+            continue
+
+        delta = value if adjustment == "increase" else -value
+        if knob == "half_life":
+            decay_cfg = DecayConfig(half_life=_clamp_half_life(decay_cfg.half_life + delta))
+        elif knob == "hebbian_increment":
+            learning_cfg = LearningConfig(**learning_cfg.__dict__ | {"hebbian_increment": learning_cfg.hebbian_increment + delta})
+        elif knob == "promotion_threshold":
+            learning_cfg = LearningConfig(
+                **learning_cfg.__dict__
+                | {"promotion_threshold": max(1, round(learning_cfg.promotion_threshold + delta))}
+            )
+
+    return decay_cfg, learning_cfg

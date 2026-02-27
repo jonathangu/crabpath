@@ -11,6 +11,32 @@ from .hasher import HashEmbedder
 from .index import VectorIndex
 
 
+class ManagedState:
+    """Context manager that keeps graph and index state in sync."""
+
+    def __init__(self, path, auto_save_every: int = 10):
+        self.graph, self.index, self.meta = load_state(path)
+        self.path = path
+        self.ops = 0
+        self.auto_save_every = auto_save_every
+
+    def save(self) -> None:
+        save_state(graph=self.graph, index=self.index, path=self.path, meta=self.meta)
+
+    def tick(self) -> None:
+        self.ops += 1
+        if self.auto_save_every <= 0:
+            return
+        if self.ops % self.auto_save_every == 0:
+            self.save()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.save()
+
+
 def save_state(
     graph: Graph,
     index: VectorIndex,
@@ -18,12 +44,20 @@ def save_state(
     *,
     embedder_name: str | None = None,
     embedder_dim: int | None = None,
+    meta: dict[str, object] | None = None,
 ) -> None:
     """Save graph and index together to one JSON file."""
     if embedder_name is None:
         embedder_name = "hash-v1"
     if embedder_dim is None:
         embedder_dim = HashEmbedder().dim
+
+    metadata = dict(meta or {})
+    metadata.setdefault("schema_version", 1)
+    metadata.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    metadata["node_count"] = graph.node_count()
+    metadata["embedder_name"] = embedder_name
+    metadata["embedder_dim"] = embedder_dim
 
     payload = {
         "graph": {
@@ -49,13 +83,7 @@ def save_state(
             ],
         },
         "index": index._vectors,
-        "meta": {
-            "embedder_name": embedder_name,
-            "embedder_dim": embedder_dim,
-            "schema_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "node_count": graph.node_count(),
-        },
+        "meta": metadata,
     }
     Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

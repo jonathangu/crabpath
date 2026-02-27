@@ -8,6 +8,7 @@ import pytest
 
 from crabpath.cli import main
 from crabpath.hasher import default_embed
+from crabpath.journal import read_journal
 
 
 def _write_graph_payload(path: Path) -> None:
@@ -126,6 +127,12 @@ def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
     out = json.loads(capsys.readouterr().out.strip())
     assert out["fired"]
     assert "a" in out["fired"]
+    assert out["tier_thresholds"] == {
+        "reflex": ">= 0.8",
+        "habitual": "0.3 - 0.8",
+        "dormant": "< 0.3",
+        "inhibitory": "< -0.3",
+    }
 
 
 def test_query_auto_embeds(tmp_path, capsys) -> None:
@@ -205,6 +212,94 @@ def test_cli_state_flag_query(tmp_path, capsys) -> None:
     out = json.loads(capsys.readouterr().out.strip())
     assert out["fired"]
     assert "a" in out["fired"]
+
+
+def test_query_max_context_chars_cap_in_query_command(tmp_path, capsys) -> None:
+    state_path = tmp_path / "state.json"
+    graph_payload = {
+        "nodes": [
+            {"id": "a", "content": "alpha " * 80, "summary": "", "metadata": {"file": "a.md"}},
+            {"id": "b", "content": "zeta " * 80, "summary": "", "metadata": {"file": "b.md"}},
+        ],
+        "edges": [{"source": "a", "target": "b", "weight": 0.95, "kind": "sibling", "metadata": {}}],
+    }
+    _write_state(state_path, graph_payload=graph_payload)
+
+    code = main(
+        [
+            "query",
+            "alpha",
+            "--state",
+            str(state_path),
+            "--top",
+            "1",
+            "--max-context-chars",
+            "120",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert len(out["context"]) <= 120
+
+
+def test_query_journal_written_to_state_directory(tmp_path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    main(
+        [
+            "query",
+            "alpha",
+            "--state",
+            str(state_path),
+            "--json",
+        ]
+    )
+    journal_path = tmp_path / "journal.jsonl"
+    assert journal_path.exists()
+
+    entries = read_journal(journal_path=str(journal_path))
+    assert entries
+    assert entries[-1]["type"] == "query"
+
+
+def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 1.0}),
+                json.dumps({"role": "user", "content": "alpha", "ts": 2.0}),
+                json.dumps({"role": "user", "content": "alpha", "ts": 3.0}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(["replay", "--state", str(state_path), "--sessions", str(sessions), "--json"])
+    assert code == 0
+    first = json.loads(capsys.readouterr().out.strip())
+    assert first["queries_replayed"] == 3
+    assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 3.0
+
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 4.0}),
+                json.dumps({"role": "user", "content": "alpha", "ts": 5.0}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    code = main(["replay", "--state", str(state_path), "--sessions", str(sessions), "--json"])
+    assert code == 0
+    second = json.loads(capsys.readouterr().out.strip())
+    assert second["queries_replayed"] == 2
+    assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 5.0
 
 
 def test_cli_dimension_mismatch_error(tmp_path) -> None:

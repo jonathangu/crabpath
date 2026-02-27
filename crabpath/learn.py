@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from collections.abc import Callable
 
 from .graph import Edge, Graph, Node
 from ._util import _extract_json, _first_line
+from .decay import apply_decay
 
 
 def _unique_node_id(content: str, graph: Graph) -> str:
@@ -73,12 +75,25 @@ def maybe_create_node(
 
 @dataclass
 class LearningConfig:
-    """Hyperparameters for policy-like updates."""
+    """Hyperparameters for policy-like updates.
+
+    learning_rate controls outcome update magnitude. Default is ``0.1``. For
+    small graphs (<100 nodes) use ``0.05``-``0.1``. For large graphs (>1000
+    nodes) use ``0.01``-``0.05``. Higher values are faster but more volatile.
+
+    promotion_threshold is the minimum co-firing count before Hebbian creates an
+    edge. Default is ``2``. Lower values create more edges, higher values are
+    more selective.
+    """
 
     learning_rate: float = 0.1
     discount: float = 0.95
     hebbian_increment: float = 0.06
+    promotion_threshold: int = 2
     weight_bounds: tuple[float, float] = (-1.0, 1.0)
+
+
+_apply_outcome_call_count = 0
 
 
 def _clip_weight(weight: float, bounds: tuple[float, float]) -> float:
@@ -89,34 +104,58 @@ def hebbian_update(
     graph: Graph,
     fired_nodes: list[str],
     config: LearningConfig | None = None,
+    max_hebbian_pairs: int = 20,
 ) -> None:
-    """Apply co-firing updates between all observed node pairs.
+    """Apply co-firing updates between observed node pairs.
 
-    Every fired node pair in the trajectory strengthens their edge by
-    ``hebbian_increment``. Edges are created if missing.
+    By default, every observed pair receives ``hebbian_increment``. When
+    ``max_hebbian_pairs`` is set and the fire trajectory is long, only the
+    closest firing-order pairs are updated, capped to ``max_hebbian_pairs`` total
+    updates.
     """
     cfg = config or LearningConfig()
     if len(fired_nodes) < 2:
         return
 
-    for i, source_id in enumerate(fired_nodes):
-        for target_id in fired_nodes[i + 1 :]:
-            edge = graph._edges.get(source_id, {}).get(target_id)
-            if edge is None:
-                graph.add_edge(
-                    Edge(
-                        source=source_id,
-                        target=target_id,
-                        weight=cfg.hebbian_increment,
-                        kind="sibling",
-                    )
+    if max_hebbian_pairs <= 0:
+        return
+
+    max_pairs = max_hebbian_pairs
+    if len(fired_nodes) <= math.sqrt(2 * max_pairs):
+        pair_indexes = [(i, j) for i in range(len(fired_nodes)) for j in range(i + 1, len(fired_nodes))]
+    else:
+        candidates: list[tuple[int, int, int]] = []
+        for source_idx in range(len(fired_nodes)):
+            for target_idx in range(source_idx + 1, len(fired_nodes)):
+                distance = target_idx - source_idx
+                candidates.append((distance, source_idx, target_idx))
+
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        pair_indexes = [(source_idx, target_idx) for _, source_idx, target_idx in candidates[:max_pairs]]
+
+    for source_idx, target_idx in pair_indexes:
+        co_firing_count = target_idx - source_idx + 1
+        if co_firing_count < cfg.promotion_threshold:
+            continue
+
+        source_id = fired_nodes[source_idx]
+        target_id = fired_nodes[target_idx]
+        edge = graph._edges.get(source_id, {}).get(target_id)
+        if edge is None:
+            graph.add_edge(
+                Edge(
+                    source=source_id,
+                    target=target_id,
+                    weight=cfg.hebbian_increment,
+                    kind="sibling",
                 )
-            else:
-                edge.weight = _clip_weight(
-                    edge.weight + cfg.hebbian_increment,
-                    cfg.weight_bounds,
-                )
-                graph._edges[source_id][target_id] = edge
+            )
+        else:
+            edge.weight = _clip_weight(
+                edge.weight + cfg.hebbian_increment,
+                cfg.weight_bounds,
+            )
+            graph._edges[source_id][target_id] = edge
 
 
 def apply_outcome(
@@ -124,18 +163,30 @@ def apply_outcome(
     fired_nodes: list[str],
     outcome: float,
     config: LearningConfig | None = None,
+    auto_decay: bool = False,
+    decay_interval: int = 10,
 ) -> dict:
     """Apply outcome-based policy updates over the full fired trajectory.
 
     Positive outcome strengthens traversed edges; negative outcome weakens them.
     Negative outcomes may create inhibitory edges when missing.
     Returns a mapping of ``"source->target"`` to weight delta.
+
+    When ``auto_decay`` is true, the graph is decayed after every
+    ``decay_interval`` successful calls to this function.
     """
+    global _apply_outcome_call_count
     cfg = config or LearningConfig()
     updates: dict[str, float] = defaultdict(float)
 
     if len(fired_nodes) < 2:
         hebbian_update(graph, fired_nodes, cfg)
+        _apply_outcome_call_count += 1
+        if auto_decay:
+            if decay_interval <= 0:
+                decay_interval = 1
+            if _apply_outcome_call_count % decay_interval == 0:
+                apply_decay(graph)
         return dict(updates)
 
     sign = 1.0 if outcome >= 0 else -1.0
@@ -159,10 +210,18 @@ def apply_outcome(
             continue
 
         edge.weight = _clip_weight(edge.weight + delta, cfg.weight_bounds)
-        if sign < 0 and edge.weight <= 0:
+        if sign < 0:
             edge.kind = "inhibitory"
         graph._edges[source_id][target_id] = edge
         updates[f"{source_id}->{target_id}"] = delta
 
     hebbian_update(graph, fired_nodes, cfg)
+
+    _apply_outcome_call_count += 1
+    if auto_decay:
+        if decay_interval <= 0:
+            decay_interval = 1
+        if _apply_outcome_call_count % decay_interval == 0:
+            apply_decay(graph)
+
     return dict(updates)

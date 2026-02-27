@@ -1,18 +1,18 @@
 """CrabPath public API."""
 
-from .graph import Edge, Graph, Node
+from .graph import Edge, Graph, Node, remove_from_state
 from .index import VectorIndex
 from ._batch import batch_or_single, batch_or_single_embed
 from .autotune import GraphHealth, autotune, measure_health
 from .decay import DecayConfig, apply_decay
-from .learn import LearningConfig, apply_outcome
+from .learn import LearningConfig, apply_outcome, maybe_create_node
 from .hasher import HashEmbedder, default_embed, default_embed_batch
 from .score import score_retrieval
 from .connect import apply_connections, suggest_connections
 from .merge import apply_merge, suggest_merges
 from .replay import replay_queries
 from .split import generate_summaries, split_workspace
-from .store import load_state, save_state
+from .store import ManagedState, load_state, save_state
 from .traverse import TraversalResult, TraversalConfig, traverse
 
 __all__ = [
@@ -31,9 +31,12 @@ __all__ = [
     "measure_health",
     "autotune",
     "traverse",
+    "ManagedState",
     "split_workspace",
     "generate_summaries",
     "apply_outcome",
+    "remove_from_state",
+    "maybe_create_node",
     "apply_decay",
     "batch_or_single",
     "batch_or_single_embed",
@@ -47,4 +50,4 @@ __all__ = [
     "replay_queries",
 ]
 
-__version__ = "8.0.0"
+__version__ = "9.0.0"

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from crabpath.autotune import GraphHealth, autotune, measure_health
+from dataclasses import fields
+
+from crabpath.autotune import GraphHealth, apply_autotune, autotune, measure_health
+from crabpath.decay import DecayConfig
 from crabpath.graph import Edge, Graph, Node
+from crabpath.learn import LearningConfig
+from crabpath.traverse import TraversalConfig
 
 
 def test_measure_health_on_empty_graph() -> None:
@@ -79,7 +84,7 @@ def test_autotune_dormant_graph_recommends_decay() -> None:
     deltas = autotune(graph, health)
     knobs = {change["knob"] for change in deltas}
 
-    assert "decay_half_life" in knobs
+    assert "half_life" in knobs
     assert deltas[0]["suggested_adjustment"] in {"decrease", "increase"}
 
 
@@ -93,7 +98,7 @@ def test_autotune_reflex_graph_recommends_longer_half_life() -> None:
 
     health = measure_health(graph)
     deltas = autotune(graph, health)
-    assert any(item["knob"] == "decay_half_life" for item in deltas)
+    assert any(item["knob"] == "half_life" for item in deltas)
     assert any(item["suggested_adjustment"] == "increase" for item in deltas)
 
 
@@ -131,5 +136,51 @@ def test_autotune_recommendations_are_actionable() -> None:
 
     deltas = autotune(graph, measure_health(graph))
     knobs = {change["knob"] for change in deltas}
-    assert knobs.issubset({"decay_half_life", "promotion_threshold", "hebbian_increment", "reflex_threshold"})
+    assert knobs.issubset(
+        {"half_life", "promotion_threshold", "hebbian_increment", "reflex_threshold"}
+    )
     assert all("suggested_adjustment" in change for change in deltas)
+
+
+def test_autotune_suggestions_match_config_fields() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
+    graph.add_node(Node("c", "C", metadata={"file": "c.md"}))
+
+    graph.add_edge(Edge("a", "b", 0.1))
+    graph.add_edge(Edge("b", "c", 0.1))
+    graph.add_edge(Edge("c", "a", 0.95))
+
+    deltas = autotune(graph, measure_health(graph))
+    assert deltas
+
+    suggestion_keys = {change["knob"] for change in deltas}
+    valid_fields = set(fields(DecayConfig))
+    valid_fields.update(fields(LearningConfig))
+    valid_fields.update(fields(TraversalConfig))
+    valid_field_names = {item.name for item in valid_fields}
+
+    assert suggestion_keys.issubset(valid_field_names)
+
+
+def test_apply_autotune_updates_configs() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_edge(Edge("a", "a", 0.1))
+    suggestions = [
+        {"knob": "half_life", "suggested_adjustment": "decrease", "value": 1000},
+        {"knob": "promotion_threshold", "suggested_adjustment": "increase", "value": 1},
+        {"knob": "hebbian_increment", "suggested_adjustment": "increase", "value": 0.04},
+    ]
+
+    decay_cfg, learn_cfg = apply_autotune(
+        graph=graph,
+        suggestions=suggestions,
+        decay_config=DecayConfig(half_life=20),
+        learning_config=LearningConfig(hebbian_increment=0.06, promotion_threshold=2),
+    )
+
+    assert decay_cfg.half_life == 10
+    assert learn_cfg.promotion_threshold == 3
+    assert learn_cfg.hebbian_increment == 0.1

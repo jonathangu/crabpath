@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from .index import VectorIndex
 
 
 @dataclass
@@ -70,6 +71,10 @@ class Graph:
             self._edges[source].pop(node_id, None)
             if not self._edges[source]:
                 self._edges.pop(source, None)
+
+    def remove_node_cascade(self, node_id: str) -> None:
+        """Remove a node and all incident edges."""
+        self.remove_node(node_id)
 
     def remove_edge(self, source: str, target: str) -> None:
         """Remove an edge if present."""
@@ -170,3 +175,9 @@ class Graph:
                 )
             )
         return graph
+
+
+def remove_from_state(graph: Graph, index: VectorIndex, node_id: str) -> None:
+    """Remove a node from both graph and vector index."""
+    graph.remove_node_cascade(node_id)
+    index.remove(node_id)

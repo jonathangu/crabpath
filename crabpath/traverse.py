@@ -2,23 +2,43 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
-from .graph import Graph
+from .graph import Edge, Graph
 
 
-RouteFn = Callable[[str | None, list[str]], list[str]]
+RouteFn = Callable[[str | None, list[Edge], str], list[str]]
 
 
 @dataclass
 class TraversalConfig:
-    """Configuration controlling query-time traversal."""
+    """Configuration controlling query-time traversal.
+
+    Attributes:
+        max_hops: maximum traversal depth from seed nodes.
+        beam_width: maximum frontier size per hop.
+        edge_damping: multiplicative decay per reuse
+            (``w = w * damping^use_count``). Lower values are more
+            aggressive loop prevention. Default ``0.3``.
+        fire_threshold: minimum activation score required for a node to fire.
+            Default ``0.0``.
+        visit_penalty: penalty for revisiting a node in the same traversal.
+        inhibitory_threshold: edges with weight <= this value actively suppress
+            target nodes. Default ``-0.3``.
+        max_context_chars: maximum characters in assembled context; ``None``
+            means unlimited.
+        reflex_threshold: minimum edge weight for reflex-tier edges.
+        habitual_range: inclusive lower/upper bounds for habitual-tier edges.
+    """
 
     max_hops: int = 15
     beam_width: int = 3
     edge_damping: float = 0.3
+    fire_threshold: float = 0.0
     visit_penalty: float = 0.0
+    inhibitory_threshold: float = -0.3
+    max_context_chars: int | None = None
     reflex_threshold: float = 0.8
     habitual_range: tuple[float, float] = (0.3, 0.8)
 
@@ -41,14 +61,94 @@ class TraversalResult:
     fired: list[str]
     steps: list[TraversalStep]
     context: str
+    tier_summary: dict[str, str] = field(default_factory=dict)
 
 
 def _tier(weight: float, config: TraversalConfig) -> str:
+    if weight <= config.inhibitory_threshold:
+        return "inhibitory"
     if weight >= config.reflex_threshold:
         return "reflex"
     if config.habitual_range[0] <= weight < config.habitual_range[1]:
         return "habitual"
     return "dormant"
+
+
+def _tier_summary(config: TraversalConfig) -> dict[str, str]:
+    return {
+        "reflex": f">= {config.reflex_threshold}",
+        "habitual": f"{config.habitual_range[0]} - {config.habitual_range[1]}",
+        "dormant": f"< {config.habitual_range[0]}",
+        "inhibitory": f"< {config.inhibitory_threshold}",
+    }
+
+
+def _incoming_inhibition(
+    graph: Graph,
+    node_id: str,
+    active_scores: dict[str, float],
+    config: TraversalConfig,
+) -> float:
+    if not active_scores:
+        return 0.0
+
+    total = 0.0
+    for source_node, edge in graph.incoming(node_id):
+        if source_node.id not in active_scores or edge.weight >= 0:
+            continue
+        if edge.weight > config.inhibitory_threshold:
+            continue
+        total += active_scores[source_node.id] * edge.weight
+    return total
+
+
+def _build_context(
+    graph: Graph,
+    fired_scores: dict[str, float],
+    fired: list[str],
+    max_chars: int | None,
+) -> str:
+    if not fired:
+        return ""
+    if max_chars is None:
+        ordered = sorted(
+            ((node_id, fired_scores.get(node_id, 0.0), idx) for idx, node_id in enumerate(fired)),
+            key=lambda item: (item[1], -item[2]),
+            reverse=True,
+        )
+        return "\n\n".join(
+            graph.get_node(node_id).content
+            for node_id, _score, _order in ordered
+            if graph.get_node(node_id) is not None
+        )
+
+    if max_chars <= 0:
+        return ""
+
+    ordered = sorted(
+        ((node_id, fired_scores.get(node_id, 0.0), idx) for idx, node_id in enumerate(fired)),
+        key=lambda item: (item[1], -item[2]),
+        reverse=True,
+    )
+    chunks: list[str] = []
+    used = 0
+    for idx, (node_id, _score, _order) in enumerate(ordered):
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+
+        separator = "\n\n" if chunks else ""
+        if used + len(separator) + len(node.content) <= max_chars:
+            chunks.append(node.content)
+            used += len(separator) + len(node.content)
+            continue
+
+        if not chunks:
+            chunks.append(node.content[:max_chars])
+            used = max_chars
+        break
+
+    return "\n\n".join(chunks)
 
 
 def traverse(
@@ -63,10 +163,15 @@ def traverse(
     Edge tiers:
     - reflex (w >= threshold): auto follow.
     - habitual (within range): follow by weight, or by ``route_fn`` when supplied.
+    - inhibitory: suppress target activation.
     - dormant: skipped.
 
     Every directed edge is discounted by ``damping^k`` where ``k`` is how many times
     that edge was used in this traversal episode.
+
+    Args:
+    route_fn: callback receives ``(node_id, candidate_edges, context)`` where
+    ``candidate_edges`` are graph edges and ``context`` is ``query_text``.
     """
     cfg = config or TraversalConfig()
     if cfg.max_hops <= 0 or cfg.beam_width <= 0:
@@ -76,9 +181,24 @@ def traverse(
     if not valid_seeds:
         return TraversalResult([], [], "")
 
-    frontier: list[tuple[str, float]] = sorted(valid_seeds, key=lambda item: item[1], reverse=True)[: cfg.beam_width]
+    seed_scores = {node_id: score for node_id, score in valid_seeds}
+    frontier: list[tuple[str, float]] = []
+    for node_id, base_score in sorted(valid_seeds, key=lambda item: item[1], reverse=True):
+        suppression = _incoming_inhibition(graph, node_id, seed_scores, cfg)
+        adjusted_score = base_score + suppression
+        if suppression <= cfg.inhibitory_threshold:
+            continue
+        if adjusted_score < cfg.fire_threshold:
+            continue
+        frontier.append((node_id, adjusted_score))
+
+    frontier = frontier[: cfg.beam_width]
+    if not frontier:
+        return TraversalResult([], [], "")
+
     seen_counts: dict[str, int] = {node_id: 1 for node_id, _ in frontier}
     fired: list[str] = [node_id for node_id, _ in frontier]
+    fired_scores: dict[str, float] = {node_id: score for node_id, score in frontier}
     steps: list[TraversalStep] = []
     used_edges: dict[tuple[str, str], int] = {}
 
@@ -87,22 +207,31 @@ def traverse(
             break
 
         raw_candidates: list[tuple[str, str, float, float, str]] = []
+        habitual_by_source: dict[str, list[tuple[str, str, float, float, str, Edge]]] = {}
         for source_id, source_score in frontier:
             for target_node, edge in graph.outgoing(source_id):
-                tier = _tier(edge.weight, cfg)
-                if tier == "dormant":
-                    continue
-
                 use_count = used_edges.get((source_id, target_node.id), 0)
                 effective = edge.weight * (cfg.edge_damping**use_count)
                 if effective <= 0.0:
                     continue
+
+                tier = _tier(edge.weight, cfg)
+                if tier in {"dormant", "inhibitory"}:
+                    continue
+
                 score = source_score * effective
+                inhibition = _incoming_inhibition(graph, target_node.id, dict(fired_scores), cfg)
+                if inhibition <= cfg.inhibitory_threshold:
+                    continue
+                score += inhibition
                 if target_node.id in seen_counts:
                     score -= cfg.visit_penalty
-                raw_candidates.append(
-                    (source_id, target_node.id, score, effective, tier)
-                )
+                if score < cfg.fire_threshold:
+                    continue
+
+                raw_candidates.append((source_id, target_node.id, score, effective, tier))
+                if tier == "habitual":
+                    habitual_by_source.setdefault(source_id, []).append((source_id, target_node.id, score, effective, tier, edge))
 
         if not raw_candidates:
             break
@@ -111,15 +240,16 @@ def traverse(
         habitual = [item for item in raw_candidates if item[4] == "habitual"]
 
         selected: list[tuple[str, str, float, float, str]] = []
-
         if route_fn is not None and habitual:
-            wanted = set(route_fn(query_text, [target_id for _, target_id, _, _, _ in habitual]))
-            if wanted:
-                selected.extend(item for item in habitual if item[1] in wanted)
+            for source_id in sorted(habitual_by_source):
+                candidates = habitual_by_source[source_id]
+                wanted = set(route_fn(source_id, [candidate[-1] for candidate in candidates], query_text or ""))
+                selected.extend((s, t, score, effective, tier) for s, t, score, effective, tier, _ in candidates if t in wanted)
+            selected.extend(reflexive)
         else:
             selected.extend(sorted(habitual, key=lambda item: item[2], reverse=True))
+            selected.extend(sorted(reflexive, key=lambda item: item[2], reverse=True))
 
-        selected.extend(sorted(reflexive, key=lambda item: item[2], reverse=True))
         selected = sorted(selected, key=lambda item: item[2], reverse=True)
 
         next_frontier: list[tuple[str, float]] = []
@@ -140,6 +270,7 @@ def traverse(
             else:
                 seen_counts[target_id] += 1
 
+            fired_scores[target_id] = max(fired_scores.get(target_id, float("-inf")), score)
             used_edges[(source_id, target_id)] = used_edges.get((source_id, target_id), 0) + 1
             steps.append(
                 TraversalStep(
@@ -153,6 +284,7 @@ def traverse(
             next_frontier.append((target_id, score))
 
         frontier = next_frontier
+        fired_scores.update(next_frontier)
 
-    context = "\n\n".join(node.content for node in [graph.get_node(node_id) for node_id in fired] if node)
-    return TraversalResult(fired=fired, steps=steps, context=context)
+    context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
+    return TraversalResult(fired=fired, steps=steps, context=context, tier_summary=_tier_summary(cfg))

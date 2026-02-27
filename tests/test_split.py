@@ -183,3 +183,40 @@ def test_split_with_llm_parse_fallback_to_headers(tmp_path: Path) -> None:
     graph, texts = split_workspace(str(workspace), llm_fn=bad_llm)
     assert len(graph.nodes()) == 2
     assert texts["note.md::0"].startswith("## Intro")
+
+
+def test_split_json_file_with_long_payload_handles_supported_extension(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_json"
+    workspace.mkdir()
+    content = json.dumps({f"key{i}": list(range(100)) for i in range(30)}, ensure_ascii=False)
+    (workspace / "payload.json").write_text(content, encoding="utf-8")
+
+    graph, texts = split_workspace(str(workspace), file_extensions=(".json",))
+    assert graph.node_count() == len(texts)
+    assert graph.node_count() >= 1
+
+
+def test_split_python_file_chunks_by_definitions(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_py"
+    workspace.mkdir()
+    (workspace / "sample.py").write_text(
+        "import os\n\n\ndef first():\n    return 1\n\nclass Thing:\n    pass\n\n\ndef second():\n    return 2\n",
+        encoding="utf-8",
+    )
+
+    graph, texts = split_workspace(str(workspace), file_extensions=(".py",))
+    assert len(graph.nodes()) >= 2
+    node_contents = list(texts.values())
+    assert any(chunk.startswith("def first") for chunk in node_contents)
+    assert any(chunk.startswith("class Thing") for chunk in node_contents)
+    assert any(chunk.startswith("def second") for chunk in node_contents)
+
+
+def test_split_text_file_uses_blank_line_split(tmp_path: Path) -> None:
+    workspace = tmp_path / "split_text"
+    workspace.mkdir()
+    (workspace / "notes.txt").write_text("First paragraph.\n\nSecond paragraph.\n\nThird paragraph.", encoding="utf-8")
+
+    graph, texts = split_workspace(str(workspace), file_extensions=(".txt",))
+    assert len(graph.nodes()) == 3
+    assert len(texts) == 3

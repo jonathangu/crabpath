@@ -38,7 +38,14 @@ def batch_or_single_embed(
     embed_batch_fn: Callable[[list[tuple[str, str]]], dict[str, list[float]]] | None = None,
     max_workers: int = 8,
 ) -> dict[str, list[float]]:
-    """Execute embedding requests using a batch callback when available, otherwise parallel single calls."""
+    """Execute embedding requests with either batched or single-text callbacks.
+
+    Contract:
+    - ``texts`` is always ``list[tuple[node_id, text]]`` for both single and batch paths.
+    - ``embed_fn`` receives only ``text`` and returns ``list[float]``.
+    - ``embed_batch_fn`` receives ``list[tuple[node_id, text]]`` and returns
+      ``dict[node_id, list[float]]``.
+    """
     if embed_batch_fn is not None:
         return embed_batch_fn(texts)
     if embed_fn is None:

@@ -44,7 +44,7 @@ def test_habitual_tier_calls_route_fn() -> None:
         graph,
         [("a", 1.0)],
         config=TraversalConfig(max_hops=1, beam_width=2, reflex_threshold=0.95),
-        route_fn=lambda _query, cands: ["c"] if "c" in cands else [],
+        route_fn=lambda _query, cands, _context: ["c"] if any(edge.target == "c" for edge in cands) else [],
     )
 
     assert result.fired == ["a", "c"]
@@ -131,7 +131,7 @@ def test_route_fn_empty_culls_all_habitual_choices() -> None:
         graph,
         [("a", 1.0)],
         config=TraversalConfig(max_hops=3, beam_width=2, reflex_threshold=0.95),
-        route_fn=lambda _query, cands: [],
+        route_fn=lambda _query, cands, _context: [],
     )
 
     assert result.fired == ["a"]
@@ -150,7 +150,7 @@ def test_route_fn_always_picks_same_node_and_damping_applies() -> None:
         graph,
         [("a", 1.0)],
         config=TraversalConfig(max_hops=4, beam_width=1, edge_damping=0.2),
-        route_fn=lambda _query, cands: [cands[0]] if cands else [],
+        route_fn=lambda _query, cands, _context: [cands[0].target] if cands else [],
     )
 
     assert len(result.steps) == 4
@@ -199,6 +199,31 @@ def test_traversal_skips_inhibitory_edges() -> None:
     result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=2, beam_width=2, reflex_threshold=0.95))
     assert result.fired == ["a", "c"]
     assert result.steps[0].to_node == "c"
+
+
+def test_incoming_inhibitory_edges_can_suppress_seed_node() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_node(Node("b", "B"))
+    graph.add_node(Node("c", "C"))
+    graph.add_edge(Edge("a", "b", 0.8))
+    graph.add_edge(Edge("a", "b", -0.9, kind="inhibitory"))
+    graph.add_edge(Edge("c", "a", -0.9, kind="inhibitory"))
+
+    result = traverse(graph, [("a", 1.0), ("b", 1.0)], config=TraversalConfig(max_hops=1))
+    assert "b" not in result.fired
+
+
+def test_traversal_context_respects_max_context_chars() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A " * 80))
+    graph.add_node(Node("b", "B " * 80))
+    graph.add_node(Node("c", "C"))
+    graph.add_edge(Edge("a", "b", 0.95))
+    graph.add_edge(Edge("b", "c", 0.95))
+
+    result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=2, beam_width=1, max_context_chars=100))
+    assert len(result.context) <= 100
 
 
 def test_edge_damping_factor_one_steps_until_hops() -> None:
@@ -315,3 +340,17 @@ def test_traversal_tier_classification_is_stable() -> None:
     result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=1, beam_width=2, reflex_threshold=0.8))
     tiers = [step.tier for step in result.steps]
     assert tiers == ["reflex", "habitual"]
+
+
+def test_tier_summary_in_result() -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_edge(Edge("a", "b", 0.2))
+
+    result = traverse(graph, [("a", 1.0)], config=TraversalConfig())
+    assert result.tier_summary == {
+        "reflex": ">= 0.8",
+        "habitual": "0.3 - 0.8",
+        "dormant": "< 0.3",
+        "inhibitory": "< -0.3",
+    }
