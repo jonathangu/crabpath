@@ -26,3 +26,9 @@ crabpath inject --state ~/.crabpath/AGENT/state.json \
 ```
 
 **Health:** `crabpath health --state ~/.crabpath/AGENT/state.json`
+
+**Maintenance** (structural ops — runs automatically via harvester cron, but can also run manually):
+```bash
+crabpath maintain --state ~/.crabpath/AGENT/state.json --tasks health,decay,prune,merge
+```
+Dry-run first: add `--dry-run` to preview changes without applying.
