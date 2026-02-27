@@ -101,6 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
     info_group = info.add_mutually_exclusive_group(required=True)
     info_group.add_argument("--state")
     info_group.add_argument("--graph")
+    info.add_argument("--json", action="store_true")
     return parser
 
 
