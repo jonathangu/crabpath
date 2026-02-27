@@ -7,6 +7,20 @@
 
 **Setup:** [Setup Guide](docs/setup-guide.md)
 
+## OpenClaw Integration (start here if you run OpenClaw)
+
+OpenClawBrain is designed to be the memory layer for **OpenClaw agents**.
+
+- Guide: **[docs/openclaw-integration.md](docs/openclaw-integration.md)**
+
+Quickstart (OpenClaw users):
+
+```bash
+pip install openclawbrain
+openclawbrain init --workspace ~/.openclaw/workspace --output ~/.openclawbrain/main
+openclawbrain daemon --state ~/.openclawbrain/main/state.json
+```
+
 **OpenClawBrain learns from your agent feedback, so wrong answers get suppressed instead of resurfacing.** It builds a memory graph over your workspace, remembers what worked, and routes future answers through learned paths.
 
 - Zero dependencies. Pure Python 3.10+.

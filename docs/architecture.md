@@ -125,7 +125,36 @@ Maintenance behavior:
 Maintenance is **not** part of request path.
 Run it periodically (cron, timer, CI job, custom workflow) or after meaningful events (re-index, large workspace changes, etc.).
 
-## 5) Integration Contract
+## 5) Integration with OpenClaw
+
+OpenClawBrain is designed to plug into OpenClaw’s existing contract:
+OpenClaw agents read `AGENTS.md` and follow the runbook.
+
+### End-to-end data flow
+
+```text
+User message → OpenClaw agent → reads AGENTS.md → queries OpenClawBrain daemon → gets context → agent responds → learns from outcome
+```
+
+### Practical shape (today)
+
+- OpenClaw agent runs a shell command from `AGENTS.md`.
+- The command calls the OpenClawBrain adapter scripts (Python) to query/learn.
+- Fired node IDs are logged per chat (`--chat-id`) so same-turn corrections can apply to the right retrieval.
+
+This is clunky but works.
+
+### Practical shape (production)
+
+Run `openclawbrain daemon` as a long-lived worker and talk to it from a small integration layer:
+
+- daemon keeps `state.json` hot in memory
+- OpenClaw integration sends NDJSON requests (query/learn/maintain)
+- you avoid per-call Python startup + state reload overhead
+
+(Keeping the daemon as stdio is intentional: it’s easy to supervise and very hard to accidentally expose on the network.)
+
+## 5-b) Integration Contract
 
 ### Framework provides
 
