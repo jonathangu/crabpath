@@ -314,6 +314,58 @@ def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
     assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 5.0
 
 
+def test_query_command_text_output_includes_node_ids(tmp_path, capsys) -> None:
+    """test query text output includes node ids."""
+    graph_path = tmp_path / "graph.json"
+    index_path = tmp_path / "index.json"
+    graph_payload = {
+        "graph": {
+            "nodes": [
+                {
+                    "id": "deploy.md::0",
+                    "content": "How to create a hotfix",
+                    "summary": "",
+                    "metadata": {"file": "deploy.md"},
+                },
+                {
+                    "id": "deploy.md::1",
+                    "content": "CI must pass for hotfixes",
+                    "summary": "",
+                    "metadata": {"file": "deploy.md"},
+                },
+            ],
+            "edges": [
+                {
+                    "source": "deploy.md::0",
+                    "target": "deploy.md::1",
+                    "weight": 0.85,
+                    "kind": "sibling",
+                    "metadata": {},
+                }
+            ],
+        }
+    }
+    graph_path.write_text(json.dumps(graph_payload), encoding="utf-8")
+    _write_index(index_path, {"deploy.md::0": default_embed("deploy"), "deploy.md::1": default_embed("hotfix")})
+
+    code = main(
+        [
+            "query",
+            "deploy hotfix",
+            "--graph",
+            str(graph_path),
+            "--index",
+            str(index_path),
+            "--top",
+            "2",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "deploy.md::0" in out
+    assert "deploy.md::1" in out
+
+
 def test_cli_dimension_mismatch_error(tmp_path) -> None:
     """test cli dimension mismatch error."""
     state_path = tmp_path / "state.json"
@@ -411,7 +463,8 @@ def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
     code = main(["learn", "--graph", str(graph_path), "--outcome", "-1.0", "--fired-ids", "a,b", "--json"])
     assert code == 0
     data = json.loads(capsys.readouterr().out.strip())
-    assert data["graph"]["edges"][0]["source"] == "a"
+    assert data["edges_updated"] == 1
+    assert data["max_weight_delta"] >= 0.0
 
 
 def test_merge_command_suggests_and_applies(tmp_path, capsys) -> None:
@@ -466,6 +519,20 @@ def test_health_command_outputs_all_metrics(tmp_path, capsys) -> None:
         "edges",
     }
     assert expected.issubset(set(payload.keys()))
+
+
+def test_health_command_text_output_is_readable(tmp_path, capsys) -> None:
+    """test health command has human-readable non-json output."""
+    graph_path = tmp_path / "graph.json"
+    _write_graph_payload(graph_path)
+
+    code = main(["health", "--graph", str(graph_path)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Brain health:" in out
+    assert "Nodes:" in out
+    assert "Edges:" in out
+    assert "Cross-file edges:" in out
 
 
 def test_cli_help_text_for_commands() -> None:

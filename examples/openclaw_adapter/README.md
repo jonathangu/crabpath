@@ -1,5 +1,7 @@
 # OpenClaw adapter
 
+This README is OpenClaw-specific and assumes the surrounding OpenClaw framework handles key management, session ingestion, and production orchestration. For general CrabPath usage and core workflow, use the main project `README.md`.
+
 This adapter is for frameworks that manage API keys internally.
 
 `OPENAI_API_KEY` must be available in `os.environ` at execution time. The framework process injects it before invoking these scripts; no key discovery, keychain lookup, or dotfile parsing is used.

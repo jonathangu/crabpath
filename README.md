@@ -1,73 +1,92 @@
 # CrabPath
 
-**Your agent workspace as a learning graph.** CrabPath builds a brain from your files that gets smarter from feedback. Good outcomes strengthen routes. Corrections create inhibitory edges that suppress wrong paths. Over time, queries return less noise and more signal.
+**CrabPath learns from your agent feedback, so wrong answers get suppressed instead of resurfacing.** It builds a memory graph over your workspace, remembers what worked, and routes future answers through learned paths.
 
 - Zero dependencies. Pure Python 3.10+.
-- Works offline with built-in hash embeddings. Plug in OpenAI for semantic search.
-- `pip install crabpath`
+- Works offline with built-in hash embeddings.
+- Builds a **`state.json`** brain from your workspace.
+- Queries follow learned routes instead of only similarity matches.
+- Positive feedback (`+1`) strengthens routes, negative (`-1`) creates inhibitory edges.
+- Over time, less noise appears and recurring mistakes are less likely.
 
-## What You Get
-
-- A `state.json` brain built from your workspace files
-- Queries that traverse learned routes (not just similarity search)  
-- `learn +1` strengthens good paths, `learn -1` suppresses bad ones
-- `inject` adds corrections that create inhibitory edges in real time
-- Session replay to warm-start from conversation history
-
-## 5-Minute Quickstart (no API key needed)
+## Install
 
 ```bash
-# 1. Build a brain from your workspace
-crabpath init --workspace ./my-workspace --output ./brain
+pip install crabpath
+```
 
-# 2. Check it works
-crabpath doctor --state ./brain/state.json
+## 5-minute quickstart (A→B learning story)
 
-# 3. Query it  
-crabpath query "how do I deploy" --state ./brain/state.json --top 5
+```bash
+# 1. Build a brain from the sample workspace
+crabpath init --workspace examples/sample_workspace --output /tmp/brain
 
-# 4. Teach it (use node IDs from the query output)
-crabpath learn --state ./brain/state.json --outcome 1.0 --fired-ids "deploy.md::0,deploy.md::1"
+# 2. Check state health
+crabpath doctor --state /tmp/brain/state.json
+# output
+# PASS: python_version
+# PASS: state_file_exists
+# PASS: state_json_valid
+# Summary: 7/7 checks passed
+
+# 3. Query (use --json once so you see node IDs)
+crabpath query "how do I deploy" --state /tmp/brain/state.json --top 3 --json
+# output (abbrev.)
+# {"fired": ["deploy.md::0", "deploy.md::1", "deploy.md::2"], ...}
+
+# 4. Teach it (good path)
+crabpath learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "deploy.md::0,deploy.md::1"
+# output
+# {"edges_updated": 2, "max_weight_delta": 0.155}
 
 # 5. Inject a correction
-crabpath inject --state ./brain/state.json --id "fix::1" \
-  --content "Never skip CI for hotfixes" --type CORRECTION
+crabpath inject --state /tmp/brain/state.json \
+  --id "fix::1" --content "Never skip CI for hotfixes" --type CORRECTION
 
-# 6. Query again — the correction now appears in results
-crabpath query "hotfix process" --state ./brain/state.json --top 5
+# 6. Query again and see the route change
+crabpath query "can I skip CI" --state /tmp/brain/state.json --top 3
+# output
+# fix::1
+# ~~~~~~
+# Never skip CI for hotfixes
+# ...
+
+# 7. Re-check health for a quick signal
+crabpath health --state /tmp/brain/state.json
 ```
 
-## Teach Your Graph from Corrections
-
-When your agent makes a mistake, inject it:
+## What it looks like in practice
 
 ```bash
-# CLI
-crabpath inject --state brain/state.json \
-  --id "correction::42" \
-  --content "Never show API keys in chat messages" \
-  --type CORRECTION
+# Before learning
+crabpath query "how do we handle incidents" --state /tmp/brain/state.json --top 3
+
+# After one good learn on the best route
+crabpath learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "incidents.md::0,deploy.md::1"
+
+# After one negative learn on a bad route
+crabpath learn --state /tmp/brain/state.json --outcome -1.0 --fired-ids "monitoring.md::2,incidents.md::0"
+
+# Query again to observe new routing
+crabpath query "incident runbook for deploy failures" --state /tmp/brain/state.json --top 4
 ```
 
-```python
-# Python API
-from crabpath import inject_correction, load_state, save_state
+## How it compares
 
-graph, index, meta = load_state("brain/state.json")
-inject_correction(graph, index, "correction::42",
-    "Never show API keys in chat messages",
-    embed_fn=my_embed_fn)  # or vector=[...] 
-save_state(graph, index, "brain/state.json", meta=meta)
-```
+| | Plain RAG | CrabPath |
+|---|-----------|----------|
+| Retrieval | Similarity search | Learned graph traversal |
+| Feedback | None | `learn +1/-1` updates edge weights |
+| Wrong answers | Can keep resurfacing | Inhibitory edges suppress them |
+| Over time | Same results for same query | Routes become habitual behavior |
+| Dependencies | Vector DB or service | Zero dependencies |
 
-Corrections create **inhibitory edges** — they actively suppress wrong routes during traversal.
+## Real embeddings + LLM routing (OpenAI)
 
-## Real Embeddings + LLM Routing (OpenAI)
+Offline hash embeddings work for trying the product, but real deployments generally use:
 
-The hash embedder works offline but semantic search needs real embeddings. In production we use:
-
-- **Embeddings:** `text-embedding-3-small` (1536-dim) — ~$0.02/1M tokens
-- **LLM routing/scoring:** `gpt-5-mini` — cheap, fast, good at tiny JSON decisions
+- **Embeddings:** `text-embedding-3-small` (1536-dim)
+- **LLM routing/scoring:** `gpt-5-mini`
 
 ```python
 from openai import OpenAI
@@ -75,38 +94,26 @@ from crabpath import split_workspace, VectorIndex
 
 client = OpenAI()
 
-# Embedding callback
+
 def embed(text):
     return client.embeddings.create(
         model="text-embedding-3-small", input=[text]
     ).data[0].embedding
 
-# LLM callback (for split, route, score decisions)
+
 def llm(system, user):
     return client.chat.completions.create(
         model="gpt-5-mini",
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": user}]
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     ).choices[0].message.content
 
-# Build graph with real embeddings
 graph, texts = split_workspace("./workspace", llm_fn=llm)
 index = VectorIndex()
 for nid, content in texts.items():
     index.upsert(nid, embed(content))
 ```
 
-See `examples/openai_embedder/` for a complete example with batching.
-
-## Session Replay (optional — warm start from history)
-
-If you have conversation logs (OpenClaw `.jsonl` sessions), replay them to warm-start the graph:
-
-```bash
-crabpath replay --state brain/state.json --sessions ./sessions/
-```
-
-Skip this if you are just getting started — the graph learns from live queries too.
+See `examples/openai_embedder/` for a complete example.
 
 ## CLI Reference
 
@@ -124,19 +131,49 @@ Skip this if you are just getting started — the graph learns from live queries
 | `connect` | Suggest/apply cross-file connections |
 | `journal` | Query event journal |
 
+## Teaching Your Graph
+
+Use feedback and injections together:
+
+- Positive learning: `learn --outcome 1.0 --fired-ids "A,B,C"` strengthens A→B and B→C.
+- Negative learning: `learn --outcome -1.0 --fired-ids "A,B"` weakens bad routes and can create inhibitory edges.
+- Inject correction: `inject --type CORRECTION` adds a correction node and connects it to related workspace nodes so it can actively suppress unsafe routes.
+- Inject teaching: `inject --type TEACHING` adds a node with the same normal reinforcement behavior for safe routing additions.
+- Inhibitory edges are simply negative-weight edges: they subtract activation from paths downstream, making them less likely to fire next time.
+
 ## Python API
 
 ```python
 from crabpath import (
-    split_workspace, traverse, apply_outcome,
-    inject_node, inject_correction, inject_batch,
-    VectorIndex, HashEmbedder, TraversalConfig,
-    save_state, load_state, ManagedState,
-    measure_health, replay_queries, score_retrieval
+    split_workspace,
+    traverse,
+    apply_outcome,
+    inject_node,
+    inject_correction,
+    inject_batch,
+    VectorIndex,
+    HashEmbedder,
+    TraversalConfig,
+    save_state,
+    load_state,
+    ManagedState,
+    measure_health,
+    replay_queries,
+    score_retrieval,
 )
 ```
 
-## Production Experience
+## Optional: warm start from sessions
+
+If you have prior conversation logs, replay them:
+
+```bash
+crabpath replay --state /tmp/brain/state.json --sessions ./sessions/
+```
+
+Skip this if you are just getting started.
+
+## Production experience
 
 Three brains run in production on a Mac Mini M4 Pro:
 
@@ -146,42 +183,18 @@ Three brains run in production on a Mac Mini M4 Pro:
 | PELICAN | 512 | 1,984 | 181 | 183 |
 | BOUNTIFUL | 273 | 1,073 | 35 | 300 |
 
-Corrections auto-sync every 2 hours from a learning harness (SQLite → inject_batch → inhibitory edges). Context injection was cut from 66KB to 49KB (-25%) by moving bulk knowledge into CrabPath.
-
-## How It Compares
-
-| | Plain RAG | CrabPath |
-|---|-----------|----------|
-| Retrieval | Similarity search | Learned graph traversal |
-| Feedback | None | +1/-1 outcomes update edge weights |
-| Wrong answers | Keep resurfacing | Inhibitory edges suppress them |
-| Over time | Same results | Routes compile to reflex behavior |
-| Dependencies | Vector DB | Zero (pure Python) |
-
 ## Design Tenets
 
-- No network calls in core
-- No secret discovery (no dotfiles, no keychain)
-- Embedder identity stored in state metadata; hard-fail on dimension mismatch
-- One canonical state format (`state.json`)
+- No network calls in core.
+- No secret discovery (no dotfiles, no keychain lookup).
+- Embedder identity stored in state metadata; hard-fail on dimension mismatch.
+- One canonical state format (`state.json`).
 
-## Paper
+## Paper + links
 
 [jonathangu.com/crabpath](https://jonathangu.com/crabpath/) — 8 deterministic simulations + production deployment data.
 
-## Benchmarks
-
-```bash
-python3 benchmarks/run_benchmark.py
-```
-
-Results are deterministic per commit; timings vary by machine.
-
-## Links
-
 - PyPI: `pip install crabpath`
 - GitHub: [jonathangu/crabpath](https://github.com/jonathangu/crabpath)
-- Paper: [jonathangu.com/crabpath](https://jonathangu.com/crabpath/)
 - ClawHub: `clawhub install crabpath`
-
----
+- Benchmarks: `python3 benchmarks/run_benchmark.py` (deterministic per commit; timings vary by machine)

@@ -399,6 +399,54 @@ def _result_payload(result: TraversalResult) -> dict:
     }
 
 
+def _query_text_output(result: TraversalResult, graph: Graph, max_context_chars: int | None = None) -> str:
+    """format query output with node IDs."""
+    if not result.fired:
+        return "(No matches.)"
+
+    rendered: list[str] = []
+    used_chars = 0
+    for idx, node_id in enumerate(dict.fromkeys(result.fired)):
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        block = f"{node_id}\n{'~' * len(node_id)}\n{node.content}"
+        if max_context_chars is None:
+            rendered.append(block)
+            continue
+
+        if max_context_chars <= 0:
+            break
+        separator = "\n\n"
+        if not rendered:
+            if len(block) > max_context_chars:
+                if max_context_chars > 3:
+                    rendered.append(block[: max_context_chars - 3] + "...")
+                else:
+                    rendered.append(block[:max_context_chars])
+                break
+            rendered.append(block)
+            used_chars = len(block)
+            continue
+
+        if used_chars + len(separator) >= max_context_chars:
+            break
+        available = max_context_chars - used_chars - len(separator)
+        if available <= 0:
+            break
+        if len(block) <= available:
+            rendered.append(block)
+            used_chars += len(separator) + len(block)
+        else:
+            if available > 3:
+                rendered.append(block[:available - 3] + "...")
+            else:
+                rendered.append(block[:available])
+            break
+
+    return "\n\n".join(rendered)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """cmd init."""
     output_dir = Path(args.output).expanduser()
@@ -469,7 +517,10 @@ def cmd_query(args: argparse.Namespace) -> int:
         node_count=graph.node_count(),
         journal_path=_resolve_journal_path(args),
     )
-    print(json.dumps(_result_payload(result)) if args.json else result.context)
+    if args.json:
+        print(json.dumps(_result_payload(result)))
+    else:
+        print(_query_text_output(result=result, graph=graph, max_context_chars=args.max_context_chars))
     return 0
 
 
@@ -480,7 +531,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
     if not fired_ids:
         raise SystemExit("provide at least one fired id")
 
-    apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
+    updates = apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
     if args.state is not None:
         state_meta = _state_meta(
             meta,
@@ -488,11 +539,16 @@ def cmd_learn(args: argparse.Namespace) -> int:
             fallback_dim=HashEmbedder().dim,
         )
         save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=state_meta)
-    payload = {"graph": _graph_payload(graph)}
+    updates_abs = [abs(delta) for delta in updates.values()]
+    summary = {
+        "edges_updated": len(updates),
+        "max_weight_delta": max(updates_abs) if updates_abs else 0.0,
+    }
     if args.state is None:
+        payload = {"graph": _graph_payload(graph)}
         Path(args.graph).expanduser().write_text(json.dumps(payload, indent=2), encoding="utf-8")
     log_learn(fired_ids=fired_ids, outcome=args.outcome, journal_path=_resolve_journal_path(args))
-    print(json.dumps(payload, indent=2) if args.json else f"updated {args.state or args.graph}")
+    print(json.dumps(summary, indent=2) if args.json else f"updated {args.state or args.graph}")
     return 0
 
 
@@ -809,13 +865,12 @@ def cmd_health(args: argparse.Namespace) -> int:
     print(
         "\n".join(
             [
-                f"nodes: {payload['nodes']}",
-                f"edges: {payload['edges']}",
-                f"dormant_pct: {payload['dormant_pct']:.2f}",
-                f"habitual_pct: {payload['habitual_pct']:.2f}",
-                f"reflex_pct: {payload['reflex_pct']:.2f}",
-                f"cross_file_edge_pct: {payload['cross_file_edge_pct']:.2f}",
-                f"orphan_nodes: {payload['orphan_nodes']}",
+                "Brain health:",
+                f"  Nodes: {payload['nodes']}",
+                f"  Edges: {payload['edges']}",
+                f"  Reflex: {payload['reflex_pct']:.1%}  Habitual: {payload['habitual_pct']:.1%}  Dormant: {payload['dormant_pct']:.1%}",
+                f"  Orphans: {payload['orphan_nodes']}",
+                f"  Cross-file edges: {payload['cross_file_edge_pct']:.1%}",
             ]
         )
     )
