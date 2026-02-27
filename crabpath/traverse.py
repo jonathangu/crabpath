@@ -32,12 +32,13 @@ class TraversalConfig:
         habitual_range: inclusive lower/upper bounds for habitual-tier edges.
     """
 
-    max_hops: int = 15
-    beam_width: int = 3
+    max_hops: int = 30
+    beam_width: int = 8
     edge_damping: float = 0.3
-    fire_threshold: float = 0.0
+    fire_threshold: float = 0.01
     visit_penalty: float = 0.0
     inhibitory_threshold: float = -0.3
+    max_fired_nodes: int | None = None
     max_context_chars: int | None = None
     reflex_threshold: float = 0.8
     habitual_range: tuple[float, float] = (0.3, 0.8)
@@ -200,11 +201,27 @@ def traverse(
     if not frontier:
         return TraversalResult([], [], "")
 
+    if cfg.max_fired_nodes is not None:
+        frontier = frontier[: cfg.max_fired_nodes]
+
     seen_counts: dict[str, int] = {node_id: 1 for node_id, _ in frontier}
     fired: list[str] = [node_id for node_id, _ in frontier]
     fired_scores: dict[str, float] = {node_id: score for node_id, score in frontier}
     steps: list[TraversalStep] = []
     used_edges: dict[tuple[str, str], int] = {}
+    cumulative_chars = 0
+    if cfg.max_context_chars is not None:
+        cumulative_chars = sum(
+            len(graph.get_node(node_id).content)
+            for node_id in fired
+            if graph.get_node(node_id) is not None
+        )
+    if cfg.max_fired_nodes is not None and len(fired) >= cfg.max_fired_nodes:
+        context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
+        return TraversalResult(fired=fired, steps=steps, context=context)
+    if cfg.max_context_chars is not None and cumulative_chars >= cfg.max_context_chars:
+        context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
+        return TraversalResult(fired=fired, steps=steps, context=context)
 
     for _ in range(cfg.max_hops):
         if not frontier:
@@ -258,6 +275,7 @@ def traverse(
 
         next_frontier: list[tuple[str, float]] = []
         target_seen: set[str] = set()
+        stop_expanding = False
 
         for source_id, target_id, score, effective, tier in selected[: cfg.beam_width]:
             if target_id in target_seen:
@@ -271,6 +289,14 @@ def traverse(
             if target_id not in seen_counts:
                 seen_counts[target_id] = 1
                 fired.append(target_id)
+                if cfg.max_fired_nodes is not None and len(fired) >= cfg.max_fired_nodes:
+                    stop_expanding = True
+                if cfg.max_context_chars is not None:
+                    target_node = graph.get_node(target_id)
+                    if target_node is not None:
+                        cumulative_chars += len(target_node.content)
+                    if cumulative_chars >= cfg.max_context_chars:
+                        stop_expanding = True
             else:
                 seen_counts[target_id] += 1
 
@@ -286,9 +312,13 @@ def traverse(
                 )
             )
             next_frontier.append((target_id, score))
+            if stop_expanding:
+                break
 
         frontier = next_frontier
         fired_scores.update(next_frontier)
+        if stop_expanding:
+            break
 
     context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
     return TraversalResult(fired=fired, steps=steps, context=context, tier_summary=_tier_summary(cfg))

@@ -102,7 +102,11 @@ def test_edge_damping_simulation_converges() -> None:
     g.add_edge(Edge("a", "b", 1.0))
     g.add_edge(Edge("b", "a", 1.0))
 
-    result = traverse(g, [("a", 1.0)], config=TraversalConfig(max_hops=100, beam_width=1, edge_damping=0.5))
+    result = traverse(
+        g,
+        [("a", 1.0)],
+        config=TraversalConfig(max_hops=100, beam_width=1, edge_damping=0.5, fire_threshold=0.0),
+    )
     assert len(result.steps) == 100
     assert all(step.effective_weight > 0 for step in result.steps)
     assert result.steps[-1].effective_weight < 1e-9

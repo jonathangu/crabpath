@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from openai import OpenAI
-from crabpath import load_state, traverse
+from crabpath import TraversalConfig, load_state, traverse
 
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     seeds = index.search(query_vector, top_k=args.top)
-    result = traverse(graph=graph, seeds=seeds, query_text=query_text)
+    result = traverse(graph=graph, seeds=seeds, query_text=query_text, config=TraversalConfig(max_context_chars=20000))
 
     if args.chat_id:
         log_entry = {

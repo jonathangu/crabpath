@@ -92,7 +92,11 @@ def test_edge_damping_prevents_unbounded_cycles() -> None:
     graph.add_edge(Edge("c", "a", 0.9))
     graph.add_edge(Edge("c", "d", 0.01))
 
-    result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=20, beam_width=1, edge_damping=0.2))
+    result = traverse(
+        graph,
+        [("a", 1.0)],
+        config=TraversalConfig(max_hops=20, beam_width=1, edge_damping=0.2, fire_threshold=0.0),
+    )
     assert len(result.steps) == 20
     assert len(result.fired) >= 3
 
@@ -159,7 +163,7 @@ def test_route_fn_always_picks_same_node_and_damping_applies() -> None:
     result = traverse(
         graph,
         [("a", 1.0)],
-        config=TraversalConfig(max_hops=4, beam_width=1, edge_damping=0.2),
+        config=TraversalConfig(max_hops=4, beam_width=1, edge_damping=0.2, fire_threshold=0.0),
         route_fn=lambda _query, cands, _context: [cands[0].target] if cands else [],
     )
 
@@ -242,6 +246,59 @@ def test_traversal_context_respects_max_context_chars() -> None:
     assert len(result.context) <= 100
 
 
+def test_max_context_chars_budget_stops_traversal_early() -> None:
+    """test max_context_chars budget halts traversal during expansion."""
+    graph = Graph()
+    for i in range(5):
+        graph.add_node(Node(f"n{i}", content="x" * 1200, metadata={}))
+    for i in range(4):
+        graph.add_edge(Edge(f"n{i}", f"n{i+1}", 0.95))
+
+    result = traverse(
+        graph,
+        [("n0", 1.0)],
+        config=TraversalConfig(max_hops=10, beam_width=1, max_context_chars=2500),
+    )
+
+    assert result.fired == ["n0", "n1", "n2"]
+    assert "n3" not in result.fired
+    assert len(result.context) <= 2500
+
+
+def test_max_fired_nodes_cap_stops_traversal() -> None:
+    """test max_fired_nodes budget limits traversal expansion."""
+    graph = Graph()
+    for i in range(10):
+        graph.add_node(Node(f"n{i}", content=f"node {i}", metadata={}))
+    for i in range(9):
+        graph.add_edge(Edge(f"n{i}", f"n{i+1}", 0.95))
+
+    result = traverse(
+        graph,
+        [("n0", 1.0)],
+        config=TraversalConfig(max_hops=10, beam_width=1, max_fired_nodes=3),
+    )
+
+    assert result.fired == ["n0", "n1", "n2"]
+
+
+def test_beam_width_8_reaches_more_targets_than_width_3() -> None:
+    """test wider beam reaches deeper nodes unavailable under narrow beam."""
+    graph = Graph()
+    graph.add_node(Node("a", "seed"))
+    for i in range(8):
+        graph.add_node(Node(f"b{i}", f"branch {i}"))
+        graph.add_node(Node(f"c{i}", f"leaf {i}"))
+        graph.add_edge(Edge("a", f"b{i}", 0.95 - 0.01 * i))
+        graph.add_edge(Edge(f"b{i}", f"c{i}", 0.95))
+
+    narrow = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=2, beam_width=3))
+    wide = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=2, beam_width=8))
+
+    assert "c7" in wide.fired
+    assert "c7" not in narrow.fired
+
+
 def test_edge_damping_factor_one_steps_until_hops() -> None:
     """test edge damping factor one steps until hops."""
     graph = Graph()
@@ -293,7 +350,11 @@ def test_large_graph_traversal_is_responsive() -> None:
         if i > 0:
             graph.add_edge(Edge(f"n{i-1}", f"n{i}", 0.8))
 
-    result = traverse(graph, [("n0", 1.0)], config=TraversalConfig(max_hops=25, beam_width=2))
+    result = traverse(
+        graph,
+        [("n0", 1.0)],
+        config=TraversalConfig(max_hops=25, beam_width=2, fire_threshold=0.0),
+    )
     assert len(result.steps) == 25
     assert len(result.fired) == 26
 

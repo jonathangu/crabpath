@@ -213,7 +213,7 @@ def test_replay_queries_supports_outcome_fn_negative_learning() -> None:
     stats = replay_queries(
         graph=graph,
         queries=["bad example", "normal"],
-        config=TraversalConfig(max_hops=1),
+        config=TraversalConfig(max_hops=1, fire_threshold=0.0),
         outcome_fn=lambda query: -1.0 if "bad" in query else 1.0,
     )
 
