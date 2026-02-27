@@ -18,6 +18,14 @@ Pure graph core: zero deps, zero network calls. Caller provides callbacks.
 pip install crabpath
 ```
 
+## Design Tenets
+
+- No network calls in core (not even for model downloads)
+- No secret discovery (no dotfiles, no keychain, no env probing)
+- No subprocess provider wrappers
+- Embedder identity stored in graph metadata; dimension mismatches are errors
+- One canonical state format (state.json)
+
 ## Quick Start
 
 ```python
@@ -66,7 +74,23 @@ graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 
 ## CLI
 
-`crabpath init|query|learn|replay|health|merge|connect|journal`
+`crabpath init --workspace W --output O`
+`crabpath query TEXT --state S [--top N] [--json]`
+`crabpath learn --state S --outcome N --fired-ids a,b,c`
+`crabpath health --state S`
+`crabpath replay --state S --sessions S`
+`crabpath merge --state S`
+`crabpath connect --state S`
+`crabpath journal [--stats]`
+
+Legacy graph/index flags remain available:
+
+`crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json]`
+`crabpath learn --graph G --outcome N --fired-ids a,b,c`
+`crabpath replay --graph G --sessions S`
+`crabpath health --graph G`
+`crabpath merge --graph G`
+`crabpath connect --graph G`
 
 ## Paper
 

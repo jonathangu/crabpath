@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .graph import Edge, Graph, Node
+from .hasher import HashEmbedder
 from .index import VectorIndex
 
 
-def save_state(graph: Graph, index: VectorIndex, path: str) -> None:
+def save_state(
+    graph: Graph,
+    index: VectorIndex,
+    path: str,
+    *,
+    embedder_name: str | None = None,
+    embedder_dim: int | None = None,
+) -> None:
     """Save graph and index together to one JSON file."""
+    if embedder_name is None:
+        embedder_name = "hash-v1"
+    if embedder_dim is None:
+        embedder_dim = HashEmbedder().dim
+
     payload = {
         "graph": {
             "nodes": [
@@ -35,16 +49,25 @@ def save_state(graph: Graph, index: VectorIndex, path: str) -> None:
             ],
         },
         "index": index._vectors,
+        "meta": {
+            "embedder_name": embedder_name,
+            "embedder_dim": embedder_dim,
+            "schema_version": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "node_count": graph.node_count(),
+        },
     }
     Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def load_state(path: str) -> tuple[Graph, VectorIndex]:
+def load_state(path: str) -> tuple[Graph, VectorIndex, dict[str, object]]:
     """Load graph + index from one JSON file."""
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
 
     graph = Graph()
-    graph_payload = payload.get("graph", {})
+    if not isinstance(payload, dict):
+        raise SystemExit("state payload must be an object")
+    graph_payload = payload.get("graph", payload)
     for node_data in graph_payload.get("nodes", []):
         graph.add_node(
             Node(
@@ -67,6 +90,13 @@ def load_state(path: str) -> tuple[Graph, VectorIndex]:
         )
 
     index = VectorIndex()
-    for node_id, vector in payload.get("index", {}).items():
-        index.upsert(node_id, vector)
-    return graph, index
+    index_payload = payload.get("index", {})
+    if "index" in payload and not isinstance(index_payload, dict):
+        raise SystemExit("index payload must be an object")
+    if isinstance(index_payload, dict):
+        for node_id, vector in index_payload.items():
+            if not isinstance(vector, list):
+                raise SystemExit("index payload vectors must be arrays")
+            index.upsert(node_id, vector)
+    meta = payload.get("meta", {}) if isinstance(payload.get("meta", {}), dict) else {}
+    return graph, index, meta

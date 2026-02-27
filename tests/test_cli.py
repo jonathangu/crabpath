@@ -31,6 +31,32 @@ def _write_index(path: Path, payload: dict[str, list[float]] | None = None) -> N
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _write_state(
+    path: Path,
+    graph_payload: dict | None = None,
+    index_payload: dict[str, list[float]] | None = None,
+    meta: dict[str, object] | None = None,
+) -> None:
+    if graph_payload is None:
+        graph_payload = {
+            "nodes": [
+                {"id": "a", "content": "alpha", "summary": "", "metadata": {"file": "a.md"}},
+                {"id": "b", "content": "beta", "summary": "", "metadata": {"file": "b.md"}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "weight": 0.7, "kind": "sibling", "metadata": {}},
+            ],
+        }
+    if index_payload is None:
+        index_payload = {
+            "a": default_embed("alpha"),
+            "b": default_embed("beta"),
+        }
+    if meta is None:
+        meta = {"embedder_name": "hash-v1", "embedder_dim": 1024}
+    path.write_text(json.dumps({"graph": graph_payload, "index": index_payload, "meta": meta}), encoding="utf-8")
+
+
 def test_init_command_creates_workspace_graph(tmp_path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()
@@ -49,7 +75,9 @@ def test_init_command_creates_workspace_graph(tmp_path) -> None:
     graph_data = json.loads(graph_path.read_text(encoding="utf-8"))
     graph_payload = graph_data["graph"] if "graph" in graph_data else graph_data
     assert len(graph_payload["nodes"]) == 1
-    assert graph_data.get("meta", {}).get("embedder") == "hash-v1"
+    assert graph_data.get("meta", {}).get("embedder_name") == "hash-v1"
+    state_data = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state_data["meta"]["embedder_name"] == "hash-v1"
     texts_data = json.loads(texts_path.read_text(encoding="utf-8"))
     assert len(texts_data) == 1
 
@@ -158,6 +186,39 @@ def test_query_uses_vector_from_stdin(tmp_path, capsys, monkeypatch) -> None:
     assert out["fired"][0] == "a"
 
 
+def test_cli_state_flag_query(tmp_path, capsys) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    code = main(
+        [
+            "query",
+            "alpha",
+            "--state",
+            str(state_path),
+            "--top",
+            "2",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["fired"]
+    assert "a" in out["fired"]
+
+
+def test_cli_dimension_mismatch_error(tmp_path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(
+        state_path,
+        index_payload={"a": [1.0, 0.0] * 768, "b": [0.0, 1.0] * 768},
+        meta={"embedder_name": "openai-text-embedding-3-small", "embedder_dim": 1536},
+    )
+
+    with pytest.raises(SystemExit, match=r"Index was built with openai-text-embedding-3-small \(dim=1536\). CLI hash embedder uses dim=1024. Dimension mismatch. Use --query-vector-stdin with matching embedder."):
+        main(["query", "alpha", "--state", str(state_path), "--top", "2", "--json"])
+
+
 def test_query_command_error_on_missing_graph(tmp_path) -> None:
     index_path = tmp_path / "index.json"
     _write_index(index_path)
@@ -185,6 +246,48 @@ def test_learn_command_updates_graph_weights(tmp_path) -> None:
 
     payload = json.loads(graph_path.read_text(encoding="utf-8"))
     assert payload["graph"]["edges"][0]["weight"] > 0.7
+
+
+def test_cli_state_flag_learn(tmp_path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    original = json.loads(state_path.read_text(encoding="utf-8"))
+    original_weight = original["graph"]["edges"][0]["weight"]
+    code = main(
+        [
+            "learn",
+            "--state",
+            str(state_path),
+            "--outcome",
+            "1.0",
+            "--fired-ids",
+            "a,b",
+        ]
+    )
+    assert code == 0
+
+    updated = json.loads(state_path.read_text(encoding="utf-8"))
+    assert updated["graph"]["edges"][0]["weight"] > original_weight
+
+
+def test_cli_state_flag_health(tmp_path, capsys) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    code = main(["health", "--state", str(state_path), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    expected = {
+        "dormant_pct",
+        "habitual_pct",
+        "reflex_pct",
+        "cross_file_edge_pct",
+        "orphan_nodes",
+        "nodes",
+        "edges",
+    }
+    assert expected.issubset(set(payload.keys()))
 
 
 def test_learn_command_supports_json_output(tmp_path, capsys) -> None:

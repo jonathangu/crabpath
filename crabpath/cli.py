@@ -28,6 +28,7 @@ from .split import split_workspace
 from .hasher import HashEmbedder, default_embed
 from .traverse import TraversalConfig, TraversalResult, traverse
 from ._util import _tokenize
+from .store import load_state, save_state
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -42,36 +43,43 @@ def _build_parser() -> argparse.ArgumentParser:
 
     q = sub.add_parser("query")
     q.add_argument("text")
-    q.add_argument("--graph", required=True)
+    q.add_argument("--state")
+    q.add_argument("--graph")
     q.add_argument("--index")
     q.add_argument("--top", type=int, default=10)
     q.add_argument("--query-vector-stdin", action="store_true")
     q.add_argument("--json", action="store_true")
 
     l = sub.add_parser("learn")
-    l.add_argument("--graph", required=True)
+    l.add_argument("--state")
+    l.add_argument("--graph")
     l.add_argument("--outcome", type=float, required=True)
     l.add_argument("--fired-ids", required=True)
     l.add_argument("--json", action="store_true")
 
     m = sub.add_parser("merge")
-    m.add_argument("--graph", required=True)
+    m.add_argument("--state")
+    m.add_argument("--graph")
     m.add_argument("--json", action="store_true")
 
     c = sub.add_parser("connect")
-    c.add_argument("--graph", required=True)
+    c.add_argument("--state")
+    c.add_argument("--graph")
     c.add_argument("--json", action="store_true")
 
     r = sub.add_parser("replay")
-    r.add_argument("--graph", required=True)
+    r.add_argument("--state")
+    r.add_argument("--graph")
     r.add_argument("--sessions", nargs="+", required=True)
     r.add_argument("--json", action="store_true")
 
     h = sub.add_parser("health")
-    h.add_argument("--graph", required=True)
+    h.add_argument("--state")
+    h.add_argument("--graph")
     h.add_argument("--json", action="store_true")
 
     j = sub.add_parser("journal")
+    j.add_argument("--state")
     j.add_argument("--last", type=int, default=10)
     j.add_argument("--stats", action="store_true")
     j.add_argument("--json", action="store_true")
@@ -106,6 +114,19 @@ def _load_graph(path: str) -> Graph:
             )
         )
     return graph
+
+
+def _resolve_graph_index(args: argparse.Namespace) -> tuple[Graph, VectorIndex | None, dict[str, object]]:
+    if args.state is not None:
+        graph, index, meta = load_state(args.state)
+        return graph, index, meta
+    if args.graph is None:
+        raise SystemExit("--state or --graph is required")
+
+    graph = _load_graph(args.graph)
+    index_arg = getattr(args, "index", None)
+    index = _load_index(index_arg) if index_arg is not None else None
+    return graph, index, {}
 
 
 def _graph_payload(graph: Graph) -> dict:
@@ -193,6 +214,42 @@ def _load_index(path: str) -> VectorIndex:
     return index
 
 
+def _state_embedder_meta(meta: dict[str, object]) -> tuple[str | None, int | None]:
+    embedder_name = meta.get("embedder_name")
+    if not isinstance(embedder_name, str):
+        embedder_name = meta.get("embedder")
+        if not isinstance(embedder_name, str):
+            embedder_name = None
+
+    embedder_dim = meta.get("embedder_dim")
+    if not isinstance(embedder_dim, int):
+        embedder_dim = None
+
+    return embedder_name, embedder_dim
+
+
+def _ensure_hash_embedder_compat(meta: dict[str, object]) -> None:
+    embedder_name, embedder_dim = _state_embedder_meta(meta)
+    if embedder_dim is None:
+        return
+
+    hash_dim = HashEmbedder().dim
+    if embedder_dim != hash_dim:
+        raise SystemExit(
+            f"Index was built with {embedder_name} (dim={embedder_dim}). "
+            "CLI hash embedder uses dim=1024. Dimension mismatch. "
+            "Use --query-vector-stdin with matching embedder."
+        )
+
+
+def _build_state_save_kwargs(meta: dict[str, object], fallback_name: str | None = None, fallback_dim: int | None = None) -> dict:
+    embedder_name, embedder_dim = _state_embedder_meta(meta)
+    return {
+        "embedder_name": embedder_name or fallback_name,
+        "embedder_dim": embedder_dim if embedder_dim is not None else fallback_dim,
+    }
+
+
 def _result_payload(result: TraversalResult) -> dict:
     return {
         "fired": result.fired,
@@ -217,16 +274,26 @@ def cmd_init(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     index_vectors = embedder.embed_batch(list(texts.items()))
+    index = VectorIndex()
+    for node_id, vector in index_vectors.items():
+        index.upsert(node_id, vector)
 
     graph_path = output_dir / "graph.json"
     text_path = output_dir / "texts.json"
-    meta = {
-        "embedder": embedder.name,
-        "dim": embedder.dim,
+    state_meta = {
+        "embedder_name": embedder.name,
+        "embedder_dim": embedder.dim,
         "node_count": graph.node_count(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    _write_graph(graph_path, graph, include_meta=True, meta=meta)
+    _write_graph(graph_path, graph, include_meta=True, meta=state_meta)
+    save_state(
+        graph=graph,
+        index=index,
+        path=output_dir / "state.json",
+        embedder_name=embedder.name,
+        embedder_dim=embedder.dim,
+    )
     index_path = output_dir / "index.json"
     index_path.write_text(json.dumps(index_vectors, indent=2), encoding="utf-8")
     text_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
@@ -237,19 +304,18 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_query(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, index, meta = _resolve_graph_index(args)
     if args.top <= 0:
         raise SystemExit("--top must be >= 1")
 
     if args.query_vector_stdin:
-        if args.index is None:
+        if index is None:
             raise SystemExit("query-vector-stdin requires --index")
         query_vec = _load_query_vector_from_stdin()
-        index = _load_index(args.index)
         seeds = index.search(query_vec, top_k=args.top)
-    elif args.index is not None:
+    elif index is not None:
+        _ensure_hash_embedder_compat(meta)
         query_vec = default_embed(args.text)
-        index = _load_index(args.index)
         seeds = index.search(query_vec, top_k=args.top)
     else:
         seeds = _keyword_seeds(graph, args.text, args.top)
@@ -261,38 +327,50 @@ def cmd_query(args: argparse.Namespace) -> int:
 
 
 def cmd_learn(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, index, meta = _resolve_graph_index(args)
     fired_ids = [value.strip() for value in args.fired_ids.split(",") if value.strip()]
     if not fired_ids:
         raise SystemExit("provide at least one fired id")
 
     apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
+    if args.state is not None:
+        save_kwargs = _build_state_save_kwargs(meta, fallback_name=HashEmbedder().name, fallback_dim=HashEmbedder().dim)
+        save_state(graph=graph, index=index or VectorIndex(), path=args.state, **save_kwargs)
     payload = {"graph": _graph_payload(graph)}
-    Path(args.graph).expanduser().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if args.state is None:
+        Path(args.graph).expanduser().write_text(json.dumps(payload, indent=2), encoding="utf-8")
     log_learn(fired_ids=fired_ids, outcome=args.outcome)
-    print(json.dumps(payload, indent=2) if args.json else f"updated {args.graph}")
+    print(json.dumps(payload, indent=2) if args.json else f"updated {args.state or args.graph}")
     return 0
 
 
 def cmd_merge(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, index, meta = _resolve_graph_index(args)
     suggestions = suggest_merges(graph)
     applied = []
     for source_id, target_id in suggestions:
         if graph.get_node(source_id) and graph.get_node(target_id):
             merged = apply_merge(graph, source_id, target_id)
             applied.append({"from": [source_id, target_id], "to": [merged]})
-    _write_graph(args.graph, graph)
+    if args.state is not None:
+        save_kwargs = _build_state_save_kwargs(meta, fallback_name=HashEmbedder().name, fallback_dim=HashEmbedder().dim)
+        save_state(graph=graph, index=index or VectorIndex(), path=args.state, **save_kwargs)
+    else:
+        _write_graph(args.graph, graph)
     payload = {"suggestions": [{"from": [s, t]} for s, t in suggestions], "applied": applied}
     print(json.dumps(payload) if args.json else f"Applied merges: {len(applied)}")
     return 0
 
 
 def cmd_connect(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, index, meta = _resolve_graph_index(args)
     suggestions = suggest_connections(graph)
     added = apply_connections(graph=graph, connections=suggestions)
-    _write_graph(args.graph, graph)
+    if args.state is not None:
+        save_kwargs = _build_state_save_kwargs(meta, fallback_name=HashEmbedder().name, fallback_dim=HashEmbedder().dim)
+        save_state(graph=graph, index=index or VectorIndex(), path=args.state, **save_kwargs)
+    else:
+        _write_graph(args.graph, graph)
     payload = {
         "suggestions": [
             {"source_id": s, "target_id": t, "weight": w, "reason": r} for s, t, w, r in suggestions
@@ -304,7 +382,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, index, meta = _resolve_graph_index(args)
     queries = _load_session_queries(args.sessions)
     stats = replay_queries(graph=graph, queries=queries, verbose=not args.json)
     log_replay(
@@ -312,13 +390,17 @@ def cmd_replay(args: argparse.Namespace) -> int:
         edges_reinforced=stats["edges_reinforced"],
         cross_file_created=stats["cross_file_edges_created"],
     )
-    _write_graph(args.graph, graph)
+    if args.state is not None:
+        save_kwargs = _build_state_save_kwargs(meta, fallback_name=HashEmbedder().name, fallback_dim=HashEmbedder().dim)
+        save_state(graph=graph, index=index or VectorIndex(), path=args.state, **save_kwargs)
+    else:
+        _write_graph(args.graph, graph)
     print(json.dumps(stats, indent=2) if args.json else f"Replayed {stats['queries_replayed']}/{len(queries)} queries, {stats['cross_file_edges_created']} cross-file edges created")
     return 0
 
 
 def cmd_health(args: argparse.Namespace) -> int:
-    graph = _load_graph(args.graph)
+    graph, _, _ = _resolve_graph_index(args)
     from .autotune import measure_health
 
     payload = measure_health(graph).__dict__

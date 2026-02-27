@@ -12,6 +12,14 @@ CrabPath is a deterministic graph engine that builds traversable context graphs 
 pip install crabpath
 ```
 
+## Design Tenets
+
+- No network calls in core (not even for model downloads)
+- No secret discovery (no dotfiles, no keychain, no env probing)
+- No subprocess provider wrappers
+- Embedder identity stored in graph metadata; dimension mismatches are errors
+- One canonical state format (state.json)
+
 ## 3. Quick Start
 
 ```python
@@ -96,12 +104,18 @@ Remote semantic | callback `embed_fn` / `embed_batch_fn` (OpenAI, Gemini, etc.) 
 
 ```bash
 crabpath init --workspace W --output O [--sessions S]
-crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json]
-crabpath learn --graph G --outcome N --fired-ids a,b,c
-crabpath replay --graph G --sessions S
-crabpath health --graph G
-crabpath merge --graph G
-crabpath connect --graph G
+crabpath query TEXT --state S [--top N] [--json]
+crabpath learn --state S --outcome N --fired-ids a,b,c
+crabpath health --state S
+crabpath replay --state S --sessions S
+crabpath merge --state S
+crabpath connect --state S
+crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json] (legacy)
+crabpath learn --graph G --outcome N --fired-ids a,b,c [--json] (legacy)
+crabpath replay --graph G --sessions S (legacy)
+crabpath health --graph G (legacy)
+crabpath merge --graph G (legacy)
+crabpath connect --graph G (legacy)
 crabpath journal [--stats]
 ```
 
