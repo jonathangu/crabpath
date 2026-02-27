@@ -69,3 +69,52 @@ Benchmark output compares:
 4. CrabPath traversal + session replay
 
 Run `python3 benchmarks/run_benchmark.py` to see current deterministic results for this commit.
+
+## Live Injection Verification
+
+Live injection is covered by `tests/test_inject.py` and can also be exercised directly with a simple state payload.
+
+```bash
+python3 -m pytest tests/test_inject.py -x -q
+```
+
+Run an end-to-end CLI smoke test:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+from crabpath import VectorIndex, save_state, HashEmbedder, inject_node
+from crabpath.graph import Graph, Node
+
+graph = Graph()
+index = VectorIndex()
+graph.add_node(Node("seed", "Seed policy guidance", metadata={"file": "seed.md"}))
+index.upsert("seed", HashEmbedder().embed("Seed policy guidance"))
+
+state_path = Path("/tmp/crabpath_live_inject_state.json")
+save_state(graph=graph, index=index, path=state_path)
+
+result = inject_node(
+    graph=graph,
+    index=index,
+    node_id="learning::manual",
+    content="Prefer deterministic tests over assumptions.",
+    connect_top_k=1,
+    connect_min_sim=0.0,
+)
+
+save_state(graph=graph, index=index, path=state_path)
+print(result)
+print(f"node_count={graph.node_count()}")
+print(f"edges={graph.edge_count()}")
+PY
+
+crabpath inject \
+  --state /tmp/crabpath_live_inject_state.json \
+  --id learning::manual2 \
+  --content "Never expose secrets in plain text." \
+  --type TEACHING \
+  --json \
+  --connect-min-sim 0.0
+```

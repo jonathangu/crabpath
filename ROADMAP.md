@@ -2,6 +2,10 @@
 
 ## Open Work
 
+### Completed
+- [DONE] Live injection primitives (`inject_node`, `inject_correction`, `inject_batch`) and `crabpath inject` CLI command.
+- [DONE] Correction propagation through inhibitory edges for teaching/correction workflows.
+
 ### Near-term
 - Implement chunked/binary storage for graphs with >10K nodes (currently persisted as a single JSON payload).
 - Add streaming/incremental traversal via `traverse_stream` (generator-based API for large graphs).

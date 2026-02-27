@@ -14,7 +14,10 @@ def _resolve_vector(
     vector: list[float] | None,
     embed_fn: Callable[[str], list[float]] | None,
 ) -> list[float]:
-    """Resolve a vector from explicit value or callback."""
+    """Resolve a vector from an explicit list or embedding callback.
+
+    Exactly one of ``vector`` or ``embed_fn`` is required.
+    """
     if vector is not None:
         return list(vector)
     if embed_fn is None:
@@ -23,7 +26,10 @@ def _resolve_vector(
 
 
 def _safe_float(value: object) -> float:
-    """Cast score values safely."""
+    """Cast score values to float without raising.
+
+    Falls back to Python's ``float`` conversion semantics for non-numeric inputs.
+    """
     return float(value)
 
 
@@ -36,7 +42,10 @@ def _connect_to_existing(
     connect_top_k: int,
     connect_min_sim: float,
 ) -> list[str]:
-    """Connect a new node to top-k existing similar nodes in both directions."""
+    """Connect the injected node to similar existing nodes in both directions.
+
+    Only nodes above ``connect_min_sim`` are linked. Duplicate targets are skipped.
+    """
     if connect_top_k <= 0:
         return []
 
@@ -84,7 +93,10 @@ def _apply_inhibitory_edges(
     inhibition_strength: float,
     inhibition_lr: float,
 ) -> int:
-    """Create or retune inhibitory edges from correction node to targets."""
+    """Create or retune inhibitory edges from a correction source node.
+
+    Returns the number of newly created inhibitory edges.
+    """
     if not targets:
         return 0
 
@@ -138,15 +150,14 @@ def inject_node(
     connect_top_k: int = 3,
     connect_min_sim: float = 0.3,
 ) -> dict:
-    """Inject a single node into a live graph with embedding and connections.
+    """Inject a single node into an active graph and index.
 
-    1. Creates the node
-    2. Embeds it (via provided vector or embed_fn callback)
-    3. Connects it to top-k most similar existing nodes (bidirectional cross_file edges)
-    4. Returns stats: {node_id, edges_added, connected_to: [...]}
+    - If ``vector`` is provided, it is used directly.
+    - Otherwise ``embed_fn`` must produce an embedding.
+    - The node is connected bidirectionally to up to ``connect_top_k`` similar nodes.
 
-    If vector is provided, uses it directly. If embed_fn is provided, calls it.
-    If neither, raises ValueError.
+    Returns:
+        ``{"node_id": str, "edges_added": int, "connected_to": list[str]}``
     """
     if graph.get_node(node_id) is not None:
         return {"node_id": node_id, "edges_added": 0, "connected_to": []}
@@ -203,13 +214,13 @@ def inject_correction(
     inhibition_strength: float = -0.5,
     inhibition_lr: float = 0.08,
 ) -> dict:
-    """Inject a correction node and create inhibitory edges.
+    """Inject a correction node and create inhibitory follow-up edges.
 
-    Does everything inject_node does, PLUS:
-    5. Applies negative outcome along correction -> connected workspace paths
-    6. Creates inhibitory edges that actively suppress wrong routes
+    Behaves like :func:`inject_node`, then adds negative edges from the injected
+    node to each newly connected neighbor to actively suppress that path.
 
-    Returns stats: {node_id, edges_added, inhibitory_edges_created, connected_to: [...]}
+    Returns:
+        ``{"node_id": str, "edges_added": int, "connected_to": list[str], "inhibitory_edges_created": int}``
     """
     correction_metadata = dict(metadata or {})
     correction_metadata.setdefault("type", "CORRECTION")
@@ -254,9 +265,13 @@ def inject_batch(
     connect_min_sim: float = 0.3,
     inhibition_strength: float = -0.5,
 ) -> dict:
-    """Inject multiple nodes at once. Corrections (type=CORRECTION) get inhibitory edges.
+    """Inject multiple nodes from a normalized input payload.
 
-    Returns: {injected: int, edges_added: int, inhibitory: int, skipped: int}
+    Supports mixed node kinds through ``item["type"]``:
+    when type is ``CORRECTION``, inhibitory edges are added after insertion.
+
+    Returns:
+        ``{"injected": int, "edges_added": int, "inhibitory": int, "skipped": int}``
     """
     if vectors is None:
         vectors = {}

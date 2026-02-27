@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v10.0.0
+- Added live injection API (`inject_node`, `inject_correction`, `inject_batch`) with CLI support via `crabpath inject`.
+- Added direct graph node injection paths for TEACHING/DIRECTIVE/CORRECTION workflows and lightweight injection stats payloads.
+- Expanded reproducibility docs with live injection verification steps.
+
+## v9.3.1
+- Hardened command entry-points and replay/logging behavior for edge cases in graph index + state workflows.
+- Improved docs around runtime injection, exports, and deterministic test paths.
+
+## v9.3.0
+- Introduced live injection primitives (`inject_*`) and correction-node inhibitory edge behavior.
+- Added `crabpath inject` command path and supporting test coverage.
+
 ## v9.1.0
 - Added adversarial tests, latency benchmark harness updates, interaction extraction, and benchmark cleanup.
 

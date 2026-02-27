@@ -55,9 +55,51 @@ for nid, content in texts.items():
 
 ## Quick Reference
 
-## API
+## API Reference
 
-- `graph.add_node(Node(...))` — inject external knowledge (corrections, directives) as graph nodes
+- Core lifecycle:
+  - `split_workspace`
+  - `load_state`
+  - `save_state`
+  - `ManagedState`
+  - `VectorIndex`
+- Traversal and learning:
+  - `traverse`
+  - `TraversalConfig`
+  - `TraversalResult`
+  - `apply_outcome`
+- Runtime injection APIs:
+  - `inject_node`
+  - `inject_correction`
+  - `inject_batch`
+- Maintenance helpers:
+  - `suggest_connections`, `apply_connections`
+  - `suggest_merges`, `apply_merge`
+  - `measure_health`, `autotune`, `replay_queries`
+- Embedding utilities:
+  - `HashEmbedder`
+  - `default_embed`
+  - `default_embed_batch`
+- Graph primitives:
+  - `Node`
+  - `Edge`
+  - `Graph`
+  - `split_workspace`
+  - `generate_summaries`
+
+## CLI Commands
+
+- `crabpath init --workspace W --output O [--sessions S]`
+- `crabpath query TEXT --state S [--top N] [--json]`
+- `crabpath learn --state S --outcome N --fired-ids a,b,c [--json]`
+- `crabpath inject --state S --id NODE_ID --content TEXT [--type CORRECTION|TEACHING|DIRECTIVE] [--json]`
+- `crabpath health --state S`
+- `crabpath doctor --state S`
+- `crabpath info --state S|--graph G`
+- `crabpath replay --state S --sessions S`
+- `crabpath merge --state S`
+- `crabpath connect --state S`
+- `crabpath journal [--stats]`
 
 ## Paper
 
