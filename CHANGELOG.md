@@ -50,7 +50,7 @@
 - `docs/architecture.md`: persistent worker, context lifecycle, constitutional anchors
 - `docs/setup-guide.md`: steps 7-9 (sync, anchors, compact)
 - Production stats: 4 brains (MAIN, PELICAN, BOUNTIFUL, CORMORANT)
-- `jonathangu.com/crabpath/gu2016/`: accessible policy gradient derivation page
+- `jonathangu.com/openclawbrain/gu2016/`: accessible policy gradient derivation page
 
 ### Tests
 - 246 tests (was 220), 15 simulations
@@ -114,7 +114,7 @@
   - updates for all outgoing edges at each step using `(1[chosen] - π)` score gradient
   - optional baseline and temperature support
   - weight clipping + Hebbian co-firing preserved
-- Exported `apply_outcome_pg` from `crabpath.__init__`.
+- Exported `apply_outcome_pg` from `openclawbrain.__init__`.
 - Extended `LearningConfig` with `temperature` and `baseline`.
 
 ### External benchmark additions
@@ -153,8 +153,8 @@
 - **`inject` auto-detects hash-v1 embedder** and defaults `--connect-min-sim` to 0.0 (was 0.3, causing zero connections for users without OpenAI).
 
 ### OpenAI integration
-- `crabpath/openai_embeddings.py` — `OpenAIEmbedder` class wrapping `text-embedding-3-small`.
-- `crabpath/openai_llm.py` — `openai_llm_fn` and `chat_completion` for GPT-5-mini routing/scoring.
+- `openclawbrain/openai_embeddings.py` — `OpenAIEmbedder` class wrapping `text-embedding-3-small`.
+- `openclawbrain/openai_llm.py` — `openai_llm_fn` and `chat_completion` for GPT-5-mini routing/scoring.
 - CLI flags: `--embedder openai` for init/query/inject, `--llm openai` for init/merge/connect.
 - Zero new required dependencies — `openai` is an optional runtime import.
 
@@ -180,7 +180,7 @@
 - Added CLI and API flows so OpenClawBrain can inject and persist correction/teaching signals without rebuilding the entire state.
 - Expanded operational guidance and verification workflow so feedback and correction behavior can be validated deterministically.
 
-- Added live injection APIs (`inject_node`, `inject_correction`, `inject_batch`) with CLI support via `crabpath inject`, enabling runtime updates during operation.
+- Added live injection APIs (`inject_node`, `inject_correction`, `inject_batch`) with CLI support via `openclawbrain inject`, enabling runtime updates during operation.
 - Added direct graph node injection paths for TEACHING, DIRECTIVE, and CORRECTION workflows, plus lightweight injection stats payloads from the CLI.
 
 - Expanded reproducibility docs with live injection verification steps so users can confirm graph updates and health signals after corrective actions.
@@ -191,7 +191,7 @@
 
 ## v9.3.0
 - Introduced live injection primitives (`inject_*`) and correction-node inhibitory edge behavior.
-- Added the `crabpath inject` command path and supporting test coverage for repeatable feedback workflows.
+- Added the `openclawbrain inject` command path and supporting test coverage for repeatable feedback workflows.
 
 ## v9.1.0
 - Added adversarial tests and latency benchmark harness updates to surface stability issues before release.

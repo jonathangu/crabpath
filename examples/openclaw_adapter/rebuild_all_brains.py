@@ -24,7 +24,7 @@ from openclawbrain.graph import Node
 from connect_learnings import connect_learnings
 
 
-LEARNING_DB = Path(os.environ.get("CRABPATH_LEARNING_DB", "~/.openclaw/workspace/learning/db/learning.db")).expanduser()
+LEARNING_DB = Path(os.environ.get("OPENCLAWBRAIN_LEARNING_DB", "~/.openclaw/workspace/learning/db/learning.db")).expanduser()
 
 AGENTS = {
     "main": {
