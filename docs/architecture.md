@@ -102,22 +102,33 @@ Missing vs adapter scripts (current production reality):
 ### What happens
 
 ```text
-health -> decay -> split -> merge -> prune -> connect
+health -> decay -> scale -> split -> merge -> prune -> connect
 ```
 
 1. **Health snapshot**: measure graph structure and quality with `measure_health()`.
-2. **Decay**: weaken dormant edges with `apply_decay()`.
-3. **Split**: identify bloated multi-topic nodes with `suggest_splits()` and apply `split_node()`.
-4. **Merge**: propose and apply structural merges with `suggest_merges()` and `apply_merge()`.
-5. **Prune**: remove weak edges and orphaned nodes.
-6. **Connect**: connect learning nodes to workspace neighborhoods.
+2. **Decay**: weaken edges with adaptive half-life via `apply_decay()`.
+3. **Scale**: apply `apply_synaptic_scaling()` to keep per-node positive outgoing weight mass in a mild budget.
+4. **Split**: identify bloated multi-topic nodes with `suggest_splits()` and apply `split_node()`.
+5. **Merge**: propose and apply structural merges with `suggest_merges()` and `apply_merge()`.
+6. **Prune**: remove weak edges and orphaned nodes.
+7. **Connect**: connect learning nodes to workspace neighborhoods.
 
 ### Functions used
 
 - `run_maintenance()` (new)
-- or directly: `measure_health()`, `apply_decay()`, `suggest_splits()`, `split_node()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
+- or directly: `measure_health()`, `apply_decay()`, `apply_synaptic_scaling()`, `suggest_splits()`, `split_node()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
 
 Split and merge form a balancing pair: split raises topic granularity when nodes become overloaded, while merge later recombines co-firing fragments when redundancy and similarity make them better represented as one node.
+
+## Self-Regulation
+
+Maintenance now includes three biologically inspired mechanisms:
+
+- **Homeostatic decay (firing-rate homeostasis).** `run_maintenance()` counts reflex-tier edges and adapts decay half-life toward a target ratio of 5-15%, speeding up decay when too many edges stay reflex and slowing down when reflexivity is too low.
+- **Synaptic scaling (activity-dependent normalization).** `apply_synaptic_scaling()` computes each node's outgoing positive mass and gently rescales above-budget source nodes, preserving relative edge structure while preventing hub lock-in.
+- **Tier hysteresis (stateful transition smoothing).** Habitual and reflex boundaries are widened to reduce edge flapping between tiers (`reflex >= 0.6`, `habitual 0.15-0.6`).
+
+These map to standard biological motifs: firing-rate homeostasis keeps overall excitability in range, synaptic scaling preserves relative patterns under constrained total synaptic weight, and hysteresis reduces chatter near decision thresholds.
 
 ## 4) Constitutional Anchors
 

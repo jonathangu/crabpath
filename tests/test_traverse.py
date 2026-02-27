@@ -59,7 +59,7 @@ def test_dormant_tier_is_skipped() -> None:
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
-    graph.add_edge(Edge("a", "b", 0.19))
+    graph.add_edge(Edge("a", "b", 0.10))
 
     result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=2, beam_width=1))
     assert result.fired == ["a"]
@@ -436,8 +436,8 @@ def test_tier_summary_in_result() -> None:
     result = traverse(graph, [("a", 1.0)], config=TraversalConfig())
     assert result.tier_summary == {
         "reflex": ">= 0.6",
-        "habitual": "0.2 - 0.6",
-        "dormant": "< 0.2",
+        "habitual": "0.15 - 0.6",
+        "dormant": "< 0.15",
         "inhibitory": "< -0.01",
     }
 

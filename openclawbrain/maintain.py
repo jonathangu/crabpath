@@ -58,6 +58,67 @@ def _extract_chunks(response: str) -> list[str]:
     return []
 
 
+def compute_adaptive_half_life(
+    graph: Graph,
+    current_half_life: float,
+    *,
+    reflex_threshold: float = 0.6,
+    target_reflex_ratio: tuple[float, float] = (0.05, 0.15),
+    step_factor: float = 0.03,
+    min_half_life: float = 60.0,
+    max_half_life: float = 300.0,
+) -> float:
+    """Adjust decay half-life based on reflex-edge ratio."""
+    total_edges = graph.edge_count()
+    if total_edges <= 0:
+        return max(min_half_life, min(max_half_life, float(current_half_life)))
+
+    reflex_edges = 0
+    for source_edges in graph._edges.values():
+        for edge in source_edges.values():
+            if edge.weight >= reflex_threshold:
+                reflex_edges += 1
+    reflex_ratio = reflex_edges / total_edges
+
+    if reflex_ratio > target_reflex_ratio[1]:
+        current_half_life *= 1.0 - step_factor
+    elif reflex_ratio < target_reflex_ratio[0]:
+        current_half_life *= 1.0 + step_factor
+
+    return max(min_half_life, min(max_half_life, float(current_half_life)))
+
+
+def apply_synaptic_scaling(
+    graph: Graph,
+    *,
+    budget: float = 5.0,
+    scaling_power: float = 0.25,
+    skip_node_ids: set[str] | None = None,
+) -> int:
+    """Apply soft L1 budget scaling on outgoing positive edges per source node."""
+    if budget <= 0 or scaling_power <= 0:
+        return 0
+
+    scaled_nodes = 0
+    skipped = skip_node_ids or set()
+    for source_node in graph.nodes():
+        if source_node.id in skipped:
+            continue
+
+        outgoing = list(graph.outgoing(source_node.id))
+        l1 = sum(max(0.0, edge.weight) for _target, edge in outgoing)
+        if l1 <= budget:
+            continue
+
+        factor = (budget / l1) ** scaling_power
+        for _target, edge in outgoing:
+            if edge.weight > 0:
+                edge.weight *= factor
+        scaled_nodes += 1
+
+    return scaled_nodes
+
+
 def _paragraph_chunks(content: str) -> list[str]:
     """Fallback split on blank-line boundaries."""
     chunks = [part.strip() for part in content.split("\n\n") if part.strip()]
@@ -194,7 +255,7 @@ def run_maintenance(
     decay_config: DecayConfig | None = None,
 ) -> MaintenanceReport:
     """Run an optional maintenance sweep over persisted graph state."""
-    task_order = ["health", "decay", "split", "merge", "prune", "connect"]
+    task_order = ["health", "decay", "scale", "split", "merge", "prune", "connect"]
     default_tasks = ["health", "decay", "merge", "prune"]
     requested = (
         list(dict.fromkeys([task.strip() for task in tasks if task.strip()]))
@@ -229,6 +290,29 @@ def run_maintenance(
         tasks_run.append("decay")
         canonical_nodes = _node_ids_with_authority(target_graph, "canonical")
         constitutional_nodes = _node_ids_with_authority(target_graph, "constitutional")
+        if decay_config is None:
+            # Adaptive: read persisted half-life from meta, adjust based on graph health
+            base_decay_config = DecayConfig()
+            current_half_life_raw = meta.get("decay_half_life", base_decay_config.half_life)
+            try:
+                current_half_life = float(current_half_life_raw)
+            except (TypeError, ValueError):
+                current_half_life = float(base_decay_config.half_life)
+            if current_half_life <= 0:
+                current_half_life = float(base_decay_config.half_life)
+
+            adaptive_half_life = compute_adaptive_half_life(
+                graph=target_graph,
+                current_half_life=current_half_life,
+            )
+            meta["decay_half_life"] = adaptive_half_life
+            decay_config = DecayConfig(
+                half_life=int(adaptive_half_life),
+                min_weight=base_decay_config.min_weight,
+            )
+        else:
+            # Explicit config passed — respect it, no adaptive adjustment
+            adaptive_half_life = float(decay_config.half_life)
 
         def _source_half_life(source_id: str) -> float:
             if source_id in canonical_nodes:
@@ -246,7 +330,25 @@ def run_maintenance(
             {
                 "type": "maintenance",
                 "task": "decay",
+                "decay_half_life": adaptive_half_life,
                 "edges_decayed": changed,
+                "dry_run": dry_run,
+            },
+            journal_path=journal_path,
+        )
+
+    if "scale" in selected:
+        tasks_run.append("scale")
+        constitutional_nodes = _node_ids_with_authority(target_graph, "constitutional")
+        scaled_nodes = apply_synaptic_scaling(
+            target_graph,
+            skip_node_ids=constitutional_nodes,
+        )
+        log_event(
+            {
+                "type": "maintenance",
+                "task": "scale",
+                "nodes_scaled": scaled_nodes,
                 "dry_run": dry_run,
             },
             journal_path=journal_path,
@@ -390,7 +492,7 @@ def run_maintenance(
 
     if dry_run:
         notes.append("dry_run=True; no state write performed")
-    elif any(task in selected for task in ("decay", "split", "prune", "merge", "connect")):
+    elif any(task in selected for task in ("decay", "scale", "split", "prune", "merge", "connect")):
         save_state(graph=target_graph, index=target_index, path=str(Path(state_path)), meta=meta)
 
     health_after = _health_payload(target_graph)

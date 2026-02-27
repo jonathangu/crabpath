@@ -154,10 +154,11 @@ To add knowledge without suppressing anything, use `--type TEACHING` instead.
 
 Alongside inhibitory edges and periodic merge, maintenance now supports runtime splitting:
 
-- `openclawbrain maintain` runs `split` between `decay` and `merge`.
+- `openclawbrain maintain` runs `scale` after `decay`, then `split` before `merge`.
 - `suggest_splits()` finds bloated multi-topic nodes (including merged-byline nodes).
 - `split_node()` rewires outgoing and incoming edges into focused child nodes, then removes the parent.
 - Inhibitory edges are always copied to every child, so suppressions are not lost.
+- `openclawbrain maintain` now also includes optional homeostatic controls: decay half-life auto-adjusts to keep reflex-edge ratio in range, and per-node synaptic scaling limits outgoing positive mass.
 
 ## Adding new knowledge (no rebuild needed)
 
@@ -279,7 +280,7 @@ See `examples/openai_embedder/` for a complete example.
 | `merge` | Suggest and apply node merges |
 | `anchor` | Set/list/remove constitutional authority on nodes |
 | `connect` | Connect learning nodes to workspace neighborhoods |
-| `maintain` | Run structural maintenance (health, decay, split, merge, prune, connect) |
+| `maintain` | Run structural maintenance (health, decay, scale, split, merge, prune, connect) |
 | `compact` | Compact old daily notes into graph nodes |
 | `sync` | Incremental re-embed after file changes |
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
@@ -402,7 +403,7 @@ Full derivation: https://jonathangu.com/openclawbrain/gu2016/
 | `max_hops` | `30` | Safety ceiling; damping controls convergence |
 | `fire_threshold` | `0.01` | Minimum score required to fire a candidate node |
 | `reflex_threshold` | `0.6` | Edges with weight `>= 0.6` auto-follow (no route function) |
-| `habitual_range` | `0.2 - 0.6` | Edges in this band run through route function |
+| `habitual_range` | `0.15 - 0.6` | Edges in this band run through route function |
 | `inhibitory_threshold` | `-0.01` | Edges at or below suppress targets |
 | `max_fired_nodes` | `None` | Hard stop on fired node count |
 | `max_context_chars` | `None` | Hard stop on rendered traversal context |
@@ -467,7 +468,7 @@ from openclawbrain import (
 - **How big:** ~180KB for 20 nodes (hash), ~60MB for 1,600 nodes (OpenAI embeddings)
 - **When to rebuild:** after major workspace restructuring or embedder changes
 - **Embedder changes:** OpenClawBrain stores the embedder name + dimension in state metadata and hard-fails on mismatch — no silent corruption
-- **Maintenance:** use `openclawbrain maintain` (`split` + `merge`) to rebalance structure as the graph evolves
+- **Maintenance:** use `openclawbrain maintain` (`decay` + `scale` + `split` + `merge` + `prune` + `connect`) to rebalance structure as the graph evolves
 
 ## Cost control
 

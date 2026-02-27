@@ -9,6 +9,11 @@
 ### Maintenance
 - Added runtime node splitting (`split_node`, `suggest_splits`). The inverse of merge — splits bloated multi-topic nodes into focused children with automatic edge rewiring. Integrates into maintenance pipeline between decay and merge.
 
+### Self-regulation
+- Added tier hysteresis by widening the habitual band to `0.15 - 0.6` (from `0.2 - 0.6`), reducing reflex/habitual thrashing.
+- Added homeostatic decay with adaptive half-life (bounded to 60-300): reflex-edge ratio is tracked and used to speed up/slow down decay to maintain a 5-15% reflex band.
+- Added synaptic scaling between decay and split: outgoing positive mass is softly capped per node (`budget=5.0`) to prevent hub dominance and preserve network balance.
+
 ## v12.1.1 (2026-02-27)
 
 ### Bug fixes (from issue #3)

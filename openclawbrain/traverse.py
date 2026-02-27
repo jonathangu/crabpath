@@ -41,7 +41,7 @@ class TraversalConfig:
     max_fired_nodes: int | None = None
     max_context_chars: int | None = None
     reflex_threshold: float = 0.6
-    habitual_range: tuple[float, float] = (0.2, 0.6)
+    habitual_range: tuple[float, float] = (0.15, 0.6)
 
 
 @dataclass
