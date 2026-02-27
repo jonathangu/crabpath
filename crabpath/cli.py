@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 import sys
+import tempfile
+import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
 from pathlib import Path
@@ -36,6 +38,7 @@ from .replay import (
 from .split import split_workspace
 from .hasher import HashEmbedder
 from .traverse import TraversalConfig, TraversalResult, traverse
+from .sync import DEFAULT_AUTHORITY_MAP, sync_workspace
 from ._util import _tokenize
 from .maintain import run_maintenance
 from .store import load_state, save_state
@@ -143,6 +146,17 @@ def _build_parser() -> argparse.ArgumentParser:
     info_group.add_argument("--state")
     info_group.add_argument("--graph")
     info.add_argument("--json", action="store_true")
+
+    sync = sub.add_parser("sync")
+    sync.add_argument("--state", required=True)
+    sync.add_argument("--workspace", required=True)
+    sync.add_argument("--embedder", choices=["openai", "hash"], default=None)
+    sync.add_argument(
+        "--authority-map",
+        help="JSON object mapping file name -> authority level",
+    )
+    sync.add_argument("--dry-run", action="store_true")
+    sync.add_argument("--json", action="store_true")
     return parser
 
 
@@ -936,6 +950,71 @@ def cmd_info(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_authority_map(raw: str | None) -> dict[str, str]:
+    """Parse authority map json string."""
+    if raw is None:
+        return dict(DEFAULT_AUTHORITY_MAP)
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise SystemExit("--authority-map must be a JSON object")
+
+    parsed: dict[str, str] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise SystemExit("--authority-map must map string keys to string values")
+        parsed[key] = value
+    return parsed
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    """cmd sync."""
+    authority_map = _parse_authority_map(getattr(args, "authority_map", None))
+    graph, index, meta = _resolve_graph_index(args)
+
+    embed_fn, embed_batch_fn, _, _ = _resolve_embedder(args, meta)
+
+    if args.dry_run:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_state = Path(tmp_dir) / "state.json"
+            shutil.copy2(args.state, tmp_state)
+            report = sync_workspace(
+                state_path=str(tmp_state),
+                workspace_dir=args.workspace,
+                embed_fn=embed_fn,
+                embed_batch_fn=embed_batch_fn,
+                journal_path=None,
+                authority_map=authority_map,
+            )
+            if args.json:
+                print(json.dumps(asdict(report), indent=2))
+            else:
+                print(
+                    f"sync report: +{report.nodes_added}/~{report.nodes_updated} "
+                    f"-{report.nodes_removed} ={report.nodes_unchanged} unchanged | "
+                    f"{report.embeddings_computed} embeddings"
+                )
+            return 0
+
+    report = sync_workspace(
+        state_path=args.state,
+        workspace_dir=args.workspace,
+        embed_fn=embed_fn,
+        embed_batch_fn=embed_batch_fn,
+        journal_path=_resolve_journal_path(args),
+        authority_map=authority_map,
+    )
+
+    if args.json:
+        print(json.dumps(asdict(report), indent=2))
+    else:
+        print(
+            f"sync report: +{report.nodes_added}/~{report.nodes_updated} "
+            f"-{report.nodes_removed} ={report.nodes_unchanged} unchanged | "
+            f"{report.embeddings_computed} embeddings"
+        )
+    return 0
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     """cmd health."""
     graph, _, _ = _resolve_graph_index(args)
@@ -1034,6 +1113,7 @@ def main(argv: list[str] | None = None) -> int:
         "journal": cmd_journal,
         "doctor": cmd_doctor,
         "info": cmd_info,
+        "sync": cmd_sync,
     }[args.command](args)
 
 

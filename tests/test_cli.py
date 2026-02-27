@@ -538,7 +538,7 @@ def test_health_command_text_output_is_readable(tmp_path, capsys) -> None:
 
 def test_cli_help_text_for_commands() -> None:
     """test cli help text for commands."""
-    for command in ["init", "query", "learn", "merge", "health", "connect", "replay", "journal"]:
+    for command in ["init", "query", "learn", "merge", "health", "connect", "replay", "journal", "sync"]:
         with pytest.raises(SystemExit):
             main([command, "--help"])
 

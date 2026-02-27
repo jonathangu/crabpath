@@ -14,6 +14,7 @@ from .connect import apply_connections, suggest_connections
 from .merge import apply_merge, suggest_merges
 from .replay import replay_queries
 from .split import generate_summaries, split_workspace
+from .sync import DEFAULT_AUTHORITY_MAP, SyncReport, sync_workspace
 from .store import ManagedState, load_state, save_state
 from .traverse import TraversalResult, TraversalConfig, traverse
 
@@ -39,6 +40,9 @@ __all__ = [
     "ManagedState",
     "split_workspace",
     "generate_summaries",
+    "sync_workspace",
+    "SyncReport",
+    "DEFAULT_AUTHORITY_MAP",
     "apply_outcome",
     "apply_outcome_pg",
     "remove_from_state",
