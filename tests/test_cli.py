@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from crabpath.cli import main
-from crabpath.hasher import default_embed
-from crabpath.journal import read_journal
+from openclawbrain.cli import main
+from openclawbrain.hasher import default_embed
+from openclawbrain.journal import read_journal
 
 
 def _write_graph_payload(path: Path) -> None:

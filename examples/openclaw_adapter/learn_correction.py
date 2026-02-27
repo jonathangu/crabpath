@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 import time
 
-from crabpath import HashEmbedder, apply_outcome, inject_correction, load_state, save_state
+from openclawbrain import HashEmbedder, apply_outcome, inject_correction, load_state, save_state
 
 
 FIRE_LOG = "fired_log.jsonl"

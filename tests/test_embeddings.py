@@ -29,7 +29,7 @@ def _install_fake_sentence_transformers(monkeypatch, encode_fn):
 
     module.SentenceTransformer = FakeSentenceTransformer
     monkeypatch.setitem(sys.modules, "sentence_transformers", module)
-    sys.modules.pop("crabpath.embeddings", None)
+    sys.modules.pop("openclawbrain.embeddings", None)
     return module, FakeSentenceTransformer
 
 
@@ -40,7 +40,7 @@ def test_local_embed_fn(monkeypatch) -> None:
         lambda text: _Vector([float(len(text)), 0.0]),
     )
     importlib.invalidate_caches()
-    embeddings = importlib.import_module("crabpath.embeddings")
+    embeddings = importlib.import_module("openclawbrain.embeddings")
     if hasattr(embeddings.local_embed_fn, "_model"):
         delattr(embeddings.local_embed_fn, "_model")
 
@@ -60,7 +60,7 @@ def test_local_embed_batch_fn(monkeypatch) -> None:
         lambda texts: _Vector([_Vector([float(len(text)), 1.0]) for text in texts]),
     )
     importlib.invalidate_caches()
-    embeddings = importlib.import_module("crabpath.embeddings")
+    embeddings = importlib.import_module("openclawbrain.embeddings")
     if hasattr(embeddings.local_embed_batch_fn, "_model"):
         delattr(embeddings.local_embed_batch_fn, "_model")
 

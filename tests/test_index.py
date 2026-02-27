@@ -3,7 +3,7 @@ from __future__ import annotations
 from math import isclose
 from pathlib import Path
 
-from crabpath.index import VectorIndex
+from openclawbrain.index import VectorIndex
 
 
 def test_vector_index_cosine_known_vectors_and_zero_vector_case() -> None:

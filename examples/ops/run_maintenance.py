@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from crabpath import load_state
-from crabpath.maintain import run_maintenance
+from openclawbrain import load_state
+from openclawbrain.maintain import run_maintenance
 from callbacks import make_embed_fn, make_llm_fn
 
 

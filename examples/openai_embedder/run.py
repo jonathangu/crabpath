@@ -6,10 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-from crabpath import VectorIndex, load_state, save_state, split_workspace, traverse
-from crabpath._batch import batch_or_single_embed
-from crabpath.learn import apply_outcome
-from crabpath.replay import replay_queries
+from openclawbrain import VectorIndex, load_state, save_state, split_workspace, traverse
+from openclawbrain._batch import batch_or_single_embed
+from openclawbrain.learn import apply_outcome
+from openclawbrain.replay import replay_queries
 
 
 def build_embed_batch_fn(client):

@@ -10,10 +10,10 @@ def main() -> None:
         [
             "python3",
             "-m",
-            "crabpath",
+            "openclawbrain",
             "daemon",
             "--state",
-            "~/.crabpath/main/state.json",
+            "~/.openclawbrain/main/state.json",
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

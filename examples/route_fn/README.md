@@ -12,7 +12,7 @@ RouteFn = Callable[[str | None, list[Edge], str], list[str]]
 ### Deterministic routing
 
 ```python
-from crabpath import Graph, Node, Edge, traverse, TraversalConfig
+from openclawbrain import Graph, Node, Edge, traverse, TraversalConfig
 
 graph = Graph()
 graph.add_node(Node("root", "root"))

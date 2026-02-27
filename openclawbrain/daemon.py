@@ -1,4 +1,4 @@
-"""Persistent long-running NDJSON worker for CrabPath."""
+"""Persistent long-running NDJSON worker for OpenClawBrain."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from .traverse import TraversalConfig, traverse
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="crabpathd")
+    parser = argparse.ArgumentParser(prog="openclawbrain daemon")
     parser.add_argument("--state", required=True)
     parser.add_argument("--embed-model", default="text-embedding-3-small")
     parser.add_argument("--auto-save-interval", type=int, default=10)

@@ -1,12 +1,12 @@
-# Reproduce CrabPath Results
+# Reproduce OpenClawBrain Results
 
 All paper claims are verified by deterministic simulations and one benchmark harness. No API keys are needed for simulation.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/jonathangu/crabpath.git
-cd crabpath
+git clone https://github.com/jonathangu/openclawbrain.git
+cd openclawbrain
 pip install -e .
 python sims/run_all.py
 ```
@@ -52,7 +52,7 @@ Expected: 204 passed.
 
 ## Benchmarks
 
-CrabPath includes a deterministic benchmark harness at `benchmarks/run_benchmark.py`.
+OpenClawBrain includes a deterministic benchmark harness at `benchmarks/run_benchmark.py`.
 
 ### Run
 
@@ -65,8 +65,8 @@ Benchmark output compares:
 
 1. keyword overlap
 2. hash embedding
-3. CrabPath traversal
-4. CrabPath traversal + session replay
+3. OpenClawBrain traversal
+4. OpenClawBrain traversal + session replay
 
 Run `python3 benchmarks/run_benchmark.py` to see current deterministic results for this commit.
 
@@ -101,15 +101,15 @@ Run an end-to-end CLI smoke test:
 python3 - <<'PY'
 from pathlib import Path
 
-from crabpath import VectorIndex, save_state, HashEmbedder, inject_node
-from crabpath.graph import Graph, Node
+from openclawbrain import VectorIndex, save_state, HashEmbedder, inject_node
+from openclawbrain.graph import Graph, Node
 
 graph = Graph()
 index = VectorIndex()
 graph.add_node(Node("seed", "Seed policy guidance", metadata={"file": "seed.md"}))
 index.upsert("seed", HashEmbedder().embed("Seed policy guidance"))
 
-state_path = Path("/tmp/crabpath_live_inject_state.json")
+state_path = Path("/tmp/openclawbrain_live_inject_state.json")
 save_state(graph=graph, index=index, path=state_path)
 
 result = inject_node(
@@ -127,8 +127,8 @@ print(f"node_count={graph.node_count()}")
 print(f"edges={graph.edge_count()}")
 PY
 
-crabpath inject \
-  --state /tmp/crabpath_live_inject_state.json \
+openclawbrain inject \
+  --state /tmp/openclawbrain_live_inject_state.json \
   --id learning::manual2 \
   --content "Never expose secrets in plain text." \
   --type TEACHING \

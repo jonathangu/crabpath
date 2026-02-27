@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath import VectorIndex
-from crabpath.cli import main
-from crabpath.graph import Graph, Node
-from crabpath.hasher import default_embed
-from crabpath.inject import inject_batch, inject_correction, inject_node
+from openclawbrain import VectorIndex
+from openclawbrain.cli import main
+from openclawbrain.graph import Graph, Node
+from openclawbrain.hasher import default_embed
+from openclawbrain.inject import inject_batch, inject_correction, inject_node
 
 
 def _write_state(path: Path) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crabpath.journal import journal_stats, log_learn, log_query, read_journal
+from openclawbrain.journal import journal_stats, log_learn, log_query, read_journal
 
 
 def test_log_query_appends(tmp_path: Path) -> None:

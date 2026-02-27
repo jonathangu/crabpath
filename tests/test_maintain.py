@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 
-from crabpath.decay import DecayConfig
-from crabpath.graph import Edge, Graph, Node
-from crabpath.index import VectorIndex
-from crabpath.maintain import MaintenanceReport, prune_edges, prune_orphan_nodes, run_maintenance
-from crabpath.cli import main
-from crabpath.store import save_state
+from openclawbrain.decay import DecayConfig
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.index import VectorIndex
+from openclawbrain.maintain import MaintenanceReport, prune_edges, prune_orphan_nodes, run_maintenance
+from openclawbrain.cli import main
+from openclawbrain.store import save_state
 
 
 def _write_state(path, graph: Graph, index_payload: dict[str, list[float]] | None = None) -> None:

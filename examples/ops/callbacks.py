@@ -11,7 +11,7 @@ def make_embed_fn(embedder: str = "openai"):
         A function mapping raw text to an embedding vector.
     """
     if embedder == "hash":
-        from crabpath import HashEmbedder
+        from openclawbrain import HashEmbedder
 
         return HashEmbedder().embed
 

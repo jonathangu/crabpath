@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from crabpath.decay import DecayConfig, apply_decay
-from crabpath.graph import Edge, Graph, Node
+from openclawbrain.decay import DecayConfig, apply_decay
+from openclawbrain.graph import Edge, Graph, Node
 
 
 def test_decay_single_step_reduces_all_edges() -> None:

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from crabpath.autotune import GraphHealth, apply_autotune, autotune, measure_health
-from crabpath.decay import DecayConfig
-from crabpath.graph import Edge, Graph, Node
-from crabpath.learn import LearningConfig
-from crabpath.traverse import TraversalConfig
+from openclawbrain.autotune import GraphHealth, apply_autotune, autotune, measure_health
+from openclawbrain.decay import DecayConfig
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.learn import LearningConfig
+from openclawbrain.traverse import TraversalConfig
 
 
 def test_measure_health_on_empty_graph() -> None:

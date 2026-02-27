@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from crabpath import HashEmbedder, VectorIndex, load_state, save_state, split_workspace, traverse
+from openclawbrain import HashEmbedder, VectorIndex, load_state, save_state, split_workspace, traverse
 
 
 def main(workspace: str) -> None:
@@ -53,7 +53,7 @@ def main(workspace: str) -> None:
 
     if result.fired:
         loaded_graph, loaded_index, loaded_meta = load_state(str(state_path))
-        from crabpath.learn import apply_outcome
+        from openclawbrain.learn import apply_outcome
 
         apply_outcome(loaded_graph, fired_nodes=result.fired[:2], outcome=1.0)
         save_state(

@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
-from crabpath.cli import main
-from crabpath.graph import Edge, Graph, Node
-from crabpath.replay import extract_interactions, extract_queries, extract_queries_from_dir, replay_queries
-from crabpath.traverse import TraversalConfig
+from openclawbrain.cli import main
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.replay import extract_interactions, extract_queries, extract_queries_from_dir, replay_queries
+from openclawbrain.traverse import TraversalConfig
 
 
 

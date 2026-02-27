@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from openai import OpenAI
-from crabpath import TraversalConfig, load_state, traverse
+from openclawbrain import TraversalConfig, load_state, traverse
 
 
 EMBED_MODEL = "text-embedding-3-small"

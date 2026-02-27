@@ -8,15 +8,15 @@ import sqlite3
 import time
 from pathlib import Path
 
-from crabpath.graph import Edge
-from crabpath.store import load_state, save_state
-from crabpath.autotune import measure_health
+from openclawbrain.graph import Edge
+from openclawbrain.store import load_state, save_state
+from openclawbrain.autotune import measure_health
 
 
 AGENT_STATES = {
-    "main": Path.home() / ".crabpath" / "main" / "state.json",
-    "pelican": Path.home() / ".crabpath" / "pelican" / "state.json",
-    "bountiful": Path.home() / ".crabpath" / "bountiful" / "state.json",
+    "main": Path.home() / ".openclawbrain" / "main" / "state.json",
+    "pelican": Path.home() / ".openclawbrain" / "pelican" / "state.json",
+    "bountiful": Path.home() / ".openclawbrain" / "bountiful" / "state.json",
 }
 
 

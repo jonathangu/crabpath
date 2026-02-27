@@ -30,9 +30,9 @@ query -> traverse -> log trace -> feedback -> learn
    - `apply_outcome_pg()` for full-policy updates.
 5. New material can be added with `inject()`.
 
-## 2-b) Persistent Worker (`crabpathd`)
+## 2-b) Persistent Worker (`openclawbrain daemon`)
 
-CrabPath now supports a persistent worker process (`crabpath daemon`) that keeps
+OpenClawBrain now supports a persistent worker process (`openclawbrain daemon`) that keeps
 `Graph` and `VectorIndex` in memory for the lifetime of the process.
 
 - Starts once and loads `state.json` at startup.
@@ -43,7 +43,7 @@ CrabPath now supports a persistent worker process (`crabpath daemon`) that keeps
 Command:
 
 ```bash
-python3 -m crabpath daemon --state PATH [--embed-model text-embedding-3-small] [--auto-save-interval 10]
+python3 -m openclawbrain daemon --state PATH [--embed-model text-embedding-3-small] [--auto-save-interval 10]
 ```
 
 Example request/response:
@@ -201,16 +201,16 @@ Run maintenance with your scheduler of choice. CrabPath has no scheduler depende
 
 ```cron
 # Nightly graph health + decay + merge + prune
-0 3 * * * /usr/bin/python3 -m crabpath.cli maintain --state ~/.crabpath/main/state.json
+0 3 * * * /usr/bin/python3 -m openclawbrain.cli maintain --state ~/.openclawbrain/main/state.json
 
 # Weekly deep sweep
-0 4 * * 0 /usr/bin/python3 -m crabpath.cli maintain --state ~/.crabpath/main/state.json --tasks health,decay,prune,merge,connect
+0 4 * * 0 /usr/bin/python3 -m openclawbrain.cli maintain --state ~/.openclawbrain/main/state.json --tasks health,decay,prune,merge,connect
 ```
 
 ### systemd timer
 
-- `crabpath-maintenance.service`: run `/usr/bin/python3 -m crabpath.cli maintain --state ...`
-- `crabpath-maintenance.timer`: `OnCalendar=daily` (or `OnUnitActiveSec=24h`)
+- `openclawbrain-maintenance.service`: run `/usr/bin/python3 -m openclawbrain.cli maintain --state ...`
+- `openclawbrain-maintenance.timer`: `OnCalendar=daily` (or `OnUnitActiveSec=24h`)
 
 ### GitHub Actions
 
@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install crabpath
+      - run: pip install openclawbrain
       - run: python3 examples/ops/run_maintenance.py --state ./brains/main/state.json
 ```
 
@@ -238,7 +238,7 @@ jobs:
 
 ### Slow loop
 
-- **Maintenance command**: `crabpath maintain ...`
+- **Maintenance command**: `openclawbrain maintain ...`
 - **Health metrics**: `measure_health()` and `log_health()`
 - **Topology updates**: decay, merge, prune, connect
 
@@ -300,7 +300,7 @@ When should the agent edit a file vs inject into CrabPath?
 |---|---|
 | New durable fact | Edit file → sync re-embeds it |
 | Correction received | Edit file + learn_correction.py |
-| Soft teaching | `crabpath inject --type TEACHING` only |
+| Soft teaching | `openclawbrain inject --type TEACHING` only |
 | Wrong retrieval | `learn_correction.py` (graph-only) |
 | New rule/contract | Edit `AGENTS.md` or `SOUL.md` |
 | Monitoring item | Edit `HEARTBEAT.md` |

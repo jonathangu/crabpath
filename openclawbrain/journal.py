@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-DEFAULT_JOURNAL_PATH = "~/.crabpath/journal.jsonl"
+DEFAULT_JOURNAL_PATH = "~/.openclawbrain/journal.jsonl"
 
 
 def log_event(event: dict, journal_path: str | None = None) -> None:

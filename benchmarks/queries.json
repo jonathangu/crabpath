@@ -80,92 +80,92 @@
     "relevant": ["REPRODUCE.md"]
   },
   {
-    "query": "What is the exact initialization order in `crabpath init` when sessions are passed, including replay timing versus embedding/index creation?",
-    "relevant": ["crabpath/cli.py", "crabpath/split.py", "crabpath/replay.py"]
+    "query": "What is the exact initialization order in `openclawbrain init` when sessions are passed, including replay timing versus embedding/index creation?",
+    "relevant": ["openclawbrain/cli.py", "openclawbrain/split.py", "openclawbrain/replay.py"]
   },
   {
     "query": "What is the query replay sequence in CLI and when does `last_replayed_ts` prevent duplicate session processing?",
-    "relevant": ["crabpath/cli.py", "crabpath/replay.py"]
+    "relevant": ["openclawbrain/cli.py", "openclawbrain/replay.py"]
   },
   {
     "query": "How does `apply_outcome` react differently to a missing edge when outcome is negative versus positive?",
-    "relevant": ["crabpath/learn.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/learn.py", "openclawbrain/graph.py"]
   },
   {
     "query": "In the PG learner, how are taken edges and non-taken edges weighted when updating a traversal path?",
-    "relevant": ["crabpath/learn.py", "crabpath/traverse.py"]
+    "relevant": ["openclawbrain/learn.py", "openclawbrain/traverse.py"]
   },
   {
     "query": "What does `apply_outcome_pg` change compared with `apply_outcome` after `traverse` on the same fired route?",
-    "relevant": ["crabpath/learn.py", "crabpath/traverse.py"]
+    "relevant": ["openclawbrain/learn.py", "openclawbrain/traverse.py"]
   },
   {
     "query": "How are inhibitory edges activated by incoming suppression during seed scoring versus later expansion in traversal?",
-    "relevant": ["crabpath/traverse.py"]
+    "relevant": ["openclawbrain/traverse.py"]
   },
   {
     "query": "What traversal candidates are skipped when tier is dormant or inhibitory, and what happens to suppression scores below the threshold?",
-    "relevant": ["crabpath/traverse.py", "crabpath/learn.py"]
+    "relevant": ["openclawbrain/traverse.py", "openclawbrain/learn.py"]
   },
   {
     "query": "How does edge_damping prevent runaway revisits when the same edge is traversed repeatedly in one query?",
-    "relevant": ["crabpath/traverse.py", "README.md"]
+    "relevant": ["openclawbrain/traverse.py", "README.md"]
   },
   {
     "query": "What are the exact stop conditions in traversal for max_fired_nodes, max_context_chars, and stop_expanding flags?",
-    "relevant": ["crabpath/traverse.py", "README.md"]
+    "relevant": ["openclawbrain/traverse.py", "README.md"]
   },
   {
     "query": "How is split chunking selected for `.md`, `.py`, `.json`, and config-like files during workspace split?",
-    "relevant": ["crabpath/split.py"]
+    "relevant": ["openclawbrain/split.py"]
   },
   {
     "query": "Which paths and patterns does split_workspace skip, including defaults, CLI excludes, and parsed .gitignore rules?",
-    "relevant": ["crabpath/split.py"]
+    "relevant": ["openclawbrain/split.py"]
   },
   {
     "query": "How are adjacent chunk sibling edges weighted and inserted when a file is split?",
-    "relevant": ["crabpath/split.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/split.py", "openclawbrain/graph.py"]
   },
   {
     "query": "How does split choose between heuristic chunking and LLM chunking, and how are failed LLM splits handled?",
-    "relevant": ["crabpath/split.py"]
+    "relevant": ["openclawbrain/split.py"]
   },
   {
-    "query": "What is the `crabpath inject` difference between TEACHING and CORRECTION with respect to inhibitory edge creation?",
-    "relevant": ["crabpath/inject.py", "crabpath/cli.py"]
+    "query": "What is the `openclawbrain inject` difference between TEACHING and CORRECTION with respect to inhibitory edge creation?",
+    "relevant": ["openclawbrain/inject.py", "openclawbrain/cli.py"]
   },
   {
     "query": "How are existing inhibitory edges updated inside `_apply_inhibitory_edges` when injection re-targets the same node again?",
-    "relevant": ["crabpath/inject.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/inject.py", "openclawbrain/graph.py"]
   },
   {
     "query": "How does CLI query fall back from index search to keyword overlap and which argument path triggers fallback?",
-    "relevant": ["crabpath/cli.py"]
+    "relevant": ["openclawbrain/cli.py"]
   },
   {
     "query": "How do cross-file edges get identified in health and why do they matter for autotune?",
-    "relevant": ["crabpath/autotune.py", "crabpath/cli.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/autotune.py", "openclawbrain/cli.py", "openclawbrain/graph.py"]
   },
   {
     "query": "When dormant edge ratio is high, what knob suggestions can `autotune` emit and why?",
-    "relevant": ["crabpath/autotune.py"]
+    "relevant": ["openclawbrain/autotune.py"]
   },
   {
     "query": "How does `replay_queries` compare edge snapshots to capture which edges were reinforced and which were newly cross-file?",
-    "relevant": ["crabpath/replay.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/replay.py", "openclawbrain/graph.py"]
   },
   {
     "query": "What is the candidate selection process for connect suggestions and why are same-file pairs ignored?",
-    "relevant": ["crabpath/connect.py"]
+    "relevant": ["openclawbrain/connect.py"]
   },
   {
     "query": "How does merge decide candidate sibling pairs and preserve strongest edges when rewiring a merged node?",
-    "relevant": ["crabpath/merge.py", "crabpath/graph.py"]
+    "relevant": ["openclawbrain/merge.py", "openclawbrain/graph.py"]
   },
   {
     "query": "What cold-start workflow sequence is documented in examples for init, doctor, query, correction, injection, query again, and health verification?",
-    "relevant": ["examples/cold_start/README.md", "crabpath/cli.py"]
+    "relevant": ["examples/cold_start/README.md", "openclawbrain/cli.py"]
   },
   {
     "query": "How does correction flow align fired nodes by chat_id and apply delayed corrections without losing the target route?",

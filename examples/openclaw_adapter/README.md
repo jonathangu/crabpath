@@ -34,7 +34,7 @@ Script specifics:
 The live correction flow adds two pieces:
 
 - `query_brain.py --chat-id` persists fired nodes in `<state_dir>/fired_log.jsonl`.
-- `learn_correction.py --chat-id ...` loads those fired IDs and applies `crabpath.learn` against the recent hits; optional `--content` injects a `CORRECTION` node.
+- `learn_correction.py --chat-id ...` loads those fired IDs and applies `openclawbrain.learn` against the recent hits; optional `--content` injects a `CORRECTION` node.
 
 The batch rebuild/replay path (`init_agent_brain.py` and `connect_learnings.py`) remains a safety net: it still re-hydrates active corrections and applies correction inhibition even when the real-time hook misses a signal.
 

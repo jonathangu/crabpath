@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath import DecayConfig, Edge, Graph, LearningConfig, Node, TraversalConfig, apply_decay, apply_outcome, traverse
+from openclawbrain import DecayConfig, Edge, Graph, LearningConfig, Node, TraversalConfig, apply_decay, apply_outcome, traverse
 
 
 RESULT_PATH = Path(__file__).with_name("forgetting_results.json")

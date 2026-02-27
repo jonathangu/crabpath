@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from math import isclose, isfinite
 
-from crabpath.graph import Edge, Graph, Node
-from crabpath.learn import LearningConfig, apply_outcome, apply_outcome_pg, hebbian_update
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.learn import LearningConfig, apply_outcome, apply_outcome_pg, hebbian_update
 
 
 def test_apply_outcome_positive_strengthens_edges() -> None:

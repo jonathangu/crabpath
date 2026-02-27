@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 from time import perf_counter
 
-from crabpath import Edge, Graph, Node, TraversalConfig, traverse
+from openclawbrain import Edge, Graph, Node, TraversalConfig, traverse
 
 
 RESULT_PATH = Path(__file__).with_name("scaling_analysis_results.json")

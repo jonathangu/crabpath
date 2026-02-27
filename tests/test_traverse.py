@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from crabpath.graph import Edge, Graph, Node
-from crabpath.traverse import TraversalConfig, traverse, _tier
+from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain.traverse import TraversalConfig, traverse, _tier
 
 
 def test_traverse_prefers_highest_reflex_edge() -> None:

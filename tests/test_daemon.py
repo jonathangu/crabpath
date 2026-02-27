@@ -6,8 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from crabpath import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
-from crabpath.store import load_state
+from openclawbrain import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
+from openclawbrain.store import load_state
 
 
 def _write_state(path: Path) -> None:
@@ -36,7 +36,7 @@ def _start_daemon(state_path: Path, auto_save_interval: int = 10) -> subprocess.
         [
             sys.executable,
             "-m",
-            "crabpath",
+            "openclawbrain",
             "daemon",
             "--state",
             str(state_path),

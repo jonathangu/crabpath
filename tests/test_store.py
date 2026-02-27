@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from crabpath import Edge, Graph, ManagedState, Node, VectorIndex, load_state, save_state
+from openclawbrain import Edge, Graph, ManagedState, Node, VectorIndex, load_state, save_state
 
 
 def test_save_load_state_with_meta(tmp_path: Path) -> None:

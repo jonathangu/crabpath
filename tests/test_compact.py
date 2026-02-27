@@ -4,9 +4,9 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 
-from crabpath.compact import compact_daily_notes
-from crabpath.hasher import default_embed
-from crabpath.store import load_state
+from openclawbrain.compact import compact_daily_notes
+from openclawbrain.hasher import default_embed
+from openclawbrain.store import load_state
 
 
 TODAY = date.today()

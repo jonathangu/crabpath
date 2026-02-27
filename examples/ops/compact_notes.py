@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from crabpath.compact import compact_daily_notes
+from openclawbrain.compact import compact_daily_notes
 from callbacks import make_embed_fn, make_llm_fn
 
 

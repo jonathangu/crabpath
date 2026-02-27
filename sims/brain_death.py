@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crabpath import (
+from openclawbrain import (
     Edge,
     Graph,
     Node,

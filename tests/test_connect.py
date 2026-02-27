@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from crabpath.connect import apply_connections, suggest_connections
-from crabpath.graph import Graph, Node
+from openclawbrain.connect import apply_connections, suggest_connections
+from openclawbrain.graph import Graph, Node
 
 
 def test_suggest_connections_with_llm() -> None:

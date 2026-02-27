@@ -16,11 +16,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from crabpath import split_workspace, VectorIndex
-from crabpath.replay import extract_queries_from_dir, replay_queries
-from crabpath.store import save_state, load_state
-from crabpath.autotune import measure_health
-from crabpath.graph import Node
+from openclawbrain import split_workspace, VectorIndex
+from openclawbrain.replay import extract_queries_from_dir, replay_queries
+from openclawbrain.store import save_state, load_state
+from openclawbrain.autotune import measure_health
+from openclawbrain.graph import Node
 from connect_learnings import connect_learnings
 
 
@@ -30,20 +30,20 @@ AGENTS = {
     "main": {
         "workspace": Path.home() / ".openclaw" / "workspace",
         "sessions": Path.home() / ".openclaw" / "agents" / "main" / "sessions",
-        "output": Path.home() / ".crabpath" / "main",
-        "cache": Path("/tmp/crabpath_main_embeddings.json"),
+        "output": Path.home() / ".openclawbrain" / "main",
+        "cache": Path("/tmp/openclawbrain_main_embeddings.json"),
     },
     "pelican": {
         "workspace": Path.home() / ".openclaw" / "workspace-pelican",
         "sessions": Path.home() / ".openclaw" / "agents" / "pelican" / "sessions",
-        "output": Path.home() / ".crabpath" / "pelican",
-        "cache": Path("/tmp/crabpath_pelican_embeddings.json"),
+        "output": Path.home() / ".openclawbrain" / "pelican",
+        "cache": Path("/tmp/openclawbrain_pelican_embeddings.json"),
     },
     "bountiful": {
         "workspace": Path.home() / ".openclaw" / "workspace-bountiful",
         "sessions": Path.home() / ".openclaw" / "agents" / "bountiful" / "sessions",
-        "output": Path.home() / ".crabpath" / "bountiful",
-        "cache": Path("/tmp/crabpath_bountiful_embeddings.json"),
+        "output": Path.home() / ".openclawbrain" / "bountiful",
+        "cache": Path("/tmp/openclawbrain_bountiful_embeddings.json"),
     },
 }
 
@@ -319,7 +319,7 @@ def rebuild_agent(
     
     # 10. Doctor
     import subprocess
-    result = subprocess.run(["crabpath", "doctor", "--state", str(state_path)],
+    result = subprocess.run(["openclawbrain", "doctor", "--state", str(state_path)],
                           capture_output=True, text=True)
     print(f"  Doctor:\n" + "\n".join(f"    {l}" for l in (result.stdout or "").strip().splitlines()))
     

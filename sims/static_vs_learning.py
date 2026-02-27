@@ -6,7 +6,7 @@ import json
 import random
 from pathlib import Path
 
-from crabpath import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, apply_outcome_pg, traverse
+from openclawbrain import Edge, Graph, LearningConfig, Node, TraversalConfig, apply_outcome, apply_outcome_pg, traverse
 
 
 RESULT_PATH = Path(__file__).with_name("static_vs_learning_results.json")

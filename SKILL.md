@@ -1,5 +1,5 @@
 ---
-name: crabpath
+name: openclawbrain
 description: Memory graph engine with caller-provided embed and LLM callbacks; core is pure, with real-time correction flow and optional OpenAI integration.
 metadata:
   openclaw:
@@ -8,7 +8,7 @@ metadata:
       python: ">=3.10"
 ---
 
-# CrabPath
+# OpenClawBrain (Formerly CrabPath)
 
 Pure graph core: zero required deps and no network calls. Caller provides callbacks.
 
@@ -23,7 +23,7 @@ Pure graph core: zero required deps and no network calls. Caller provides callba
 ## Quick Start
 
 ```python
-from crabpath import split_workspace, HashEmbedder, VectorIndex
+from openclawbrain import split_workspace, HashEmbedder, VectorIndex
 
 graph, texts = split_workspace("./workspace")
 embedder = HashEmbedder()
@@ -46,21 +46,21 @@ for nid, content in texts.items():
 
 `--state` is preferred:
 
-`crabpath query TEXT --state S [--top N] [--json]`
-`crabpath query TEXT --state S --chat-id CID`
+`openclawbrain query TEXT --state S [--top N] [--json]`
+`openclawbrain query TEXT --state S --chat-id CID`
 
-`crabpath doctor --state S`
-`crabpath info --state S`
-`crabpath init --workspace W --output O --embedder openai`
-`crabpath query TEXT --state S --llm openai`
-`crabpath inject --state S --type TEACHING [--type DIRECTIVE]`
+`openclawbrain doctor --state S`
+`openclawbrain info --state S`
+`openclawbrain init --workspace W --output O --embedder openai`
+`openclawbrain query TEXT --state S --llm openai`
+`openclawbrain inject --state S --type TEACHING [--type DIRECTIVE]`
 
 Real-time correction flow:
 `python3 query_brain.py --chat-id CHAT_ID`
 `python3 learn_correction.py --chat-id CHAT_ID`
 
 ## Quick Reference
-- `crabpath init/query/learn/inject/health/doctor/info`
+- `openclawbrain init/query/learn/inject/health/doctor/info`
 - `query_brain.py --chat-id` and `learn_correction.py` for real-time correction pipelines
 - `query_brain.py` traversal limits: `beam_width=8`, `max_hops=30`, `fire_threshold=0.01`
 - Hard traversal caps: `max_fired_nodes` and `max_context_chars` (defaults `None`; `query_brain.py` defaults `max_context_chars=20000`)
@@ -105,19 +105,19 @@ Real-time correction flow:
 
 ## CLI Commands
 
-- `crabpath init --workspace W --output O [--sessions S] [--embedder openai]`
-- `crabpath query TEXT --state S [--top N] [--json] [--chat-id CHAT_ID]`
-- `crabpath learn --state S --outcome N --fired-ids a,b,c [--json]`
-- `crabpath inject --state S --id NODE_ID --content TEXT [--type CORRECTION|TEACHING|DIRECTIVE] [--json] [--connect-min-sim 0.0]`
-- `crabpath inject --state S --id NODE_ID --content TEXT --type TEACHING`
-- `crabpath inject --state S --id NODE_ID --content TEXT --type DIRECTIVE`
-- `crabpath health --state S`
-- `crabpath doctor --state S`
-- `crabpath info --state S`
-- `crabpath replay --state S --sessions S`
-- `crabpath merge --state S [--llm openai]`
-- `crabpath connect --state S [--llm openai]`
-- `crabpath journal [--stats]`
+- `openclawbrain init --workspace W --output O [--sessions S] [--embedder openai]`
+- `openclawbrain query TEXT --state S [--top N] [--json] [--chat-id CHAT_ID]`
+- `openclawbrain learn --state S --outcome N --fired-ids a,b,c [--json]`
+- `openclawbrain inject --state S --id NODE_ID --content TEXT [--type CORRECTION|TEACHING|DIRECTIVE] [--json] [--connect-min-sim 0.0]`
+- `openclawbrain inject --state S --id NODE_ID --content TEXT --type TEACHING`
+- `openclawbrain inject --state S --id NODE_ID --content TEXT --type DIRECTIVE`
+- `openclawbrain health --state S`
+- `openclawbrain doctor --state S`
+- `openclawbrain info --state S`
+- `openclawbrain replay --state S --sessions S`
+- `openclawbrain merge --state S [--llm openai]`
+- `openclawbrain connect --state S [--llm openai]`
+- `openclawbrain journal [--stats]`
 - `query_brain.py --chat-id CHAT_ID`
 - `learn_correction.py --chat-id CHAT_ID`
 
@@ -134,4 +134,4 @@ Real-time correction flow:
 
 ## Paper
 
-https://jonathangu.com/crabpath/
+https://jonathangu.com/openclawbrain/

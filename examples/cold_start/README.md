@@ -5,13 +5,13 @@ This guide is for a brand new workspace with zero sessions and zero corrections.
 ## Prerequisites
 
 - Use the repo sample workspace: `examples/sample_workspace`
-- Ensure `crabpath` is installed (`pip install crabpath`)
+- Ensure `openclawbrain` is installed (`pip install openclawbrain`)
 
 ## 1) Build a fresh brain
 
 ```bash
-crabpath init --workspace examples/sample_workspace --output /tmp/cold-start-brain
-crabpath doctor --state /tmp/cold-start-brain/state.json
+openclawbrain init --workspace examples/sample_workspace --output /tmp/cold-start-brain
+openclawbrain doctor --state /tmp/cold-start-brain/state.json
 ```
 
 Expected:
@@ -26,7 +26,7 @@ Summary: 7/7 checks passed
 ## 2) Query before teaching
 
 ```bash
-crabpath query "how do I deploy" --state /tmp/cold-start-brain/state.json --top 3
+openclawbrain query "how do I deploy" --state /tmp/cold-start-brain/state.json --top 3
 ```
 
 Expected:
@@ -48,8 +48,8 @@ How to rollback a failed deployment
 ## 3) Mark one outcome as bad, then teach a correction
 
 ```bash
-crabpath learn --state /tmp/cold-start-brain/state.json --outcome -1.0 --fired-ids "deploy.md::0,deploy.md::1"
-crabpath inject --state /tmp/cold-start-brain/state.json --id fix::hotfix-cicd --content "Never skip CI for hotfixes" --type CORRECTION
+openclawbrain learn --state /tmp/cold-start-brain/state.json --outcome -1.0 --fired-ids "deploy.md::0,deploy.md::1"
+openclawbrain inject --state /tmp/cold-start-brain/state.json --id fix::hotfix-cicd --content "Never skip CI for hotfixes" --type CORRECTION
 ```
 
 Expected: learn summary
@@ -61,7 +61,7 @@ Expected: learn summary
 ## 3b) Add new knowledge
 
 ```bash
-crabpath inject --state /tmp/cold-start-brain/state.json \
+openclawbrain inject --state /tmp/cold-start-brain/state.json \
   --id "teaching::deploy-tip" \
   --content "Always notify #ops before deploying on Fridays" \
   --type TEACHING --json
@@ -72,7 +72,7 @@ Expected: the node connects to deploy.md chunks without creating inhibitory edge
 ## 4) Query after routing change
 
 ```bash
-crabpath query "can I skip CI" --state /tmp/cold-start-brain/state.json --top 3
+openclawbrain query "can I skip CI" --state /tmp/cold-start-brain/state.json --top 3
 ```
 
 Expected: hotfix path stays high and the new correction node appears.
@@ -90,7 +90,7 @@ First week workflow
 ## 5) Ask a third canned question to validate cross-file routing
 
 ```bash
-crabpath query "can I monitor on-call response" --state /tmp/cold-start-brain/state.json --top 3
+openclawbrain query "can I monitor on-call response" --state /tmp/cold-start-brain/state.json --top 3
 ```
 
 Expected:
@@ -108,9 +108,9 @@ What to watch after a deployment
 ## 6) Route sanity check with health
 
 ```bash
-crabpath health --state /tmp/cold-start-brain/state.json
-crabpath learn --state /tmp/cold-start-brain/state.json --outcome -1.0 --fired-ids "deploy.md::1,deploy.md::2"
-crabpath health --state /tmp/cold-start-brain/state.json
+openclawbrain health --state /tmp/cold-start-brain/state.json
+openclawbrain learn --state /tmp/cold-start-brain/state.json --outcome -1.0 --fired-ids "deploy.md::1,deploy.md::2"
+openclawbrain health --state /tmp/cold-start-brain/state.json
 ```
 
 Look for a health readout that changes after the bad outcome (edges and percentages will shift).

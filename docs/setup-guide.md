@@ -2,16 +2,16 @@
 
 ## Prerequisites
 - Python 3.10+
-- `pip install crabpath`
+- `pip install openclawbrain`
 - `OPENAI_API_KEY` in environment (for OpenAI embeddings; optional if using `hash`)
 - A workspace directory with markdown files (your agent's knowledge base)
 
 ## Step 1: Build your first brain
 
 ```bash
-crabpath init --workspace ./my-workspace --state ./brain/state.json --embedder openai
-crabpath doctor --state ./brain/state.json
-crabpath info --state ./brain/state.json
+openclawbrain init --workspace ./my-workspace --state ./brain/state.json --embedder openai
+openclawbrain doctor --state ./brain/state.json
+openclawbrain info --state ./brain/state.json
 ```
 
 ## Step 2: Wire up the fast loop (per-query)
@@ -33,7 +33,7 @@ Use this when building your query handler:
 - Log query traces and learn outcomes:
   - `+1.0` for good output
   - `-1.0` for bad output
-- Persist feedback with `crabpath learn`
+- Persist feedback with `openclawbrain learn`
 
 For an AGENTS.md drop-in hook, use:
 
@@ -44,8 +44,8 @@ For an AGENTS.md drop-in hook, use:
 Run maintenance manually:
 
 ```bash
-crabpath maintain --state ./brain/state.json --tasks health,decay,prune,merge
-crabpath maintain --state ./brain/state.json --dry-run --json
+openclawbrain maintain --state ./brain/state.json --tasks health,decay,prune,merge
+openclawbrain maintain --state ./brain/state.json --dry-run --json
 ```
 
 Schedule maintenance:
@@ -53,20 +53,20 @@ Schedule maintenance:
 ### Cron one-liner
 
 ```cron
-0 2 * * * /usr/bin/python3 -m crabpath.cli maintain --state /opt/crabpath/brain/state.json --tasks health,decay,prune,merge
+0 2 * * * /usr/bin/python3 -m openclawbrain.cli maintain --state /opt/openclawbrain/brain/state.json --tasks health,decay,prune,merge
 ```
 
 ### systemd timer snippet
 
-`/etc/systemd/system/crabpath-maintenance.service`
+`/etc/systemd/system/openclawbrain-maintenance.service`
 
 ```ini
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -m crabpath.cli maintain --state /opt/crabpath/brain/state.json --tasks health,decay,prune,merge
+ExecStart=/usr/bin/python3 -m openclawbrain.cli maintain --state /opt/openclawbrain/brain/state.json --tasks health,decay,prune,merge
 ```
 
-`/etc/systemd/system/crabpath-maintenance.timer`
+`/etc/systemd/system/openclawbrain-maintenance.timer`
 
 ```ini
 [Timer]
@@ -82,16 +82,16 @@ WantedBy=timers.target
 You can also invoke from your existing batch workflow/job:
 
 ```bash
-python3 /opt/crabpath/examples/ops/run_maintenance.py --state /opt/crabpath/brain/state.json --tasks health,decay,prune,merge
+python3 /opt/openclawbrain/examples/ops/run_maintenance.py --state /opt/openclawbrain/brain/state.json --tasks health,decay,prune,merge
 ```
 
 ## Step 4: Inject corrections and teachings
 
 ```bash
-crabpath inject --state ./brain/state.json --id "correction::wrong-deploy" \
+openclawbrain inject --state ./brain/state.json --id "correction::wrong-deploy" \
   --content "Never deploy on Fridays without notifying ops" --type CORRECTION
 
-crabpath inject --state ./brain/state.json --id "teaching::deploy-window" \
+openclawbrain inject --state ./brain/state.json --id "teaching::deploy-window" \
   --content "Deploy window is Tuesday-Thursday 10am-2pm" --type TEACHING
 ```
 
@@ -107,8 +107,8 @@ python3 examples/openclaw_adapter/rebuild_all_brains.py --agent main
 ## Step 6: Monitor health
 
 ```bash
-crabpath health --state ./brain/state.json
-crabpath info --state ./brain/state.json
+openclawbrain health --state ./brain/state.json
+openclawbrain info --state ./brain/state.json
 ```
 
 ### Key metrics
@@ -120,26 +120,26 @@ crabpath info --state ./brain/state.json
 ## Step 7: Set up file sync (incremental re-embedding)
 
 ```bash
-crabpath sync --state ~/.crabpath/main/state.json --workspace ./my-workspace --embedder openai
+openclawbrain sync --state ~/.openclawbrain/main/state.json --workspace ./my-workspace --embedder openai
 ```
 
 ## Step 8: Set constitutional anchors
 
 ```bash
-crabpath anchor --state ~/.crabpath/main/state.json --node-id "SOUL.md::0" --authority constitutional
-crabpath anchor --state ~/.crabpath/main/state.json --list
+openclawbrain anchor --state ~/.openclawbrain/main/state.json --node-id "SOUL.md::0" --authority constitutional
+openclawbrain anchor --state ~/.openclawbrain/main/state.json --list
 ```
 
 ## Step 9: Compact old daily notes
 
 ```bash
-crabpath compact --state ~/.crabpath/main/state.json --memory-dir ./memory --dry-run
+openclawbrain compact --state ~/.openclawbrain/main/state.json --memory-dir ./memory --dry-run
 ```
 
 ## Brain directory layout
 
 ```
-~/.crabpath/main/
+~/.openclawbrain/main/
 ├── state.json                 # Graph + index + metadata
 ├── journal.jsonl              # Append-only telemetry
 ├── fired_log.jsonl            # Per-chat fired nodes
