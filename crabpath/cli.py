@@ -116,6 +116,11 @@ def _build_parser() -> argparse.ArgumentParser:
     z.add_argument("--dry-run", action="store_true")
     z.add_argument("--json", action="store_true")
 
+    d = sub.add_parser("daemon")
+    d.add_argument("--state", required=True)
+    d.add_argument("--embed-model", default="text-embedding-3-small")
+    d.add_argument("--auto-save-interval", type=int, default=10)
+
     x = sub.add_parser("inject")
     x.add_argument("--state", required=True)
     x.add_argument("--id", required=True)
@@ -1121,6 +1126,22 @@ def cmd_maintain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_daemon(args: argparse.Namespace) -> int:
+    """cmd daemon."""
+    from .daemon import main as daemon_main
+
+    return daemon_main(
+        [
+            "--state",
+            str(args.state),
+            "--embed-model",
+            args.embed_model,
+            "--auto-save-interval",
+            str(args.auto_save_interval),
+        ]
+    )
+
+
 def cmd_journal(args: argparse.Namespace) -> int:
     """cmd journal."""
     journal_path = _resolve_journal_path(args)
@@ -1157,6 +1178,7 @@ def main(argv: list[str] | None = None) -> int:
         "anchor": cmd_anchor,
         "connect": cmd_connect,
         "compact": cmd_compact,
+        "daemon": cmd_daemon,
         "inject": cmd_inject,
         "replay": cmd_replay,
         "health": cmd_health,

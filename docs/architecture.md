@@ -30,6 +30,49 @@ query -> traverse -> log trace -> feedback -> learn
    - `apply_outcome_pg()` for full-policy updates.
 5. New material can be added with `inject()`.
 
+## 2-b) Persistent Worker (`crabpathd`)
+
+CrabPath now supports a persistent worker process (`crabpath daemon`) that keeps
+`Graph` and `VectorIndex` in memory for the lifetime of the process.
+
+- Starts once and loads `state.json` at startup.
+- Accepts NDJSON requests over stdin and writes one-line JSON responses to stdout.
+- Avoids per-call reload overhead in the fast path, often saving ~100–800ms per query-heavy call path.
+- Supports periodic and explicit save behavior.
+
+Command:
+
+```bash
+python3 -m crabpath daemon --state PATH [--embed-model text-embedding-3-small] [--auto-save-interval 10]
+```
+
+Example request/response:
+
+```json
+{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4,"chat_id":"telegram:123"}}
+```
+
+```json
+{"id":"req-1","result":{"fired_nodes":["a"],"context":"...","seeds":[["a",0.96]],"embed_query_ms":1.1,"traverse_ms":2.4,"total_ms":3.5}}
+```
+
+Supported methods:
+
+- `query`: returns `fired_nodes`, `context`, `seeds`, timing (`embed_query_ms`, `traverse_ms`, `total_ms`)
+- `learn`: returns `edges_updated`
+- `maintain`: returns `health_before`, `health_after`, `merges_applied`
+- `health`: returns health metrics
+- `info`: returns node/edge counts and `embedder`
+- `save`: persists state immediately
+- `reload`: reloads `state.json` from disk
+- `shutdown`: persists pending writes and exits
+
+Auto-save behavior:
+
+- `write_count` increments after write operations (`learn`, `maintain`).
+- On every `N` writes, where `N` is `--auto-save-interval`, the daemon saves state.
+- `shutdown` persists pending state before exit.
+
 ### Vocabulary
 
 - **Brain**: persisted `state.json` plus associated artifacts.
