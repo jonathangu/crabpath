@@ -71,6 +71,26 @@ Run it periodically (cron, timer, CI job, custom workflow) or after meaningful e
   - `llm_fn(system, user) -> str` (optional)
 - Scheduling and lock strategy.
 
+#### Callback Construction
+
+CrabPath requires callbacks only. Core code does not import provider SDKs.
+
+```python
+from examples.ops.callbacks import make_embed_fn, make_llm_fn
+
+embed_fn = make_embed_fn("openai")  # defaults to text-embedding-3-small
+llm_fn = make_llm_fn("gpt-5-mini")
+
+run_maintenance(
+    state_path="...",
+    embed_fn=embed_fn,
+    llm_fn=llm_fn,
+)
+
+apply_outcome(...)
+
+```
+
 ### CrabPath provides
 
 - `state.json` (graph + index + meta)

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
-from crabpath import HashEmbedder, TraversalConfig, apply_outcome, load_state, save_state, traverse
+from crabpath import TraversalConfig, apply_outcome, load_state, save_state, traverse
 from crabpath.journal import log_learn, log_query
+from callbacks import make_embed_fn
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -16,6 +18,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--top", type=int, default=4)
     parser.add_argument("--outcome", type=float, default=1.0)
     parser.add_argument("--journal")
+    parser.add_argument(
+        "--embedder",
+        default="openai",
+        choices=["openai", "hash"],
+        help="Embedding backend to use (default: openai)",
+    )
     args = parser.parse_args(argv)
 
     state_path = Path(args.state)
@@ -25,8 +33,14 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("--top must be >= 1")
 
     graph, index, meta = load_state(str(state_path))
-    embedder = HashEmbedder()
-    query_vector = embedder.embed(args.query)
+
+    api_key_present = bool(os.getenv("OPENAI_API_KEY"))
+    embedder_name = args.embedder
+    if embedder_name == "openai" and not api_key_present:
+        print("warning: OPENAI_API_KEY not set, using --embedder hash fallback")
+        embedder_name = "hash"
+    embed_fn = make_embed_fn(embedder_name)
+    query_vector = embed_fn(args.query)
 
     expected_dim = meta.get("embedder_dim")
     if isinstance(expected_dim, int) and len(query_vector) != expected_dim:
