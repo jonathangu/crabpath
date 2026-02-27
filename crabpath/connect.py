@@ -10,6 +10,7 @@ from ._util import _extract_json, _tokenize
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
+    """ safe float."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -17,6 +18,7 @@ def _safe_float(value: object, default: float = 0.0) -> float:
 
 
 def _node_file(node: Node | None) -> str | None:
+    """ node file."""
     if node is None:
         return None
     file_value = node.metadata.get("file")
@@ -124,7 +126,7 @@ def suggest_connections(
 
 
 def apply_connections(graph: Graph, connections: list[tuple[str, str, float, str]]) -> int:
-    """Apply suggested connections as new edges. Returns the number of edges added."""
+    """apply connections."""
     added = 0
     seen: set[tuple[str, str]] = set()
     for source_id, target_id, weight, reason in connections:

@@ -22,6 +22,7 @@ def batch_or_single(
     from concurrent.futures import ThreadPoolExecutor
 
     def _call(req: dict) -> dict:
+        """Call LLM for one request."""
         try:
             response = llm_fn(req["system"], req["user"])
             return {"id": req["id"], "response": response}
@@ -54,6 +55,7 @@ def batch_or_single_embed(
     from concurrent.futures import ThreadPoolExecutor
 
     def _call(item: tuple[str, str]) -> tuple[str, list[float]]:
+        """Call embedder for one text."""
         node_id, text = item
         return node_id, embed_fn(text)
 

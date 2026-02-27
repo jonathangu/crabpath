@@ -65,6 +65,7 @@ class TraversalResult:
 
 
 def _tier(weight: float, config: TraversalConfig) -> str:
+    """ tier."""
     if weight <= config.inhibitory_threshold:
         return "inhibitory"
     if weight >= config.reflex_threshold:
@@ -75,6 +76,7 @@ def _tier(weight: float, config: TraversalConfig) -> str:
 
 
 def _tier_summary(config: TraversalConfig) -> dict[str, str]:
+    """ tier summary."""
     return {
         "reflex": f">= {config.reflex_threshold}",
         "habitual": f"{config.habitual_range[0]} - {config.habitual_range[1]}",
@@ -89,6 +91,7 @@ def _incoming_inhibition(
     active_scores: dict[str, float],
     config: TraversalConfig,
 ) -> float:
+    """Calculate inhibitory suppression from incoming negative edges."""
     if not active_scores:
         return 0.0
 
@@ -108,6 +111,7 @@ def _build_context(
     fired: list[str],
     max_chars: int | None,
 ) -> str:
+    """Build textual context from ranked fired nodes."""
     if not fired:
         return ""
     if max_chars is None:

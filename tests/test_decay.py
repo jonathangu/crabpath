@@ -5,6 +5,7 @@ from crabpath.graph import Edge, Graph, Node
 
 
 def test_decay_single_step_reduces_all_edges() -> None:
+    """test decay single step reduces all edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -19,6 +20,7 @@ def test_decay_single_step_reduces_all_edges() -> None:
 
 
 def test_decay_half_life_approx_halves_after_rounds() -> None:
+    """test decay half life approx halves after rounds."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -31,6 +33,7 @@ def test_decay_half_life_approx_halves_after_rounds() -> None:
 
 
 def test_decay_clears_weights_below_min_weight() -> None:
+    """test decay clears weights below min weight."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -42,11 +45,13 @@ def test_decay_clears_weights_below_min_weight() -> None:
 
 
 def test_decay_empty_graph() -> None:
+    """test decay empty graph."""
     graph = Graph()
     assert apply_decay(graph, config=DecayConfig(half_life=10, min_weight=0.01)) == 0
 
 
 def test_decay_does_not_change_zero_weight_edges() -> None:
+    """test decay does not change zero weight edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -58,6 +63,7 @@ def test_decay_does_not_change_zero_weight_edges() -> None:
 
 
 def test_decay_moves_negative_weights_toward_zero() -> None:
+    """test decay moves negative weights toward zero."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -68,6 +74,7 @@ def test_decay_moves_negative_weights_toward_zero() -> None:
 
 
 def test_decay_preserves_metadata_and_kind() -> None:
+    """test decay preserves metadata and kind."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -80,6 +87,7 @@ def test_decay_preserves_metadata_and_kind() -> None:
 
 
 def test_decay_multiple_rounds_compound() -> None:
+    """test decay multiple rounds compound."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))

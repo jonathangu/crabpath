@@ -7,12 +7,14 @@ from crabpath.graph import Graph, Node
 
 
 def test_suggest_connections_with_llm() -> None:
+    """test suggest connections with llm."""
     graph = Graph()
     graph.add_node(Node("a", "deploy production checklist", metadata={"file": "deploy.md"}))
     graph.add_node(Node("b", "production rollout notes", metadata={"file": "release.md"}))
     graph.add_node(Node("c", "alpha team notes", metadata={"file": "deploy.md"}))
 
     def fake_llm(system_prompt: str, user_prompt: str) -> str:
+        """fake llm."""
         return json.dumps(
             {
                 "should_connect": True,
@@ -27,6 +29,7 @@ def test_suggest_connections_with_llm() -> None:
 
 
 def test_suggest_connections_without_llm() -> None:
+    """test suggest connections without llm."""
     graph = Graph()
     graph.add_node(Node("a", "deploy to production from git", metadata={"file": "deploy.md"}))
     graph.add_node(Node("b", "production deployment checklist", metadata={"file": "release.md"}))
@@ -41,6 +44,7 @@ def test_suggest_connections_without_llm() -> None:
 
 
 def test_apply_connections() -> None:
+    """test apply connections."""
     graph = Graph()
     graph.add_node(Node("a", "deploy", metadata={"file": "deploy.md"}))
     graph.add_node(Node("b", "rollback", metadata={"file": "ops.md"}))

@@ -11,7 +11,7 @@ _WORD_RE = re.compile(r"[A-Za-z0-9']+")
 
 
 def _extract_json(raw: str) -> dict | list | str | None:
-    """Extract a JSON object from free-form model output."""
+    """Extract JSON from raw model output."""
     text = (raw or "").strip()
     if not text:
         return None
@@ -34,8 +34,10 @@ def _extract_json(raw: str) -> dict | list | str | None:
 
 
 def _first_line(text: str) -> str:
+    """Return the first non-empty line."""
     return (text.splitlines() or [""])[0]
 
 
 def _tokenize(text: str) -> set[str]:
+    """Extract normalized tokens from text."""
     return {match.group(0).lower() for match in _WORD_RE.finditer(text or "")}

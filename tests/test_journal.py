@@ -6,6 +6,7 @@ from crabpath.journal import journal_stats, log_learn, log_query, read_journal
 
 
 def test_log_query_appends(tmp_path: Path) -> None:
+    """test log query appends."""
     path = tmp_path / "journal.jsonl"
     log_query(query_text="deploy", fired_ids=["a", "b", "c"], node_count=3, journal_path=str(path))
 
@@ -20,6 +21,7 @@ def test_log_query_appends(tmp_path: Path) -> None:
 
 
 def test_log_learn_appends(tmp_path: Path) -> None:
+    """test log learn appends."""
     path = tmp_path / "journal.jsonl"
     log_learn(fired_ids=["a"], outcome=0.75, journal_path=str(path))
 
@@ -31,6 +33,7 @@ def test_log_learn_appends(tmp_path: Path) -> None:
 
 
 def test_log_query_and_learn_include_metadata(tmp_path: Path) -> None:
+    """test log query and learn include metadata."""
     path = tmp_path / "journal.jsonl"
     log_query(
         query_text="deploy",
@@ -47,6 +50,7 @@ def test_log_query_and_learn_include_metadata(tmp_path: Path) -> None:
 
 
 def test_read_journal_last_n(tmp_path: Path) -> None:
+    """test read journal last n."""
     path = tmp_path / "journal.jsonl"
     for idx in range(5):
         log_query(query_text=f"q{idx}", fired_ids=[f"n{idx}"], node_count=10, journal_path=str(path))
@@ -58,6 +62,7 @@ def test_read_journal_last_n(tmp_path: Path) -> None:
 
 
 def test_journal_stats(tmp_path: Path) -> None:
+    """test journal stats."""
     path = tmp_path / "journal.jsonl"
     log_query(query_text="q1", fired_ids=["a", "b"], node_count=2, journal_path=str(path))
     log_query(query_text="q2", fired_ids=["c"], node_count=2, journal_path=str(path))
@@ -74,6 +79,7 @@ def test_journal_stats(tmp_path: Path) -> None:
 
 
 def test_empty_journal(tmp_path: Path) -> None:
+    """test empty journal."""
     path = tmp_path / "missing-journal.jsonl"
     assert read_journal(journal_path=str(path)) == []
     assert journal_stats(journal_path=str(path)) == {

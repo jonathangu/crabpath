@@ -56,6 +56,7 @@ SUPPORTED_FILE_EXTENSIONS = (
 
 
 def _extract_sections(raw: str) -> list[str]:
+    """ extract sections."""
     try:
         payload = _extract_json(raw) or {}
         sections = payload.get("sections") if isinstance(payload, dict) else None
@@ -69,6 +70,7 @@ def _extract_sections(raw: str) -> list[str]:
 
 
 def _normalize_extensions(file_extensions: Iterable[str] | None = None) -> set[str]:
+    """ normalize extensions."""
     if file_extensions is None:
         return set(SUPPORTED_FILE_EXTENSIONS)
 
@@ -109,6 +111,7 @@ def generate_summaries(
     completed = 0
 
     def _report(node_id: str | None = None) -> None:
+        """ report."""
         nonlocal completed
         if summary_progress is None:
             return
@@ -118,6 +121,7 @@ def generate_summaries(
         summary_progress(current, total_nodes)
 
     def _summary_worker(content: str, response: str) -> str:
+        """ summary worker."""
         payload = _extract_json(response)
         if isinstance(payload, dict):
             maybe_summary = payload.get("summary")
@@ -184,7 +188,7 @@ def _chunk_markdown(content: str) -> list[str]:
 
 
 def _chunk_python(content: str) -> list[str]:
-    """Split Python source on def/class declarations, fallback to markdown style."""
+    """ chunk python."""
 
     lines = content.splitlines()
     chunks: list[str] = []
@@ -192,6 +196,7 @@ def _chunk_python(content: str) -> list[str]:
     saw_blocks = False
 
     def is_block_start(line: str) -> bool:
+        """is block start."""
         return bool(re.match(r"^\s*(def|class)\s+\w+", line))
 
     for line in lines:
@@ -212,6 +217,7 @@ def _chunk_python(content: str) -> list[str]:
 
 
 def _chunk_json(content: str) -> list[str]:
+    """ chunk json."""
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
@@ -229,7 +235,7 @@ def _chunk_json(content: str) -> list[str]:
 
 
 def _chunk_config_like(content: str) -> list[str]:
-    """Fallback key-based splitting for YAML/TOML style documents."""
+    """ chunk config like."""
     lines = content.splitlines()
     if len(content) < 3200 or len(lines) < 12:
         return [content]
@@ -255,7 +261,7 @@ def _chunk_config_like(content: str) -> list[str]:
 
 
 def _sibling_weight(file_id: str, idx: int) -> float:
-    """Return deterministic sibling baseline weight around ``0.5`` with tiny jitter."""
+    """ sibling weight."""
     digest = hashlib.sha256(f"{file_id}:{idx}".encode("utf-8")).hexdigest()[:8]
     jitter = (int(digest, 16) % 2001 - 1000) / 100000.0
     return max(0.4, min(0.6, 0.5 + jitter))
@@ -275,6 +281,7 @@ def _load_gitignore_patterns(workspace: Path) -> list[str]:
 
 
 def _match_gitignore(path_posix: str, patterns: list[str]) -> bool:
+    """ match gitignore."""
     for pattern in patterns:
         if pattern.startswith("!"):
             continue
@@ -300,6 +307,7 @@ def _match_gitignore(path_posix: str, patterns: list[str]) -> bool:
 
 
 def _normalize_excludes(exclude: Iterable[str] | None) -> set[str]:
+    """ normalize excludes."""
     excludes = set(DEFAULT_EXCLUDES)
     if exclude is None:
         return excludes
@@ -311,6 +319,7 @@ def _normalize_excludes(exclude: Iterable[str] | None) -> set[str]:
 
 
 def _should_skip_path(relative_path: str, excludes: set[str], gitignore_patterns: list[str]) -> bool:
+    """ should skip path."""
     if not relative_path:
         return False
     path = Path(relative_path)
@@ -417,6 +426,7 @@ def split_workspace(
     split_count = 0
 
     def _report(relative_path: str, mode: str) -> None:
+        """ report."""
         nonlocal split_count
         if split_progress is None:
             return

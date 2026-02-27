@@ -17,6 +17,7 @@ from crabpath.traverse import TraversalConfig, traverse
 
 
 def test_full_cycle_init_query_learn_query(tmp_path, capsys, monkeypatch) -> None:
+    """test full cycle init query learn query."""
     workspace = tmp_path / "docs"
     workspace.mkdir()
     (workspace / "note.md").write_text(
@@ -94,6 +95,7 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys, monkeypatch) -> Non
 
 
 def test_edge_damping_simulation_converges() -> None:
+    """test edge damping simulation converges."""
     g = Graph()
     g.add_node(Node("a", "A"))
     g.add_node(Node("b", "B"))
@@ -107,6 +109,7 @@ def test_edge_damping_simulation_converges() -> None:
 
 
 def test_negation_learning_suppresses_bad_node() -> None:
+    """test negation learning suppresses bad node."""
     g = Graph()
     g.add_node(Node("good", "good"))
     g.add_node(Node("bad", "bad"))
@@ -118,6 +121,7 @@ def test_negation_learning_suppresses_bad_node() -> None:
 
 
 def test_decay_and_learning_interaction() -> None:
+    """test decay and learning interaction."""
     g = Graph()
     g.add_node(Node("a", "A"))
     g.add_node(Node("b", "B"))
@@ -137,6 +141,7 @@ def test_decay_and_learning_interaction() -> None:
 
 
 def test_large_workspace_pipeline_end_to_end(tmp_path, capsys, monkeypatch) -> None:
+    """test large workspace pipeline end to end."""
     workspace = tmp_path / "docs"
     workspace.mkdir()
 

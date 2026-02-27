@@ -14,6 +14,7 @@ from crabpath.traverse import TraversalConfig
 
 
 def _write_graph_payload(path: Path) -> None:
+    """ write graph payload."""
     payload = {
         "graph": {
             "nodes": [
@@ -29,6 +30,7 @@ def _write_graph_payload(path: Path) -> None:
 
 
 def test_extract_queries_openclaw_format(tmp_path: Path) -> None:
+    """test extract queries openclaw format."""
     path = tmp_path / "session.jsonl"
     path.write_text(
         "\n".join(
@@ -66,6 +68,7 @@ def test_extract_queries_openclaw_format(tmp_path: Path) -> None:
 
 
 def test_extract_queries_flat_format(tmp_path: Path) -> None:
+    """test extract queries flat format."""
     path = tmp_path / "session_flat.jsonl"
     path.write_text(
         "\n".join(
@@ -82,6 +85,7 @@ def test_extract_queries_flat_format(tmp_path: Path) -> None:
 
 
 def test_extract_queries_from_directory(tmp_path: Path) -> None:
+    """test extract queries from directory."""
     sessions = tmp_path / "sessions"
     sessions.mkdir()
     (sessions / "a.jsonl").write_text(json.dumps({"role": "user", "content": "one"}), encoding="utf-8")
@@ -95,6 +99,7 @@ def test_extract_queries_from_directory(tmp_path: Path) -> None:
 
 
 def test_extract_interactions_parses_user_and_assistant_messages(tmp_path: Path) -> None:
+    """test extract interactions parses user and assistant messages."""
     path = tmp_path / "session.jsonl"
     path.write_text(
         "\n".join(
@@ -133,6 +138,7 @@ def test_extract_interactions_parses_user_and_assistant_messages(tmp_path: Path)
 
 
 def test_extract_queries_filtering_since_timestamp(tmp_path: Path) -> None:
+    """test extract queries filtering since timestamp."""
     path = tmp_path / "session.jsonl"
     path.write_text(
         "\n".join(
@@ -149,6 +155,7 @@ def test_extract_queries_filtering_since_timestamp(tmp_path: Path) -> None:
 
 
 def test_replay_queries_filters_by_since_ts() -> None:
+    """test replay queries filters by since ts."""
     graph = Graph()
     graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "beta chunk", metadata={"file": "a.md"}))
@@ -166,6 +173,7 @@ def test_replay_queries_filters_by_since_ts() -> None:
 
 
 def test_replay_strengthens_edges() -> None:
+    """test replay strengthens edges."""
     graph = Graph()
     graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "beta chunk", metadata={"file": "a.md"}))
@@ -181,6 +189,7 @@ def test_replay_strengthens_edges() -> None:
 
 
 def test_replay_creates_cross_file_edges() -> None:
+    """test replay creates cross file edges."""
     graph = Graph()
     graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "beta chunk", metadata={"file": "b.md"}))
@@ -195,6 +204,7 @@ def test_replay_creates_cross_file_edges() -> None:
 
 
 def test_replay_queries_supports_outcome_fn_negative_learning() -> None:
+    """test replay queries supports outcome fn negative learning."""
     graph = Graph()
     graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
     graph.add_node(Node("bad", "bad", metadata={"file": "a.md"}))
@@ -213,6 +223,7 @@ def test_replay_queries_supports_outcome_fn_negative_learning() -> None:
 
 
 def test_replay_queries_auto_scores_if_assistant_response_matches() -> None:
+    """test replay queries auto scores if assistant response matches."""
     base = Graph()
     base.add_node(Node("a", "alpha content", metadata={"file": "a.md"}))
     base.add_node(Node("b", "beta content", metadata={"file": "a.md"}))

@@ -12,6 +12,7 @@ from crabpath.journal import read_journal
 
 
 def _write_graph_payload(path: Path) -> None:
+    """ write graph payload."""
     payload = {
         "graph": {
             "nodes": [
@@ -27,6 +28,7 @@ def _write_graph_payload(path: Path) -> None:
 
 
 def _write_index(path: Path, payload: dict[str, list[float]] | None = None) -> None:
+    """ write index."""
     if payload is None:
         payload = {"a": [1.0, 0.0], "b": [0.0, 1.0]}
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -38,6 +40,7 @@ def _write_state(
     index_payload: dict[str, list[float]] | None = None,
     meta: dict[str, object] | None = None,
 ) -> None:
+    """ write state."""
     if graph_payload is None:
         graph_payload = {
             "nodes": [
@@ -59,6 +62,7 @@ def _write_state(
 
 
 def test_init_command_creates_workspace_graph(tmp_path) -> None:
+    """test init command creates workspace graph."""
     workspace = tmp_path / "ws"
     workspace.mkdir()
     (workspace / "a.md").write_text("## A\nHello", encoding="utf-8")
@@ -84,6 +88,7 @@ def test_init_command_creates_workspace_graph(tmp_path) -> None:
 
 
 def test_init_command_with_empty_workspace(tmp_path) -> None:
+    """test init command with empty workspace."""
     workspace = tmp_path / "empty"
     workspace.mkdir()
     output = tmp_path / "out"
@@ -99,6 +104,7 @@ def test_init_command_with_empty_workspace(tmp_path) -> None:
 
 
 def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
+    """test query command returns json with fired nodes."""
     graph_path = tmp_path / "graph.json"
     index_path = tmp_path / "index.json"
     _write_graph_payload(graph_path)
@@ -136,6 +142,7 @@ def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
 
 
 def test_query_auto_embeds(tmp_path, capsys) -> None:
+    """test query auto embeds."""
     graph_path = tmp_path / "graph.json"
     index_path = tmp_path / "index.json"
     _write_graph_payload(graph_path)
@@ -167,6 +174,7 @@ def test_query_auto_embeds(tmp_path, capsys) -> None:
 
 
 def test_query_uses_vector_from_stdin(tmp_path, capsys, monkeypatch) -> None:
+    """test query uses vector from stdin."""
     graph_path = tmp_path / "graph.json"
     index_path = tmp_path / "index.json"
     _write_graph_payload(graph_path)
@@ -194,6 +202,7 @@ def test_query_uses_vector_from_stdin(tmp_path, capsys, monkeypatch) -> None:
 
 
 def test_cli_state_flag_query(tmp_path, capsys) -> None:
+    """test cli state flag query."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -215,6 +224,7 @@ def test_cli_state_flag_query(tmp_path, capsys) -> None:
 
 
 def test_query_max_context_chars_cap_in_query_command(tmp_path, capsys) -> None:
+    """test query max context chars cap in query command."""
     state_path = tmp_path / "state.json"
     graph_payload = {
         "nodes": [
@@ -244,6 +254,7 @@ def test_query_max_context_chars_cap_in_query_command(tmp_path, capsys) -> None:
 
 
 def test_query_journal_written_to_state_directory(tmp_path) -> None:
+    """test query journal written to state directory."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -265,6 +276,7 @@ def test_query_journal_written_to_state_directory(tmp_path) -> None:
 
 
 def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
+    """test cli state replay uses last replayed ts."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -303,6 +315,7 @@ def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
 
 
 def test_cli_dimension_mismatch_error(tmp_path) -> None:
+    """test cli dimension mismatch error."""
     state_path = tmp_path / "state.json"
     _write_state(
         state_path,
@@ -315,6 +328,7 @@ def test_cli_dimension_mismatch_error(tmp_path) -> None:
 
 
 def test_query_command_error_on_missing_graph(tmp_path) -> None:
+    """test query command error on missing graph."""
     index_path = tmp_path / "index.json"
     _write_index(index_path)
     with pytest.raises(SystemExit):
@@ -322,6 +336,7 @@ def test_query_command_error_on_missing_graph(tmp_path) -> None:
 
 
 def test_query_command_keywords_without_index(tmp_path, capsys) -> None:
+    """test query command keywords without index."""
     graph_path = tmp_path / "graph.json"
     _write_graph_payload(graph_path)
 
@@ -333,6 +348,7 @@ def test_query_command_keywords_without_index(tmp_path, capsys) -> None:
 
 
 def test_learn_command_updates_graph_weights(tmp_path) -> None:
+    """test learn command updates graph weights."""
     graph_path = tmp_path / "graph.json"
     _write_graph_payload(graph_path)
 
@@ -344,6 +360,7 @@ def test_learn_command_updates_graph_weights(tmp_path) -> None:
 
 
 def test_cli_state_flag_learn(tmp_path) -> None:
+    """test cli state flag learn."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -367,6 +384,7 @@ def test_cli_state_flag_learn(tmp_path) -> None:
 
 
 def test_cli_state_flag_health(tmp_path, capsys) -> None:
+    """test cli state flag health."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -386,6 +404,7 @@ def test_cli_state_flag_health(tmp_path, capsys) -> None:
 
 
 def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
+    """test learn command supports json output."""
     graph_path = tmp_path / "graph.json"
     _write_graph_payload(graph_path)
 
@@ -396,6 +415,7 @@ def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
 
 
 def test_merge_command_suggests_and_applies(tmp_path, capsys) -> None:
+    """test merge command suggests and applies."""
     graph_path = tmp_path / "graph.json"
     payload = {
         "graph": {
@@ -430,6 +450,7 @@ def test_merge_command_suggests_and_applies(tmp_path, capsys) -> None:
 
 
 def test_health_command_outputs_all_metrics(tmp_path, capsys) -> None:
+    """test health command outputs all metrics."""
     graph_path = tmp_path / "graph.json"
     _write_graph_payload(graph_path)
     code = main(["health", "--graph", str(graph_path), "--json"])
@@ -448,6 +469,7 @@ def test_health_command_outputs_all_metrics(tmp_path, capsys) -> None:
 
 
 def test_cli_help_text_for_commands() -> None:
+    """test cli help text for commands."""
     for command in ["init", "query", "learn", "merge", "health", "connect", "replay", "journal"]:
         with pytest.raises(SystemExit):
             main([command, "--help"])

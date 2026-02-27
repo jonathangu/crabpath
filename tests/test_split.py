@@ -7,6 +7,7 @@ from crabpath.split import split_workspace
 
 
 def test_split_by_headers_creates_chunked_nodes(tmp_path: Path) -> None:
+    """test split by headers creates chunked nodes."""
     workspace = tmp_path / "split_headers"
     workspace.mkdir()
     (workspace / "a.md").write_text(
@@ -24,6 +25,7 @@ def test_split_by_headers_creates_chunked_nodes(tmp_path: Path) -> None:
 
 
 def test_split_by_blank_lines_when_no_headers(tmp_path: Path) -> None:
+    """test split by blank lines when no headers."""
     workspace = tmp_path / "split_blank"
     workspace.mkdir()
     (workspace / "a.md").write_text(
@@ -38,6 +40,7 @@ def test_split_by_blank_lines_when_no_headers(tmp_path: Path) -> None:
 
 
 def test_split_single_file_with_no_sections_is_one_node(tmp_path: Path) -> None:
+    """test split single file with no sections is one node."""
     workspace = tmp_path / "split_single"
     workspace.mkdir()
     (workspace / "single.md").write_text("Just one paragraph only.", encoding="utf-8")
@@ -49,6 +52,7 @@ def test_split_single_file_with_no_sections_is_one_node(tmp_path: Path) -> None:
 
 
 def test_split_multiple_files_with_cross_references(tmp_path: Path) -> None:
+    """test split multiple files with cross references."""
     workspace = tmp_path / "split_multi"
     workspace.mkdir()
     (workspace / "one.md").write_text(
@@ -68,6 +72,7 @@ def test_split_multiple_files_with_cross_references(tmp_path: Path) -> None:
 
 
 def test_split_empty_workspace(tmp_path: Path) -> None:
+    """test split empty workspace."""
     workspace = tmp_path / "split_empty"
     workspace.mkdir()
     graph, texts = split_workspace(str(workspace))
@@ -77,6 +82,7 @@ def test_split_empty_workspace(tmp_path: Path) -> None:
 
 
 def test_split_ignores_binary_files(tmp_path: Path) -> None:
+    """test split ignores binary files."""
     workspace = tmp_path / "split_binary"
     workspace.mkdir()
     (workspace / "note.png").write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -89,6 +95,7 @@ def test_split_ignores_binary_files(tmp_path: Path) -> None:
 
 
 def test_split_nested_directories_preserved(tmp_path: Path) -> None:
+    """test split nested directories preserved."""
     workspace = tmp_path / "split_nested"
     nested = workspace / "a" / "b"
     nested.mkdir(parents=True)
@@ -102,6 +109,7 @@ def test_split_nested_directories_preserved(tmp_path: Path) -> None:
 
 
 def test_split_long_file_splits_into_multiple_nodes(tmp_path: Path) -> None:
+    """test split long file splits into multiple nodes."""
     workspace = tmp_path / "split_long"
     workspace.mkdir()
     paragraph = "word " * 20
@@ -116,6 +124,7 @@ def test_split_long_file_splits_into_multiple_nodes(tmp_path: Path) -> None:
 
 
 def test_split_sibling_edge_weights_have_jitter(tmp_path: Path) -> None:
+    """test split sibling edge weights have jitter."""
     workspace = tmp_path / "split_jitter"
     workspace.mkdir()
     (workspace / "file.md").write_text(
@@ -130,6 +139,7 @@ def test_split_sibling_edge_weights_have_jitter(tmp_path: Path) -> None:
 
 
 def test_split_file_with_title_only(tmp_path: Path) -> None:
+    """test split file with title only."""
     workspace = tmp_path / "split_title"
     workspace.mkdir()
     (workspace / "title.md").write_text("# Just a title", encoding="utf-8")
@@ -141,6 +151,7 @@ def test_split_file_with_title_only(tmp_path: Path) -> None:
 
 
 def test_split_with_llm_json_sections(tmp_path: Path) -> None:
+    """test split with llm json sections."""
     workspace = tmp_path / "split_llm"
     workspace.mkdir()
     (workspace / "note.md").write_text("Intro paragraph.\n\nDeep dive.\n\nChecklist.\n")
@@ -148,6 +159,7 @@ def test_split_with_llm_json_sections(tmp_path: Path) -> None:
     calls: list[tuple[str, str]] = []
 
     def fake_llm(system: str, user: str) -> str:
+        """fake llm."""
         calls.append((system, user))
         return json.dumps({"sections": ["Section 1: Intro.", "Section 2: Deep dive.", "Section 3: Checklist."]})
 
@@ -159,10 +171,12 @@ def test_split_with_llm_json_sections(tmp_path: Path) -> None:
 
 
 def test_split_with_llm(tmp_path: Path) -> None:
+    """test split with llm."""
     test_split_with_llm_json_sections(tmp_path)
 
 
 def test_split_without_llm(tmp_path: Path) -> None:
+    """test split without llm."""
     workspace = tmp_path / "split_no_llm"
     workspace.mkdir()
     (workspace / "note.md").write_text("## Intro\nFirst\n\n## Body\nSecond")
@@ -173,11 +187,13 @@ def test_split_without_llm(tmp_path: Path) -> None:
 
 
 def test_split_with_llm_parse_fallback_to_headers(tmp_path: Path) -> None:
+    """test split with llm parse fallback to headers."""
     workspace = tmp_path / "split_bad_llm"
     workspace.mkdir()
     (workspace / "note.md").write_text("## Intro\nFirst\n\n## Body\nSecond")
 
     def bad_llm(_system: str, _user: str) -> str:
+        """bad llm."""
         return "not-json"
 
     graph, texts = split_workspace(str(workspace), llm_fn=bad_llm)
@@ -186,6 +202,7 @@ def test_split_with_llm_parse_fallback_to_headers(tmp_path: Path) -> None:
 
 
 def test_split_json_file_with_long_payload_handles_supported_extension(tmp_path: Path) -> None:
+    """test split json file with long payload handles supported extension."""
     workspace = tmp_path / "split_json"
     workspace.mkdir()
     content = json.dumps({f"key{i}": list(range(100)) for i in range(30)}, ensure_ascii=False)
@@ -197,6 +214,7 @@ def test_split_json_file_with_long_payload_handles_supported_extension(tmp_path:
 
 
 def test_split_python_file_chunks_by_definitions(tmp_path: Path) -> None:
+    """test split python file chunks by definitions."""
     workspace = tmp_path / "split_py"
     workspace.mkdir()
     (workspace / "sample.py").write_text(
@@ -213,6 +231,7 @@ def test_split_python_file_chunks_by_definitions(tmp_path: Path) -> None:
 
 
 def test_split_text_file_uses_blank_line_split(tmp_path: Path) -> None:
+    """test split text file uses blank line split."""
     workspace = tmp_path / "split_text"
     workspace.mkdir()
     (workspace / "notes.txt").write_text("First paragraph.\n\nSecond paragraph.\n\nThird paragraph.", encoding="utf-8")

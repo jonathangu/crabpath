@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from .index import VectorIndex
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .index import VectorIndex
 
 
 @dataclass
@@ -34,7 +36,7 @@ class Graph:
     """Directed weighted graph used by all CrabPath operations."""
 
     def __init__(self) -> None:
-        """Create an empty graph."""
+        """  init  ."""
         self._nodes: dict[str, Node] = {}
         self._edges: dict[str, dict[str, Edge]] = {}
 
@@ -64,7 +66,7 @@ class Graph:
         )
 
     def remove_node(self, node_id: str) -> None:
-        """Remove a node and all incident edges."""
+        """remove node."""
         self._nodes.pop(node_id, None)
         self._edges.pop(node_id, None)
         for source in list(self._edges):
@@ -73,11 +75,11 @@ class Graph:
                 self._edges.pop(source, None)
 
     def remove_node_cascade(self, node_id: str) -> None:
-        """Remove a node and all incident edges."""
+        """remove node cascade."""
         self.remove_node(node_id)
 
     def remove_edge(self, source: str, target: str) -> None:
-        """Remove an edge if present."""
+        """remove edge."""
         source_edges = self._edges.get(source)
         if source_edges is None:
             return
@@ -86,15 +88,15 @@ class Graph:
             self._edges.pop(source, None)
 
     def get_node(self, id: str) -> Node | None:
-        """Return a node by id, or ``None`` when absent."""
+        """get node."""
         return self._nodes.get(id)
 
     def nodes(self) -> list[Node]:
-        """Return all nodes in insertion-like id order."""
+        """nodes."""
         return list(self._nodes.values())
 
     def outgoing(self, id: str) -> list[tuple[Node, Edge]]:
-        """Return ``(node, edge)`` pairs for edges whose source is ``id``."""
+        """outgoing."""
         if id not in self._edges:
             return []
         result: list[tuple[Node, Edge]] = []
@@ -105,7 +107,7 @@ class Graph:
         return result
 
     def incoming(self, id: str) -> list[tuple[Node, Edge]]:
-        """Return ``(node, edge)`` pairs for edges whose target is ``id``."""
+        """incoming."""
         result: list[tuple[Node, Edge]] = []
         for source_edges in self._edges.values():
             edge = source_edges.get(id)
@@ -117,15 +119,15 @@ class Graph:
         return result
 
     def node_count(self) -> int:
-        """Return number of nodes in the graph."""
+        """node count."""
         return len(self._nodes)
 
     def edge_count(self) -> int:
-        """Return number of directed edges in the graph."""
+        """edge count."""
         return sum(len(edges) for edges in self._edges.values())
 
     def save(self, path: str) -> None:
-        """Persist graph structure to JSON at ``path``."""
+        """save."""
         payload = {
             "nodes": [
                 {
@@ -152,7 +154,7 @@ class Graph:
 
     @classmethod
     def load(cls, path: str) -> "Graph":
-        """Load graph data from JSON persisted by :meth:`save`."""
+        """load."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         graph = cls()
         for node_data in data.get("nodes", []):
@@ -178,6 +180,6 @@ class Graph:
 
 
 def remove_from_state(graph: Graph, index: VectorIndex, node_id: str) -> None:
-    """Remove a node from both graph and vector index."""
+    """remove from state."""
     graph.remove_node_cascade(node_id)
     index.remove(node_id)

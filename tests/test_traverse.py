@@ -5,6 +5,7 @@ from crabpath.traverse import TraversalConfig, traverse
 
 
 def test_traverse_prefers_highest_reflex_edge() -> None:
+    """test traverse prefers highest reflex edge."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -19,6 +20,7 @@ def test_traverse_prefers_highest_reflex_edge() -> None:
 
 
 def test_reflex_tier_auto_follows_without_route_fn() -> None:
+    """test reflex tier auto follows without route fn."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -33,6 +35,7 @@ def test_reflex_tier_auto_follows_without_route_fn() -> None:
 
 
 def test_habitual_tier_calls_route_fn() -> None:
+    """test habitual tier calls route fn."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -52,6 +55,7 @@ def test_habitual_tier_calls_route_fn() -> None:
 
 
 def test_dormant_tier_is_skipped() -> None:
+    """test dormant tier is skipped."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -63,6 +67,7 @@ def test_dormant_tier_is_skipped() -> None:
 
 
 def test_traverse_edge_damping_reduces_effective_weight() -> None:
+    """test traverse edge damping reduces effective weight."""
     graph = Graph()
     graph.add_node(Node("x", "X"))
     graph.add_node(Node("y", "Y"))
@@ -78,6 +83,7 @@ def test_traverse_edge_damping_reduces_effective_weight() -> None:
 
 
 def test_edge_damping_prevents_unbounded_cycles() -> None:
+    """test edge damping prevents unbounded cycles."""
     graph = Graph()
     for node_id in "abcd":
         graph.add_node(Node(node_id, node_id))
@@ -92,6 +98,7 @@ def test_edge_damping_prevents_unbounded_cycles() -> None:
 
 
 def test_traverse_beam_width_explores_multiple_paths() -> None:
+    """test traverse beam width explores multiple paths."""
     graph = Graph()
     for node_id in ["a", "b", "c", "d", "e"]:
         graph.add_node(Node(node_id, node_id))
@@ -108,6 +115,7 @@ def test_traverse_beam_width_explores_multiple_paths() -> None:
 
 
 def test_max_hops_is_respected() -> None:
+    """test max hops is respected."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -120,6 +128,7 @@ def test_max_hops_is_respected() -> None:
 
 
 def test_route_fn_empty_culls_all_habitual_choices() -> None:
+    """test route fn empty culls all habitual choices."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -139,6 +148,7 @@ def test_route_fn_empty_culls_all_habitual_choices() -> None:
 
 
 def test_route_fn_always_picks_same_node_and_damping_applies() -> None:
+    """test route fn always picks same node and damping applies."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -159,6 +169,7 @@ def test_route_fn_always_picks_same_node_and_damping_applies() -> None:
 
 
 def test_traversal_without_outgoing_edges_terminates() -> None:
+    """test traversal without outgoing edges terminates."""
     graph = Graph()
     graph.add_node(Node("x", "X"))
     result = traverse(graph, [("x", 1.0)], config=TraversalConfig(max_hops=10, beam_width=3))
@@ -167,6 +178,7 @@ def test_traversal_without_outgoing_edges_terminates() -> None:
 
 
 def test_traversal_with_non_existent_seed() -> None:
+    """test traversal with non existent seed."""
     graph = Graph()
     graph.add_node(Node("x", "X"))
     result = traverse(graph, [("missing", 1.0)], config=TraversalConfig(max_hops=3, beam_width=2))
@@ -176,6 +188,7 @@ def test_traversal_with_non_existent_seed() -> None:
 
 
 def test_traversal_with_all_dormant_edges_returns_seed_only() -> None:
+    """test traversal with all dormant edges returns seed only."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -189,6 +202,7 @@ def test_traversal_with_all_dormant_edges_returns_seed_only() -> None:
 
 
 def test_traversal_skips_inhibitory_edges() -> None:
+    """test traversal skips inhibitory edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -202,6 +216,7 @@ def test_traversal_skips_inhibitory_edges() -> None:
 
 
 def test_incoming_inhibitory_edges_can_suppress_seed_node() -> None:
+    """test incoming inhibitory edges can suppress seed node."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -215,6 +230,7 @@ def test_incoming_inhibitory_edges_can_suppress_seed_node() -> None:
 
 
 def test_traversal_context_respects_max_context_chars() -> None:
+    """test traversal context respects max context chars."""
     graph = Graph()
     graph.add_node(Node("a", "A " * 80))
     graph.add_node(Node("b", "B " * 80))
@@ -227,6 +243,7 @@ def test_traversal_context_respects_max_context_chars() -> None:
 
 
 def test_edge_damping_factor_one_steps_until_hops() -> None:
+    """test edge damping factor one steps until hops."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -239,6 +256,7 @@ def test_edge_damping_factor_one_steps_until_hops() -> None:
 
 
 def test_edge_damping_factor_zero_never_reuses_directed_edges() -> None:
+    """test edge damping factor zero never reuses directed edges."""
     graph = Graph()
     for node_id in ["x", "y", "z"]:
         graph.add_node(Node(node_id, node_id))
@@ -253,6 +271,7 @@ def test_edge_damping_factor_zero_never_reuses_directed_edges() -> None:
 
 
 def test_traversal_context_includes_all_fired_content() -> None:
+    """test traversal context includes all fired content."""
     graph = Graph()
     graph.add_node(Node("a", "alpha content"))
     graph.add_node(Node("b", "beta content"))
@@ -267,6 +286,7 @@ def test_traversal_context_includes_all_fired_content() -> None:
 
 
 def test_large_graph_traversal_is_responsive() -> None:
+    """test large graph traversal is responsive."""
     graph = Graph()
     for i in range(50):
         graph.add_node(Node(f"n{i}", f"node {i}"))
@@ -279,6 +299,7 @@ def test_large_graph_traversal_is_responsive() -> None:
 
 
 def test_seeds_with_higher_weights_are_explored_first() -> None:
+    """test seeds with higher weights are explored first."""
     graph = Graph()
     graph.add_node(Node("high", "H"))
     graph.add_node(Node("low", "L"))
@@ -295,6 +316,7 @@ def test_seeds_with_higher_weights_are_explored_first() -> None:
 
 
 def test_visit_penalty_discourages_revisiting_nodes() -> None:
+    """test visit penalty discourages revisiting nodes."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -317,6 +339,7 @@ def test_visit_penalty_discourages_revisiting_nodes() -> None:
 
 
 def test_traversal_with_all_edges_inhibitory_or_low_returns_seed_only() -> None:
+    """test traversal with all edges inhibitory or low returns seed only."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -330,6 +353,7 @@ def test_traversal_with_all_edges_inhibitory_or_low_returns_seed_only() -> None:
 
 
 def test_traversal_tier_classification_is_stable() -> None:
+    """test traversal tier classification is stable."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -343,6 +367,7 @@ def test_traversal_tier_classification_is_stable() -> None:
 
 
 def test_tier_summary_in_result() -> None:
+    """test tier summary in result."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_edge(Edge("a", "b", 0.2))

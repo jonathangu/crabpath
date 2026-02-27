@@ -9,13 +9,16 @@ from crabpath.split import generate_summaries, split_workspace
 
 
 def test_batch_or_single_uses_batch_fn() -> None:
+    """test batch or single uses batch fn."""
     single_calls = {"count": 0}
 
     def llm_single(_system_prompt: str, _user_prompt: str) -> str:
+        """llm single."""
         single_calls["count"] += 1
         return "single"
 
     def llm_batch_fn(requests: list[dict]) -> list[dict]:
+        """llm batch fn."""
         return [{"id": request["id"], "response": request["user"]} for request in requests]
 
     requests = [
@@ -32,9 +35,11 @@ def test_batch_or_single_uses_batch_fn() -> None:
 
 
 def test_batch_or_single_falls_back_to_single() -> None:
+    """test batch or single falls back to single."""
     single_calls = {"count": 0}
 
     def llm_single(_system_prompt: str, _user_prompt: str) -> str:
+        """llm single."""
         single_calls["count"] += 1
         return "single"
 
@@ -49,10 +54,13 @@ def test_batch_or_single_falls_back_to_single() -> None:
 
 
 def test_batch_or_single_embed() -> None:
+    """test batch or single embed."""
     def embed_fn(text: str) -> list[float]:
+        """embed fn."""
         return [float(len(text))]
 
     def embed_batch_fn(texts: list[tuple[str, str]]) -> dict[str, list[float]]:
+        """embed batch fn."""
         return {node_id: [float(len(text))] for node_id, text in texts}
 
     text_items = [("a", "hello"), ("b", "world")]
@@ -62,12 +70,14 @@ def test_batch_or_single_embed() -> None:
 
 
 def test_split_with_llm_batch_fn(tmp_path: Path) -> None:
+    """test split with llm batch fn."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "a.md").write_text("one one one", encoding="utf-8")
     (workspace / "b.md").write_text("two two two", encoding="utf-8")
 
     def llm_batch_fn(requests: list[dict]) -> list[dict]:
+        """llm batch fn."""
         return [
             {
                 "id": request["id"],
@@ -88,6 +98,7 @@ def test_split_with_llm_batch_fn(tmp_path: Path) -> None:
 
 
 def test_generate_summaries_batch() -> None:
+    """test generate summaries batch."""
     graph = Graph()
     graph.add_node(Node("a", "alpha text"))
     graph.add_node(Node("b", "beta text"))
@@ -95,10 +106,12 @@ def test_generate_summaries_batch() -> None:
     single_calls = {"count": 0}
 
     def llm_fn(_system_prompt: str, _user_prompt: str) -> str:
+        """llm fn."""
         single_calls["count"] += 1
         raise RuntimeError("should not be called")
 
     def llm_batch_fn(requests: list[dict]) -> list[dict]:
+        """llm batch fn."""
         return [
             {
                 "id": request["id"],

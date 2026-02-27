@@ -10,7 +10,7 @@ DEFAULT_JOURNAL_PATH = "~/.crabpath/journal.jsonl"
 
 
 def log_event(event: dict, journal_path: str | None = None) -> None:
-    """Append an event to the journal file."""
+    """log event."""
     path = Path(journal_path or DEFAULT_JOURNAL_PATH).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     event["ts"] = time.time()
@@ -26,6 +26,7 @@ def log_query(
     journal_path: str | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
+    """Log a query event to the journal."""
     log_event(
         {
             "type": "query",
@@ -45,6 +46,7 @@ def log_learn(
     journal_path: str | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
+    """Log a learn event to the journal."""
     log_event(
         {
             "type": "learn",
@@ -57,6 +59,7 @@ def log_learn(
 
 
 def log_replay(queries_replayed: int, edges_reinforced: int, cross_file_created: int, journal_path: str | None = None) -> None:
+    """Log replay statistics to the journal."""
     log_event(
         {
             "type": "replay",
@@ -69,11 +72,12 @@ def log_replay(queries_replayed: int, edges_reinforced: int, cross_file_created:
 
 
 def log_health(health_data: dict, journal_path: str | None = None) -> None:
+    """Log graph health metrics to the journal."""
     log_event({"type": "health", **health_data}, journal_path)
 
 
 def read_journal(journal_path: str | None = None, last_n: int | None = None) -> list[dict]:
-    """Read journal entries. Optionally return only the last N entries."""
+    """read journal."""
     path = Path(journal_path or DEFAULT_JOURNAL_PATH).expanduser()
     if not path.exists():
         return []
@@ -85,7 +89,7 @@ def read_journal(journal_path: str | None = None, last_n: int | None = None) -> 
 
 
 def journal_stats(journal_path: str | None = None) -> dict:
-    """Return summary stats from journal entries."""
+    """journal stats."""
     entries = read_journal(journal_path)
     queries = [e for e in entries if e.get("type") == "query"]
     learns = [e for e in entries if e.get("type") == "learn"]

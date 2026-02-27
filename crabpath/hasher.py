@@ -17,11 +17,12 @@ class HashEmbedder:
     name: str = "hash-v1"
 
     def __init__(self, dim: int = 1024, ngram_range: tuple[int, int] = (3, 5)) -> None:
+        """  init  ."""
         self.dim = dim
         self.ngram_range = ngram_range
 
     def _tokenize(self, text: str) -> list[str]:
-        """Tokenize: split camelCase/snake_case, lowercase, extract words."""
+        """ tokenize."""
         words = _WORD_RE.findall(text)
         tokens: list[str] = []
         for word in words:
@@ -33,7 +34,7 @@ class HashEmbedder:
         return tokens
 
     def _ngrams(self, text: str) -> list[str]:
-        """Extract character n-grams."""
+        """ ngrams."""
         lower = text.lower()
         grams: list[str] = []
         for n in range(self.ngram_range[0], self.ngram_range[1] + 1):
@@ -42,7 +43,7 @@ class HashEmbedder:
         return grams
 
     def embed(self, text: str) -> list[float]:
-        """Embed a single text into a deterministic hash vector."""
+        """embed."""
         tokens = self._tokenize(text)
         all_features = tokens + self._ngrams(text)
         counts = Counter(all_features)
@@ -60,11 +61,11 @@ class HashEmbedder:
         return vector
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Batch embed. Same as calling embed() on each text."""
+        """embed texts."""
         return [self.embed(t) for t in texts]
 
     def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:
-        """Batch embed with IDs: ``[(id, text), ...] -> {id: vector}``."""
+        """embed batch."""
         return {name: self.embed(text) for name, text in texts}
 
 
@@ -72,7 +73,7 @@ _default_embedder: HashEmbedder | None = None
 
 
 def default_embed(text: str) -> list[float]:
-    """Embed using the default hash vectorizer. Zero deps, deterministic."""
+    """default embed."""
     global _default_embedder
     if _default_embedder is None:
         _default_embedder = HashEmbedder()
@@ -80,9 +81,8 @@ def default_embed(text: str) -> list[float]:
 
 
 def default_embed_batch(texts: list[tuple[str, str]]) -> dict[str, list[float]]:
-    """Batch embed using the default hash vectorizer."""
+    """default embed batch."""
     global _default_embedder
     if _default_embedder is None:
         _default_embedder = HashEmbedder()
     return _default_embedder.embed_batch(texts)
-

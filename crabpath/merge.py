@@ -11,6 +11,7 @@ from ._util import _extract_json, _first_line
 
 
 def _candidate_pairs(graph: Graph, max_content_chars: int = 1200) -> list[tuple[str, str]]:
+    """ candidate pairs."""
     pairs: list[tuple[str, str]] = []
     for source_id in graph._nodes:
         source_node = graph.get_node(source_id)
@@ -94,6 +95,7 @@ def suggest_merges(
 
 
 def _unique_merge_id(graph: Graph, node_a: str, node_b: str) -> str:
+    """ unique merge id."""
     base = hashlib.sha1(f"{node_a}|{node_b}".encode("utf-8")).hexdigest()[:12]
     candidate = f"merged:{base}"
     suffix = 0

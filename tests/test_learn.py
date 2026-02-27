@@ -7,6 +7,7 @@ from crabpath.learn import LearningConfig, apply_outcome, hebbian_update
 
 
 def test_apply_outcome_positive_strengthens_edges() -> None:
+    """test apply outcome positive strengthens edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -21,6 +22,7 @@ def test_apply_outcome_positive_strengthens_edges() -> None:
 
 
 def test_apply_outcome_negative_weakens_edges() -> None:
+    """test apply outcome negative weakens edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -33,6 +35,7 @@ def test_apply_outcome_negative_weakens_edges() -> None:
 
 
 def test_negative_outcome_creates_inhibitory_edge_if_missing() -> None:
+    """test negative outcome creates inhibitory edge if missing."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -44,6 +47,7 @@ def test_negative_outcome_creates_inhibitory_edge_if_missing() -> None:
 
 
 def test_learning_clips_weights_to_bounds() -> None:
+    """test learning clips weights to bounds."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -55,6 +59,7 @@ def test_learning_clips_weights_to_bounds() -> None:
 
 
 def test_hebbian_update_strengthens_shared_edges() -> None:
+    """test hebbian update strengthens shared edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -69,6 +74,7 @@ def test_hebbian_update_strengthens_shared_edges() -> None:
 
 
 def test_hebbian_disconnected_nodes_create_edges() -> None:
+    """test hebbian disconnected nodes create edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -80,6 +86,7 @@ def test_hebbian_disconnected_nodes_create_edges() -> None:
 
 
 def test_learning_rate_controls_magnitude_of_change() -> None:
+    """test learning rate controls magnitude of change."""
     graph_slow = Graph()
     graph_fast = Graph()
     for graph in (graph_slow, graph_fast):
@@ -94,6 +101,7 @@ def test_learning_rate_controls_magnitude_of_change() -> None:
 
 
 def test_apply_outcome_uses_per_node_scores() -> None:
+    """test apply outcome uses per node scores."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -114,6 +122,7 @@ def test_apply_outcome_uses_per_node_scores() -> None:
 
 
 def test_discount_factor_reduces_later_step_credit() -> None:
+    """test discount factor reduces later step credit."""
     graph = Graph()
     for node_id in ["a", "b", "c"]:
         graph.add_node(Node(node_id, node_id))
@@ -125,12 +134,14 @@ def test_discount_factor_reduces_later_step_credit() -> None:
 
 
 def test_apply_outcome_empty_fired_nodes_is_noop() -> None:
+    """test apply outcome empty fired nodes is noop."""
     graph = Graph()
     updates = apply_outcome(graph, [], outcome=1.0)
     assert updates == {}
 
 
 def test_apply_outcome_single_node_does_not_update_edges() -> None:
+    """test apply outcome single node does not update edges."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     updates = apply_outcome(graph, ["a"], outcome=1.0)
@@ -140,6 +151,7 @@ def test_apply_outcome_single_node_does_not_update_edges() -> None:
 
 
 def test_apply_outcome_uses_full_trajectory_not_last_edge_only() -> None:
+    """test apply outcome uses full trajectory not last edge only."""
     graph = Graph()
     for node_id in ["a", "b", "c", "d"]:
         graph.add_node(Node(node_id, node_id))
@@ -153,6 +165,7 @@ def test_apply_outcome_uses_full_trajectory_not_last_edge_only() -> None:
 
 
 def test_apply_outcome_multiple_rounds_accumulate() -> None:
+    """test apply outcome multiple rounds accumulate."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -166,6 +179,7 @@ def test_apply_outcome_multiple_rounds_accumulate() -> None:
 
 
 def test_apply_outcome_handles_missing_nodes_gracefully() -> None:
+    """test apply outcome handles missing nodes gracefully."""
     graph = Graph()
     apply_outcome(graph, ["ghost", "ghost2"], outcome=1.0)
     graph.add_node(Node("ghost2", "G"))
@@ -174,6 +188,7 @@ def test_apply_outcome_handles_missing_nodes_gracefully() -> None:
 
 
 def test_hebbian_update_no_change_for_single_node() -> None:
+    """test hebbian update no change for single node."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     hebbian_update(graph, ["a"])
@@ -181,6 +196,7 @@ def test_hebbian_update_no_change_for_single_node() -> None:
 
 
 def test_zero_or_negative_outcome_can_flip_kind_to_inhibitory() -> None:
+    """test zero or negative outcome can flip kind to inhibitory."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))

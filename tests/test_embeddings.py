@@ -7,20 +7,24 @@ import types
 
 class _Vector(list):
     def tolist(self):  # type: ignore[override]
+        """tolist."""
         return list(self)
 
 
 def _install_fake_sentence_transformers(monkeypatch, encode_fn):
+    """ install fake sentence transformers."""
     module = types.ModuleType("sentence_transformers")
 
     class FakeSentenceTransformer:
         init_calls = 0
 
         def __init__(self, model_name: str) -> None:
+            """  init  ."""
             self.model_name = model_name
             FakeSentenceTransformer.init_calls += 1
 
         def encode(self, values):
+            """encode."""
             return encode_fn(values)
 
     module.SentenceTransformer = FakeSentenceTransformer
@@ -30,6 +34,7 @@ def _install_fake_sentence_transformers(monkeypatch, encode_fn):
 
 
 def test_local_embed_fn(monkeypatch) -> None:
+    """test local embed fn."""
     module, transformer_cls = _install_fake_sentence_transformers(
         monkeypatch,
         lambda text: _Vector([float(len(text)), 0.0]),
@@ -49,6 +54,7 @@ def test_local_embed_fn(monkeypatch) -> None:
 
 
 def test_local_embed_batch_fn(monkeypatch) -> None:
+    """test local embed batch fn."""
     _, transformer_cls = _install_fake_sentence_transformers(
         monkeypatch,
         lambda texts: _Vector([_Vector([float(len(text)), 1.0]) for text in texts]),

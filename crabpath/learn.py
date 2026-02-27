@@ -14,6 +14,7 @@ from .decay import apply_decay
 
 
 def _unique_node_id(content: str, graph: Graph) -> str:
+    """ unique node id."""
     base = f"auto:{hashlib.sha1(content.encode('utf-8')).hexdigest()[:10]}"
     candidate = base
     suffix = 0
@@ -97,6 +98,7 @@ _apply_outcome_call_count = 0
 
 
 def _clip_weight(weight: float, bounds: tuple[float, float]) -> float:
+    """ clip weight."""
     return max(bounds[0], min(bounds[1], weight))
 
 

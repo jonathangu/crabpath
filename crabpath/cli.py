@@ -7,7 +7,6 @@ import json
 import os
 import sys
 from collections.abc import Iterable
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .connect import apply_connections, suggest_connections
@@ -41,6 +40,7 @@ from . import __version__
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """ build parser."""
     parser = argparse.ArgumentParser(prog="crabpath")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -105,6 +105,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _load_payload(path: str) -> dict:
+    """ load payload."""
     payload_path = Path(os.path.expanduser(path))
     if payload_path.is_dir():
         payload_path = payload_path / "graph.json"
@@ -114,6 +115,7 @@ def _load_payload(path: str) -> dict:
 
 
 def _load_graph(path: str) -> Graph:
+    """ load graph."""
     payload = _load_payload(path)
     payload = payload["graph"] if "graph" in payload else payload
     graph = Graph()
@@ -135,6 +137,7 @@ def _load_graph(path: str) -> Graph:
 
 
 def _resolve_graph_index(args: argparse.Namespace) -> tuple[Graph, VectorIndex | None, dict[str, object]]:
+    """ resolve graph index."""
     if args.state is not None:
         graph, index, meta = load_state(args.state)
         return graph, index, meta
@@ -148,6 +151,7 @@ def _resolve_graph_index(args: argparse.Namespace) -> tuple[Graph, VectorIndex |
 
 
 def _graph_payload(graph: Graph) -> dict:
+    """ graph payload."""
     return {
         "nodes": [
             {
@@ -173,6 +177,7 @@ def _write_graph(
     include_meta: bool = False,
     meta: dict[str, object] | None = None,
 ) -> None:
+    """Write graph payload to a JSON file."""
     destination = Path(path).expanduser()
     if destination.is_dir():
         destination = destination / "graph.json"
@@ -184,6 +189,7 @@ def _write_graph(
 
 
 def _load_query_vector_from_stdin() -> list[float]:
+    """ load query vector from stdin."""
     data = sys.stdin.read().strip()
     if not data:
         raise SystemExit("query vector JSON required on stdin")
@@ -194,6 +200,7 @@ def _load_query_vector_from_stdin() -> list[float]:
 
 
 def _load_session_queries(session_paths: str | Iterable[str]) -> list[str]:
+    """ load session queries."""
     if isinstance(session_paths, str):
         session_paths = [session_paths]
     queries: list[str] = []
@@ -209,6 +216,7 @@ def _load_session_queries(session_paths: str | Iterable[str]) -> list[str]:
 
 
 def _resolve_journal_path(args: argparse.Namespace) -> str | None:
+    """ resolve journal path."""
     if args.state is not None:
         path = Path(args.state).expanduser()
         return str(path.parent / "journal.jsonl")
@@ -221,6 +229,7 @@ def _resolve_journal_path(args: argparse.Namespace) -> str | None:
 
 
 def _load_session_query_records(session_paths: str | Iterable[str], since_ts: float | None = None) -> list[tuple[str, float | None]]:
+    """ load session query records."""
     if isinstance(session_paths, str):
         session_paths = [session_paths]
     records: list[tuple[str, float | None]] = []
@@ -236,6 +245,7 @@ def _load_session_query_records(session_paths: str | Iterable[str], since_ts: fl
 
 
 def _load_session_interactions(session_paths: str | Iterable[str], since_ts: float | None = None) -> list[dict[str, object]]:
+    """ load session interactions."""
     if isinstance(session_paths, str):
         session_paths = [session_paths]
     interactions: list[dict[str, object]] = []
@@ -252,6 +262,7 @@ def _load_session_interactions(session_paths: str | Iterable[str], since_ts: flo
 
 
 def _state_meta(meta: dict[str, object] | None, fallback_name: str | None = None, fallback_dim: int | None = None) -> dict[str, object]:
+    """ state meta."""
     base = dict(meta or {})
     embedder_name, embedder_dim = _state_embedder_meta(base)
     if fallback_name is not None:
@@ -262,6 +273,7 @@ def _state_meta(meta: dict[str, object] | None, fallback_name: str | None = None
 
 
 def _keyword_seeds(graph: Graph, text: str, top_k: int) -> list[tuple[str, float]]:
+    """ keyword seeds."""
     query_tokens = _tokenize(text)
     if not query_tokens:
         return []
@@ -274,6 +286,7 @@ def _keyword_seeds(graph: Graph, text: str, top_k: int) -> list[tuple[str, float
 
 
 def _load_index(path: str) -> VectorIndex:
+    """ load index."""
     payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise SystemExit("index payload must be a JSON object")
@@ -286,6 +299,7 @@ def _load_index(path: str) -> VectorIndex:
 
 
 def _state_embedder_meta(meta: dict[str, object]) -> tuple[str | None, int | None]:
+    """ state embedder meta."""
     embedder_name = meta.get("embedder_name")
     if not isinstance(embedder_name, str):
         embedder_name = meta.get("embedder")
@@ -300,6 +314,7 @@ def _state_embedder_meta(meta: dict[str, object]) -> tuple[str | None, int | Non
 
 
 def _load_json(path: str) -> dict:
+    """ load json."""
     try:
         payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -312,6 +327,7 @@ def _load_json(path: str) -> dict:
 
 
 def _state_payload(meta_path: str) -> tuple[dict, dict[str, object], dict[str, list[float]], Graph]:
+    """ state payload."""
     payload = _load_json(meta_path)
     graph_payload = payload.get("graph", payload)
     if not isinstance(graph_payload, dict):
@@ -326,11 +342,13 @@ def _state_payload(meta_path: str) -> tuple[dict, dict[str, object], dict[str, l
 
 
 def _check_result(ok: bool, label: str, details: str = "") -> bool:
+    """ check result."""
     print(f"{label}: {'PASS' if ok else 'FAIL'}" + (f" ({details})" if details else ""))
     return ok
 
 
 def _journal_entry_count(journal_path: str | None) -> int | None:
+    """ journal entry count."""
     if journal_path is None:
         return None
     path = Path(journal_path)
@@ -340,6 +358,7 @@ def _journal_entry_count(journal_path: str | None) -> int | None:
 
 
 def _ensure_hash_embedder_compat(meta: dict[str, object]) -> None:
+    """ ensure hash embedder compat."""
     embedder_name, embedder_dim = _state_embedder_meta(meta)
     if embedder_dim is None:
         return
@@ -354,6 +373,7 @@ def _ensure_hash_embedder_compat(meta: dict[str, object]) -> None:
 
 
 def _result_payload(result: TraversalResult) -> dict:
+    """ result payload."""
     return {
         "fired": result.fired,
         "steps": [step.__dict__ for step in result.steps],
@@ -363,6 +383,7 @@ def _result_payload(result: TraversalResult) -> dict:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    """cmd init."""
     output_dir = Path(args.output).expanduser()
     if output_dir.suffix == ".json" and not output_dir.is_dir():
         output_dir = output_dir.parent
@@ -402,6 +423,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_query(args: argparse.Namespace) -> int:
+    """cmd query."""
     graph, index, meta = _resolve_graph_index(args)
     if args.top <= 0:
         raise SystemExit("--top must be >= 1")
@@ -435,6 +457,7 @@ def cmd_query(args: argparse.Namespace) -> int:
 
 
 def cmd_learn(args: argparse.Namespace) -> int:
+    """cmd learn."""
     graph, index, meta = _resolve_graph_index(args)
     fired_ids = [value.strip() for value in args.fired_ids.split(",") if value.strip()]
     if not fired_ids:
@@ -457,6 +480,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
 
 
 def cmd_merge(args: argparse.Namespace) -> int:
+    """cmd merge."""
     graph, index, meta = _resolve_graph_index(args)
     suggestions = suggest_merges(graph)
     applied = []
@@ -479,6 +503,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
 
 def cmd_connect(args: argparse.Namespace) -> int:
+    """cmd connect."""
     graph, index, meta = _resolve_graph_index(args)
     suggestions = suggest_connections(graph)
     added = apply_connections(graph=graph, connections=suggestions)
@@ -502,6 +527,7 @@ def cmd_connect(args: argparse.Namespace) -> int:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
+    """cmd replay."""
     graph, index, meta = _resolve_graph_index(args)
     last_replayed_ts = meta.get("last_replayed_ts")
     if not isinstance(last_replayed_ts, (int, float)):
@@ -540,6 +566,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    """cmd doctor."""
     checks_passed = 0
     checks_total = 0
     failed = False
@@ -644,6 +671,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_info(args: argparse.Namespace) -> int:
+    """cmd info."""
     if getattr(args, "state", None) is not None:
         payload, _, _, graph = _state_payload(args.state)
         meta = payload.get("meta", {})
@@ -691,6 +719,7 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 
 def cmd_health(args: argparse.Namespace) -> int:
+    """cmd health."""
     graph, _, _ = _resolve_graph_index(args)
     payload = measure_health(graph).__dict__
     payload["nodes"] = graph.node_count()
@@ -716,6 +745,7 @@ def cmd_health(args: argparse.Namespace) -> int:
 
 
 def cmd_journal(args: argparse.Namespace) -> int:
+    """cmd journal."""
     journal_path = _resolve_journal_path(args)
     if args.stats:
         print(
@@ -739,6 +769,7 @@ def cmd_journal(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """main."""
     args = _build_parser().parse_args(argv)
     return {
         "init": cmd_init,

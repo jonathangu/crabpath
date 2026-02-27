@@ -15,15 +15,18 @@ class ManagedState:
     """Context manager that keeps graph and index state in sync."""
 
     def __init__(self, path, auto_save_every: int = 10):
+        """  init  ."""
         self.graph, self.index, self.meta = load_state(path)
         self.path = path
         self.ops = 0
         self.auto_save_every = auto_save_every
 
     def save(self) -> None:
+        """save."""
         save_state(graph=self.graph, index=self.index, path=self.path, meta=self.meta)
 
     def tick(self) -> None:
+        """tick."""
         self.ops += 1
         if self.auto_save_every <= 0:
             return
@@ -31,9 +34,11 @@ class ManagedState:
             self.save()
 
     def __enter__(self):
+        """  enter  ."""
         return self
 
     def __exit__(self, *args):
+        """  exit  ."""
         self.save()
 
 
@@ -89,7 +94,7 @@ def save_state(
 
 
 def load_state(path: str) -> tuple[Graph, VectorIndex, dict[str, object]]:
-    """Load graph + index from one JSON file."""
+    """load state."""
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
 
     graph = Graph()

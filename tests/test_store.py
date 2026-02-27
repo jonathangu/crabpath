@@ -6,6 +6,7 @@ from crabpath import Edge, Graph, ManagedState, Node, VectorIndex, load_state, s
 
 
 def test_save_load_state_with_meta(tmp_path: Path) -> None:
+    """test save load state with meta."""
     graph = Graph()
     graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "beta", metadata={"file": "b.md"}))
@@ -35,6 +36,7 @@ def test_save_load_state_with_meta(tmp_path: Path) -> None:
 
 
 def test_save_state_preserves_custom_metadata(tmp_path: Path) -> None:
+    """test save state preserves custom metadata."""
     graph = Graph()
     graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
     index = VectorIndex()
@@ -55,6 +57,7 @@ def test_save_state_preserves_custom_metadata(tmp_path: Path) -> None:
 
 
 def test_managed_state_context_manager_autosaves_and_context_enter_exit(tmp_path: Path) -> None:
+    """test managed state context manager autosaves and context enter exit."""
     graph = Graph()
     graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
     index = VectorIndex()

@@ -21,7 +21,7 @@ class GraphHealth:
 
 
 def measure_health(graph: Graph) -> GraphHealth:
-    """Compute basic health metrics over the current graph."""
+    """Measure aggregate weights and orphan ratio for tuning."""
     total_edges = graph.edge_count()
     if total_edges == 0:
         return GraphHealth(
@@ -143,6 +143,7 @@ def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
 
 
 def _clamp_half_life(value: float) -> int:
+    """Clamp half-life to a safe range for decay."""
     return max(10, min(500, int(round(value))))
 
 

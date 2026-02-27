@@ -7,22 +7,26 @@ from crabpath.index import VectorIndex
 
 
 def test_vector_index_cosine_known_vectors_and_zero_vector_case() -> None:
+    """test vector index cosine known vectors and zero vector case."""
     assert isclose(VectorIndex.cosine([1.0, 0.0], [1.0, 0.0]), 1.0)
     assert isclose(VectorIndex.cosine([1.0, 2.0], [2.0, 4.0]), 1.0)
     assert VectorIndex.cosine([1.0, 0.0], [0.0, 1.0]) == 0.0
 
 
 def test_vector_index_zero_vector_handling() -> None:
+    """test vector index zero vector handling."""
     assert VectorIndex.cosine([0.0, 0.0], [1.0, 2.0]) == 0.0
     assert VectorIndex.cosine([1.0, 2.0], []) == 0.0
     assert VectorIndex.cosine([1.0], [1.0, 2.0]) == 0.0
 
 
 def test_vector_index_similarity_identity() -> None:
+    """test vector index similarity identity."""
     assert VectorIndex.cosine([1.5, -2.5, 3.0], [1.5, -2.5, 3.0]) == 1.0
 
 
 def test_vector_index_identical_vectors_are_max_similarity() -> None:
+    """test vector index identical vectors are max similarity."""
     index = VectorIndex()
     index.upsert("a", [1.0, 0.0, 0.0])
     index.upsert("b", [0.0, 1.0, 0.0])
@@ -30,10 +34,12 @@ def test_vector_index_identical_vectors_are_max_similarity() -> None:
 
 
 def test_vector_index_orthogonal_vectors() -> None:
+    """test vector index orthogonal vectors."""
     assert VectorIndex.cosine([1.0, 0.0], [0.0, 1.0]) == 0.0
 
 
 def test_vector_index_top_k_with_ties_is_deterministic() -> None:
+    """test vector index top k with ties is deterministic."""
     index = VectorIndex()
     index.upsert("first", [1.0, 0.0])
     index.upsert("second", [1.0, 0.0])
@@ -47,10 +53,12 @@ def test_vector_index_top_k_with_ties_is_deterministic() -> None:
 
 
 def test_vector_index_empty_search() -> None:
+    """test vector index empty search."""
     assert VectorIndex().search([1.0, 2.0], top_k=5) == []
 
 
 def test_vector_index_top_k_non_positive() -> None:
+    """test vector index top k non positive."""
     index = VectorIndex()
     index.upsert("a", [1.0])
     assert index.search([1.0], top_k=0) == []
@@ -58,6 +66,7 @@ def test_vector_index_top_k_non_positive() -> None:
 
 
 def test_vector_index_save_load_round_trip() -> None:
+    """test vector index save load round trip."""
     index = VectorIndex()
     index.upsert("a", [0.1, 0.2, 0.3])
     index.upsert("b", [0.4, 0.5, 0.6])
@@ -69,6 +78,7 @@ def test_vector_index_save_load_round_trip() -> None:
 
 
 def test_vector_index_upsert_overwrites_id() -> None:
+    """test vector index upsert overwrites id."""
     index = VectorIndex()
     index.upsert("a", [1.0, 0.0])
     index.upsert("a", [0.0, 1.0])
@@ -79,6 +89,7 @@ def test_vector_index_upsert_overwrites_id() -> None:
 
 
 def test_vector_index_remove_and_large_payload() -> None:
+    """test vector index remove and large payload."""
     index = VectorIndex()
     index.remove("missing")
 

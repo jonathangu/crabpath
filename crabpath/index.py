@@ -16,15 +16,15 @@ class VectorIndex:
     """
 
     def __init__(self) -> None:
-        """Create empty index."""
+        """  init  ."""
         self._vectors: dict[str, list[float]] = {}
 
     def upsert(self, node_id: str, vector: list[float]) -> None:
-        """Insert or replace vector for ``node_id``."""
+        """upsert."""
         self._vectors[node_id] = list(vector)
 
     def search(self, query_vector: list[float], top_k: int = 10) -> list[tuple[str, float]]:
-        """Return top-k ``(node_id, cosine_similarity)`` tuples."""
+        """search."""
         if top_k <= 0:
             return []
         scores = []
@@ -35,16 +35,16 @@ class VectorIndex:
         return scores[:top_k]
 
     def remove(self, node_id: str) -> None:
-        """Remove vector if present."""
+        """remove."""
         self._vectors.pop(node_id, None)
 
     def save(self, path: str) -> None:
-        """Persist vectors to JSON at ``path``."""
+        """save."""
         Path(path).write_text(json.dumps(self._vectors, indent=2), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str) -> "VectorIndex":
-        """Load vectors from JSON persisted by :meth:`save`."""
+        """load."""
         index = cls()
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         for node_id, vector in data.items():
@@ -53,7 +53,7 @@ class VectorIndex:
 
     @staticmethod
     def cosine(a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity using pure Python floats."""
+        """cosine."""
         if not a or not b:
             return 0.0
         if len(a) != len(b):

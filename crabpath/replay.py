@@ -12,6 +12,7 @@ from ._util import _tokenize
 
 
 def _extract_user_query_content(content: object) -> str | None:
+    """ extract user query content."""
     if isinstance(content, str):
         value = content.strip()
         return value if value else None
@@ -39,6 +40,7 @@ def _extract_user_query_content(content: object) -> str | None:
 
 
 def _extract_message_payload(payload: dict) -> dict | None:
+    """ extract message payload."""
     if not isinstance(payload, dict):
         return None
 
@@ -50,6 +52,7 @@ def _extract_message_payload(payload: dict) -> dict | None:
 
 
 def _extract_openclaw_query(payload: dict) -> str | None:
+    """ extract openclaw query."""
     message = _extract_message_payload(payload)
     if message is None or message.get("role") != "user":
         return None
@@ -58,6 +61,7 @@ def _extract_openclaw_query(payload: dict) -> str | None:
 
 
 def _extract_openclaw_response(payload: dict) -> str | None:
+    """ extract openclaw response."""
     message = _extract_message_payload(payload)
     if message is None or message.get("role") != "assistant":
         return None
@@ -66,18 +70,21 @@ def _extract_openclaw_response(payload: dict) -> str | None:
 
 
 def _extract_flat_query(payload: dict) -> str | None:
+    """ extract flat query."""
     if payload.get("role") != "user":
         return None
     return _extract_user_query_content(payload.get("content"))
 
 
 def _extract_flat_response(payload: dict) -> str | None:
+    """ extract flat response."""
     if payload.get("role") != "assistant":
         return None
     return _extract_user_query_content(payload.get("content"))
 
 
 def _extract_tool_call(payload: dict) -> dict[str, object] | None:
+    """ extract tool call."""
     function = payload.get("function")
     name = payload.get("name")
     arguments = payload.get("arguments")
@@ -100,6 +107,7 @@ def _extract_tool_call(payload: dict) -> dict[str, object] | None:
 
 
 def _extract_tool_calls(payload: dict, *, is_assistant: bool) -> list[dict[str, object]]:
+    """ extract tool calls."""
     if not is_assistant:
         return []
 
@@ -126,6 +134,7 @@ def _extract_tool_calls(payload: dict, *, is_assistant: bool) -> list[dict[str, 
 
 
 def _extract_query_timestamp(payload: dict) -> float | None:
+    """ extract query timestamp."""
     timestamp_keys = ("ts", "timestamp", "created_at", "time")
     for key in timestamp_keys:
         value = payload.get(key)
@@ -164,6 +173,7 @@ def _extract_query_timestamp(payload: dict) -> float | None:
 
 
 def _extract_query_record(raw: str) -> tuple[str | None, float | None]:
+    """ extract query record."""
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
@@ -318,7 +328,7 @@ def extract_query_records(
 
 
 def extract_queries_from_dir(sessions_dir: str | Path, since_ts: float | None = None) -> list[str]:
-    """Extract queries from all .jsonl files in a directory."""
+    """extract queries from dir."""
     path = Path(sessions_dir).expanduser()
     if not path.exists():
         raise SystemExit(f"missing sessions directory: {path}")
@@ -354,6 +364,7 @@ def _auto_score_query_outcome(
     fired_nodes: list[str],
     graph: Graph,
 ) -> float:
+    """Heuristically score a query outcome based on fired node overlap."""
     if response is None:
         return outcome
 
@@ -372,6 +383,7 @@ def _auto_score_query_outcome(
 
 
 def _snapshot_edges(graph: Graph) -> dict[tuple[str, str], float]:
+    """ snapshot edges."""
     weights: dict[tuple[str, str], float] = {}
     for source_id, edges in graph._edges.items():
         for target_id, edge in edges.items():
@@ -380,6 +392,7 @@ def _snapshot_edges(graph: Graph) -> dict[tuple[str, str], float]:
 
 
 def _cross_file_edges(graph: Graph) -> set[tuple[str, str]]:
+    """ cross file edges."""
     edges: set[tuple[str, str]] = set()
     for source_id, source_edges in graph._edges.items():
         source_node = graph.get_node(source_id)
@@ -393,6 +406,7 @@ def _cross_file_edges(graph: Graph) -> set[tuple[str, str]]:
 
 
 def _interaction_query_outcome(entry: dict[str, object]) -> tuple[str, float | None, str | None, list[dict[str, object]]]:
+    """ interaction query outcome."""
     raw_query = entry.get("query")
     query: str | None = None
     if isinstance(raw_query, str):
@@ -524,6 +538,7 @@ def replay_queries(
 
 
 def default_keyword_seed_fn(graph: Graph, query_text: str) -> list[tuple[str, float]]:
+    """default keyword seed fn."""
     query_tokens = _tokenize(query_text)
     if not query_tokens:
         return []

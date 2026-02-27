@@ -10,6 +10,7 @@ from crabpath.traverse import TraversalConfig
 
 
 def test_measure_health_on_empty_graph() -> None:
+    """test measure health on empty graph."""
     graph = Graph()
     health = measure_health(graph)
 
@@ -21,6 +22,7 @@ def test_measure_health_on_empty_graph() -> None:
 
 
 def test_measure_health_matches_manual_counts() -> None:
+    """test measure health matches manual counts."""
     graph = Graph()
     for node_id in ["a", "b", "c", "d"]:
         graph.add_node(Node(node_id, node_id, metadata={"file": "f1"}))
@@ -41,6 +43,7 @@ def test_measure_health_matches_manual_counts() -> None:
 
 
 def test_health_metrics_match_manual_count_with_orphans() -> None:
+    """test health metrics match manual count with orphans."""
     graph = Graph()
     graph.add_node(Node("a", "a", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "b", metadata={"file": "a.md"}))
@@ -54,6 +57,7 @@ def test_health_metrics_match_manual_count_with_orphans() -> None:
 
 
 def test_autotune_healthy_graph_returns_no_recommendations() -> None:
+    """test autotune healthy graph returns no recommendations."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "a.md"}))
@@ -74,6 +78,7 @@ def test_autotune_healthy_graph_returns_no_recommendations() -> None:
 
 
 def test_autotune_dormant_graph_recommends_decay() -> None:
+    """test autotune dormant graph recommends decay."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "a.md"}))
@@ -89,6 +94,7 @@ def test_autotune_dormant_graph_recommends_decay() -> None:
 
 
 def test_autotune_reflex_graph_recommends_longer_half_life() -> None:
+    """test autotune reflex graph recommends longer half life."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
@@ -103,6 +109,7 @@ def test_autotune_reflex_graph_recommends_longer_half_life() -> None:
 
 
 def test_autotune_without_cross_file_edges_reduces_promotion_threshold() -> None:
+    """test autotune without cross file edges reduces promotion threshold."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "same.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "same.md"}))
@@ -119,6 +126,7 @@ def test_autotune_without_cross_file_edges_reduces_promotion_threshold() -> None
 
 
 def test_autotune_detects_orphan_nodes() -> None:
+    """test autotune detects orphan nodes."""
     graph = Graph()
     graph.add_node(Node("root", "root", metadata={"file": "a.md"}))
     graph.add_node(Node("orphan", "orphan", metadata={"file": "b.md"}))
@@ -129,6 +137,7 @@ def test_autotune_detects_orphan_nodes() -> None:
 
 
 def test_autotune_recommendations_are_actionable() -> None:
+    """test autotune recommendations are actionable."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
@@ -143,6 +152,7 @@ def test_autotune_recommendations_are_actionable() -> None:
 
 
 def test_autotune_suggestions_match_config_fields() -> None:
+    """test autotune suggestions match config fields."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
@@ -165,6 +175,7 @@ def test_autotune_suggestions_match_config_fields() -> None:
 
 
 def test_apply_autotune_updates_configs() -> None:
+    """test apply autotune updates configs."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_edge(Edge("a", "a", 0.1))

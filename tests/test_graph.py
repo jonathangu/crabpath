@@ -7,6 +7,7 @@ from crabpath.index import VectorIndex
 
 
 def _simple_graph() -> Graph:
+    """ simple graph."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "a.md"}))
@@ -15,6 +16,7 @@ def _simple_graph() -> Graph:
 
 
 def test_graph_add_nodes_and_edges() -> None:
+    """test graph add nodes and edges."""
     graph = _simple_graph()
     graph.add_edge(Edge("a", "b", 0.7, kind="sibling"))
     graph.add_edge(Edge("b", "c", 0.6, kind="sibling"))
@@ -26,6 +28,7 @@ def test_graph_add_nodes_and_edges() -> None:
 
 
 def test_graph_duplicate_node_replaces_previous() -> None:
+    """test graph duplicate node replaces previous."""
     graph = Graph()
     graph.add_node(Node("x", "first", summary="old"))
     graph.add_node(Node("x", "second", summary="new", metadata={"k": "v"}))
@@ -39,6 +42,7 @@ def test_graph_duplicate_node_replaces_previous() -> None:
 
 
 def test_graph_remove_node_removes_incident_edges() -> None:
+    """test graph remove node removes incident edges."""
     graph = _simple_graph()
     graph.add_edge(Edge("a", "b", 0.4))
     graph.add_edge(Edge("b", "a", 0.4))
@@ -54,6 +58,7 @@ def test_graph_remove_node_removes_incident_edges() -> None:
 
 
 def test_graph_remove_nonexistent_node_is_noop() -> None:
+    """test graph remove nonexistent node is noop."""
     graph = _simple_graph()
     graph.remove_node("missing")
     assert graph.node_count() == 3
@@ -61,6 +66,7 @@ def test_graph_remove_nonexistent_node_is_noop() -> None:
 
 
 def test_remove_from_state_removes_graph_node_and_index_entry() -> None:
+    """test remove from state removes graph node and index entry."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -78,6 +84,7 @@ def test_remove_from_state_removes_graph_node_and_index_entry() -> None:
 
 
 def test_graph_add_edge_replaces_existing_edge() -> None:
+    """test graph add edge replaces existing edge."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -92,6 +99,7 @@ def test_graph_add_edge_replaces_existing_edge() -> None:
 
 
 def test_graph_remove_edge() -> None:
+    """test graph remove edge."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -103,6 +111,7 @@ def test_graph_remove_edge() -> None:
 
 
 def test_graph_remove_edge_nonexistent_is_noop() -> None:
+    """test graph remove edge nonexistent is noop."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -112,6 +121,7 @@ def test_graph_remove_edge_nonexistent_is_noop() -> None:
 
 
 def test_graph_outgoing_and_incoming_queries() -> None:
+    """test graph outgoing and incoming queries."""
     graph = _simple_graph()
     graph.add_edge(Edge("a", "b", 0.5))
     graph.add_edge(Edge("a", "c", 0.6))
@@ -125,6 +135,7 @@ def test_graph_outgoing_and_incoming_queries() -> None:
 
 
 def test_graph_empty_operations_are_safe() -> None:
+    """test graph empty operations are safe."""
     graph = Graph()
     assert graph.node_count() == 0
     assert graph.edge_count() == 0
@@ -133,6 +144,7 @@ def test_graph_empty_operations_are_safe() -> None:
 
 
 def test_graph_missing_target_node_is_ignored_by_queries() -> None:
+    """test graph missing target node is ignored by queries."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_edge(Edge("a", "ghost", 0.7))
@@ -143,6 +155,7 @@ def test_graph_missing_target_node_is_ignored_by_queries() -> None:
 
 
 def test_graph_edge_with_inhibitory_weight_is_allowed() -> None:
+    """test graph edge with inhibitory weight is allowed."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -154,6 +167,7 @@ def test_graph_edge_with_inhibitory_weight_is_allowed() -> None:
 
 
 def test_graph_edge_weight_is_clamped_to_bounds() -> None:
+    """test graph edge weight is clamped to bounds."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))
@@ -166,6 +180,7 @@ def test_graph_edge_weight_is_clamped_to_bounds() -> None:
 
 
 def test_graph_save_load_round_trip_with_kinds_and_metadata() -> None:
+    """test graph save load round trip with kinds and metadata."""
     graph = Graph()
     graph.add_node(Node("a", "A", metadata={"file": "a.md"}))
     graph.add_node(Node("b", "B", metadata={"file": "b.md"}))
@@ -192,6 +207,7 @@ def test_graph_save_load_round_trip_with_kinds_and_metadata() -> None:
 
 
 def test_graph_large_graph_has_expected_counts() -> None:
+    """test graph large graph has expected counts."""
     graph = Graph()
     for idx in range(1000):
         graph.add_node(Node(str(idx), f"node {idx}"))
@@ -207,6 +223,7 @@ def test_graph_large_graph_has_expected_counts() -> None:
 
 
 def test_graph_with_self_loop_is_represented() -> None:
+    """test graph with self loop is represented."""
     graph = Graph()
     graph.add_node(Node("loop", "Loop"))
     graph.add_edge(Edge("loop", "loop", 0.42))
@@ -219,6 +236,7 @@ def test_graph_with_self_loop_is_represented() -> None:
 
 
 def test_graph_negative_and_positive_weight_bounds_after_save_load() -> None:
+    """test graph negative and positive weight bounds after save load."""
     graph = Graph()
     graph.add_node(Node("a", "A"))
     graph.add_node(Node("b", "B"))

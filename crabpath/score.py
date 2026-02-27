@@ -8,6 +8,7 @@ from ._batch import batch_or_single
 from ._util import _extract_json
 
 def _coerce_score(value: object) -> float:
+    """ coerce score."""
     try:
         score = float(value)
     except (TypeError, ValueError):
