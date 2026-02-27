@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from .connect import apply_connections, suggest_connections
@@ -33,7 +33,7 @@ from .replay import (
     replay_queries,
 )
 from .split import split_workspace
-from .hasher import HashEmbedder, default_embed
+from .hasher import HashEmbedder
 from .traverse import TraversalConfig, TraversalResult, traverse
 from ._util import _tokenize
 from .store import load_state, save_state
@@ -49,6 +49,8 @@ def _build_parser() -> argparse.ArgumentParser:
     i.add_argument("--workspace", required=True)
     i.add_argument("--output", required=True)
     i.add_argument("--sessions")
+    i.add_argument("--embedder", choices=["hash", "openai"], default=None)
+    i.add_argument("--llm", choices=["none", "openai"], default="none")
     i.add_argument("--json", action="store_true")
 
     q = sub.add_parser("query")
@@ -58,6 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     q.add_argument("--index")
     q.add_argument("--top", type=int, default=10)
     q.add_argument("--query-vector-stdin", action="store_true")
+    q.add_argument("--embedder", choices=["hash", "openai"], default=None)
     q.add_argument("--max-context-chars", type=int, default=None)
     q.add_argument("--json", action="store_true")
 
@@ -71,11 +74,13 @@ def _build_parser() -> argparse.ArgumentParser:
     m = sub.add_parser("merge")
     m.add_argument("--state")
     m.add_argument("--graph")
+    m.add_argument("--llm", choices=["none", "openai"], default="none")
     m.add_argument("--json", action="store_true")
 
     c = sub.add_parser("connect")
     c.add_argument("--state")
     c.add_argument("--graph")
+    c.add_argument("--llm", choices=["none", "openai"], default="none")
     c.add_argument("--json", action="store_true")
 
     x = sub.add_parser("inject")
@@ -90,6 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
     x.add_argument("--summary")
     x.add_argument("--connect-top-k", type=int, default=3)
     x.add_argument("--connect-min-sim", type=float, default=None)
+    x.add_argument("--embedder", choices=["hash", "openai"], default=None)
     x.add_argument("--vector-stdin", action="store_true")
     x.add_argument("--json", action="store_true")
 
@@ -330,6 +336,32 @@ def _state_embedder_meta(meta: dict[str, object]) -> tuple[str | None, int | Non
     return embedder_name, embedder_dim
 
 
+def _resolve_embedder(
+    args: argparse.Namespace, meta: dict[str, object]
+) -> tuple[callable[[str], list[float]], callable[[list[tuple[str, str]]], dict[str, list[float]]], str, int]:
+    """ resolve embedder."""
+    openai_name = "openai-text-embedding-3-small"
+    embedder_name, _ = _state_embedder_meta(meta)
+    use_openai = args.embedder == "openai" or (args.embedder is None and embedder_name == openai_name)
+    if use_openai:
+        from .openai_embeddings import OpenAIEmbedder
+
+        embedder = OpenAIEmbedder()
+    else:
+        embedder = HashEmbedder()
+
+    return embedder.embed, embedder.embed_batch, embedder.name, embedder.dim
+
+
+def _resolve_llm(args: argparse.Namespace) -> tuple[Callable[[str, str], str] | None, Callable[[list[dict]], list[dict]] | None]:
+    """Resolve optional LLM callbacks."""
+    if getattr(args, "llm", None) == "openai":
+        from .openai_llm import openai_llm_batch_fn, openai_llm_fn
+
+        return openai_llm_fn, openai_llm_batch_fn
+    return None, None
+
+
 def _load_json(path: str) -> dict:
     """ load json."""
     try:
@@ -454,23 +486,24 @@ def cmd_init(args: argparse.Namespace) -> int:
         output_dir = output_dir.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    graph, texts = split_workspace(args.workspace, llm_fn=None, llm_batch_fn=None)
+    llm_fn, llm_batch_fn = _resolve_llm(args)
+    graph, texts = split_workspace(args.workspace, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
     if args.sessions is not None:
         replay_queries(graph=graph, queries=_load_session_queries(args.sessions))
 
-    embedder = HashEmbedder()
+    embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, {})
     print(
-        f"Embedding {len(texts)} texts ({embedder.name}, dim={embedder.dim})",
+        f"Embedding {len(texts)} texts ({embedder_name}, dim={embedder_dim})",
         file=sys.stderr,
     )
-    index_vectors = embedder.embed_batch(list(texts.items()))
+    index_vectors = embed_batch_fn(list(texts.items()))
     index = VectorIndex()
     for node_id, vector in index_vectors.items():
         index.upsert(node_id, vector)
 
     graph_path = output_dir / "graph.json"
     text_path = output_dir / "texts.json"
-    state_meta = _state_meta({}, fallback_name=embedder.name, fallback_dim=embedder.dim)
+    state_meta = _state_meta({}, fallback_name=embedder_name, fallback_dim=embedder_dim)
     _write_graph(graph_path, graph, include_meta=True, meta=state_meta)
     save_state(
         graph=graph,
@@ -490,6 +523,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_query(args: argparse.Namespace) -> int:
     """cmd query."""
     graph, index, meta = _resolve_graph_index(args)
+    embed_fn, _, embedder_name, _ = _resolve_embedder(args, meta)
     if args.top <= 0:
         raise SystemExit("--top must be >= 1")
 
@@ -499,8 +533,9 @@ def cmd_query(args: argparse.Namespace) -> int:
         query_vec = _load_query_vector_from_stdin()
         seeds = index.search(query_vec, top_k=args.top)
     elif index is not None:
-        _ensure_hash_embedder_compat(meta)
-        query_vec = default_embed(args.text)
+        if embedder_name == HashEmbedder().name:
+            _ensure_hash_embedder_compat(meta)
+        query_vec = embed_fn(args.text)
         seeds = index.search(query_vec, top_k=args.top)
     else:
         seeds = _keyword_seeds(graph, args.text, args.top)
@@ -533,11 +568,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
 
     updates = apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
     if args.state is not None:
-        state_meta = _state_meta(
-            meta,
-            fallback_name=HashEmbedder().name,
-            fallback_dim=HashEmbedder().dim,
-        )
+        state_meta = _state_meta(meta)
         save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=state_meta)
     updates_abs = [abs(delta) for delta in updates.values()]
     summary = {
@@ -555,18 +586,15 @@ def cmd_learn(args: argparse.Namespace) -> int:
 def cmd_merge(args: argparse.Namespace) -> int:
     """cmd merge."""
     graph, index, meta = _resolve_graph_index(args)
-    suggestions = suggest_merges(graph)
+    llm_fn, llm_batch_fn = _resolve_llm(args)
+    suggestions = suggest_merges(graph, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
     applied = []
     for source_id, target_id in suggestions:
         if graph.get_node(source_id) and graph.get_node(target_id):
             merged = apply_merge(graph, source_id, target_id)
             applied.append({"from": [source_id, target_id], "to": [merged]})
     if args.state is not None:
-        state_meta = _state_meta(
-            meta,
-            fallback_name=HashEmbedder().name,
-            fallback_dim=HashEmbedder().dim,
-        )
+        state_meta = _state_meta(meta)
         save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=state_meta)
     else:
         _write_graph(args.graph, graph)
@@ -578,14 +606,11 @@ def cmd_merge(args: argparse.Namespace) -> int:
 def cmd_connect(args: argparse.Namespace) -> int:
     """cmd connect."""
     graph, index, meta = _resolve_graph_index(args)
-    suggestions = suggest_connections(graph)
+    llm_fn, llm_batch_fn = _resolve_llm(args)
+    suggestions = suggest_connections(graph, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
     added = apply_connections(graph=graph, connections=suggestions)
     if args.state is not None:
-        state_meta = _state_meta(
-            meta,
-            fallback_name=HashEmbedder().name,
-            fallback_dim=HashEmbedder().dim,
-        )
+        state_meta = _state_meta(meta)
         save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=state_meta)
     else:
         _write_graph(args.graph, graph)
@@ -606,11 +631,13 @@ def cmd_inject(args: argparse.Namespace) -> int:
         raise SystemExit("--state is required for inject")
     if index is None:
         index = VectorIndex()
+    embed_fn, _, embedder_name, _ = _resolve_embedder(args, meta)
 
     if args.vector_stdin:
         vector = _load_query_vector_from_stdin()
     else:
-        _ensure_hash_embedder_compat(meta)
+        if embedder_name == HashEmbedder().name:
+            _ensure_hash_embedder_compat(meta)
         vector = None
 
     if args.summary is None:
@@ -623,7 +650,6 @@ def cmd_inject(args: argparse.Namespace) -> int:
     if args.connect_min_sim is not None:
         connect_min_sim = args.connect_min_sim
     else:
-        embedder_name, _ = _state_embedder_meta(meta)
         connect_min_sim = 0.0 if embedder_name == "hash-v1" else 0.3
 
     node_type = args.type
@@ -637,7 +663,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
             summary=summary,
             metadata=metadata,
             vector=vector,
-            embed_fn=None if args.vector_stdin else default_embed,
+            embed_fn=None if args.vector_stdin else embed_fn,
             connect_top_k=args.connect_top_k,
             connect_min_sim=connect_min_sim,
         )
@@ -650,15 +676,13 @@ def cmd_inject(args: argparse.Namespace) -> int:
             summary=summary,
             metadata=metadata,
             vector=vector,
-            embed_fn=None if args.vector_stdin else default_embed,
+            embed_fn=None if args.vector_stdin else embed_fn,
             connect_top_k=args.connect_top_k,
             connect_min_sim=connect_min_sim,
         )
 
     state_meta = _state_meta(
         meta,
-        fallback_name=HashEmbedder().name,
-        fallback_dim=HashEmbedder().dim,
     )
     save_state(graph=graph, index=index, path=args.state, meta=state_meta)
 
@@ -687,11 +711,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         journal_path=_resolve_journal_path(args),
     )
     if args.state is not None:
-        state_meta = _state_meta(
-            meta,
-            fallback_name=HashEmbedder().name,
-            fallback_dim=HashEmbedder().dim,
-        )
+        state_meta = _state_meta(meta)
         if stats.get("last_replayed_ts") is not None:
             state_meta["last_replayed_ts"] = stats["last_replayed_ts"]
         save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=state_meta)

@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sqlite3
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,7 +58,32 @@ def _learning_row_to_content(row: sqlite3.Row) -> str:
     return "\n".join(parts)
 
 
-def _load_active_learnings(learning_db: Path, agent_id: str) -> list[tuple[str, str]]:
+def _correction_content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _load_injected_correction_hashes(state_path: Path) -> set[str]:
+    log_path = state_path.parent / "injected_corrections.jsonl"
+    if not log_path.exists():
+        return set()
+
+    hashes: set[str] = set()
+    for raw_line in log_path.read_text(encoding="utf-8").splitlines():
+        try:
+            payload = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        content_hash = payload.get("content_hash")
+        if isinstance(content_hash, str):
+            hashes.add(content_hash)
+    return hashes
+
+
+def _load_active_learnings(
+    learning_db: Path, agent_id: str, injected_correction_hashes: set[str] | None = None
+) -> list[tuple[str, str]]:
     if not learning_db.exists():
         print(f"  [learnings] DB not found: {learning_db}")
         return []
@@ -72,9 +98,12 @@ def _load_active_learnings(learning_db: Path, agent_id: str) -> list[tuple[str, 
     conn.close()
 
     learnings = []
+    skip_hashes = injected_correction_hashes or set()
     for row in rows:
         content = _learning_row_to_content(row)
         if content.strip():
+            if row["type"] == "CORRECTION" and _correction_content_hash(content) in skip_hashes:
+                continue
             learnings.append((f"learning::{row['id']}", content))
 
     return learnings
@@ -190,9 +219,17 @@ def run(
     graph, texts = split_workspace(str(workspace), llm_fn=None, llm_batch_fn=None)
 
     agent_id = _infer_agent_id(output, sessions)
+    output_dir, state_path, graph_path, index_path = resolve_output_paths(output)
+    injected_correction_hashes = set()
+    if learning_db is not None:
+        injected_correction_hashes = _load_injected_correction_hashes(state_path)
     learning_count = 0
     if learning_db is not None:
-        learnings = _load_active_learnings(learning_db, agent_id)
+        learnings = _load_active_learnings(
+            learning_db=learning_db,
+            agent_id=agent_id,
+            injected_correction_hashes=injected_correction_hashes,
+        )
         learning_count = len(learnings)
         print(f"  Learnings from DB ({agent_id}): {learning_count}")
         for node_id, content in learnings:
@@ -214,7 +251,6 @@ def run(
     for node_id, vector in embeddings.items():
         index.upsert(node_id, vector)
 
-    output_dir, state_path, graph_path, index_path = resolve_output_paths(output)
     embedder_dim = EMBEDDING_DIM
     save_state(
         graph=graph,

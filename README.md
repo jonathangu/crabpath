@@ -74,6 +74,9 @@ What happens:
 3. It adds **inhibitory edges** — negative-weight links that suppress those chunks
 4. Next query touching that topic: the correction appears, the bad route is dampened
 
+For agent frameworks that need to correlate corrections with earlier queries,
+see `examples/correction_flow/` for the fired-node logging pattern.
+
 You can also reinforce good retrievals:
 
 ```bash

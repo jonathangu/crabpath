@@ -376,6 +376,7 @@ def test_cli_dimension_mismatch_error(tmp_path) -> None:
     )
 
     with pytest.raises(SystemExit, match=r"Index was built with openai-text-embedding-3-small \(dim=1536\). CLI hash embedder uses dim=1024. Dimension mismatch. Use --query-vector-stdin with matching embedder."):
+        main(["query", "alpha", "--state", str(state_path), "--embedder", "hash", "--top", "2", "--json"])
         main(["query", "alpha", "--state", str(state_path), "--top", "2", "--json"])
 
 

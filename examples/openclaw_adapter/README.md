@@ -26,7 +26,21 @@ Script specifics:
   - `--connect-learnings` / `--no-connect-learnings`: enable or disable the learning/learning->workspace connection and correction inhibition step (defaults to enabled when `--learning-db` is passed)
   - `--batch-size <int>`: override OpenAI embedding batch size (default `100`)
 - `query_brain.py`: query a brain with OpenAI embeddings.
+- `learn_correction.py`: apply corrections to the last `lookback` queries using `--chat-id`-scoped fired nodes.
 - `agents_hook.md`: AGENTS.md integration block.
+
+## Real-time corrections
+
+The live correction flow adds two pieces:
+
+- `query_brain.py --chat-id` persists fired nodes in `<state_dir>/fired_log.jsonl`.
+- `learn_correction.py --chat-id ...` loads those fired IDs and applies `crabpath.learn` against the recent hits; optional `--content` injects a `CORRECTION` node.
+
+The batch rebuild/replay path (`init_agent_brain.py` and `connect_learnings.py`) remains a safety net: it still re-hydrates active corrections and applies correction inhibition even when the real-time hook misses a signal.
+
+Dedup for re-harvested corrections:
+- `learn_correction.py` writes records to `<state_dir>/injected_corrections.jsonl` with both `content_hash` and generated `node_id`.
+- `init_agent_brain.py` can skip injecting corrections already present in that log when rebuilding from DB.
 
 Production notes:
 - Uses real OpenAI embeddings via caller-supplied callbacks.
