@@ -14,3 +14,7 @@ build/
 worktrees/
 experiments/
 scripts/
+tmp_verify_brain/
+.ruff_cache/
+openclawbrain/__pycache__/
+crabpath/__pycache__/

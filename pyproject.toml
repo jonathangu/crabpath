@@ -1,6 +1,6 @@
 [project]
 name = "openclawbrain"
-version = "12.0.0"
+version = "12.0.1"
 description = "Memory graph for AI agents that learns what to retrieve — and what to suppress."
 requires-python = ">=3.10"
 dependencies = []
@@ -23,6 +23,9 @@ embeddings = ["sentence-transformers>=2.0"]
 openclawbrain = "openclawbrain.cli:main"
 ocb = "openclawbrain.cli:main"
 crabpath = "crabpath.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["openclawbrain", "crabpath"]
 
 [build-system]
 requires = ["hatchling"]
