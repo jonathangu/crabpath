@@ -112,6 +112,13 @@
 - Added `docs/architecture.md` documenting fast/slow loops, integration contracts, and scheduler guidance.
 - Added `tests/test_maintain.py` covering maintenance execution, dry-run behavior, prune operations, merge effects, and report accounting.
 
+### Daemon mutation + correction fixes (fixes #2)
+- feat: daemon `inject` method for TEACHING/CORRECTION/DIRECTIVE nodes.
+- feat: daemon `correction` method performs atomic penalize + inject and supersedes `learn_correction.py`.
+- feat: in-memory fired-log ring buffer with per-chat-id tracking in daemon mode.
+- fix: `query_brain.py` now respects embedder metadata instead of hardcoding OpenAI defaults.
+- Mentions: fixes #2.
+
 ## v10.4.0 (2026-02-27)
 
 ### True REINFORCE policy gradient

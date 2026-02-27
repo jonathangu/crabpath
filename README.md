@@ -277,10 +277,12 @@ echo '{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4
 {"id":"req-1","result":{"fired_nodes":["a"],"context":"...","seeds":[["a",0.96]],"embed_query_ms":1.1,"traverse_ms":2.4,"total_ms":3.5}}
 ```
 
-Supported methods (all 8):
+Supported methods (all 10):
 
 - `query`: run route traversal and return `fired_nodes`, `context`, timing, and seeds.
 - `learn`: apply outcomes (`+1/-1`) to existing edges and return `edges_updated`.
+- `inject`: add TEACHING/CORRECTION/DIRECTIVE nodes and connect them to related workspace chunks.
+- `correction`: atomically apply negative feedback to last-fired nodes and inject a CORRECTION node.
 - `maintain`: run maintenance ops and return health/merge summary fields.
 - `health`: return current health metrics for the loaded graph.
 - `info`: return state metadata and object counts.
@@ -288,10 +290,11 @@ Supported methods (all 8):
 - `reload`: reload `state.json` without restarting.
 - `shutdown`: persist pending writes and exit cleanly.
 - `query`/`learn`/`maintain`/`health`/`info` responses include `embed_query_ms`, `traverse_ms`, and `total_ms` timing fields where applicable.
+- `query`/`learn`/`inject`/`correction` are the only mutation-capable methods; the daemon is the single source of truth for those changes while state is hot in memory.
 
 Current limitations:
 
-- `inject` method is not yet supported on daemon yet; use the CLI (`openclawbrain inject`) for corrections/additions.
+- Socket transport and per-chat mutation APIs are not yet supported; use NDJSON over stdio and `chat_id`-scoped request payloads.
 - Daemon is stdin/stdout only; there is no socket server (TCP/TLS/etc.) yet.
 - For concurrent writers, serialize access via a single process supervisor or use one dedicated per state file.
 
@@ -335,9 +338,9 @@ Full derivation: https://jonathangu.com/openclawbrain/gu2016/
 | Situation | Action |
 |-----------|--------|
 | Durable fact | Edit file → sync re-embeds |
-| Correction | Edit file + learn_correction.py |
+| Correction | Edit file + daemon `correction` method |
 | Soft teaching | openclawbrain inject --type TEACHING |
-| Wrong retrieval | learn_correction.py (graph-only) |
+| Wrong retrieval | daemon `correction` (graph-only, no rebuild) |
 | New rule | Edit AGENTS.md or SOUL.md |
 
 ## Production stats (current)

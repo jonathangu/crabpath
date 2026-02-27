@@ -240,3 +240,9 @@ echo '{"id":"health-1","method":"health","params":{}}' | openclawbrain daemon --
 ```
 
 You should receive a JSON reply on stdout with the same `id` and health fields.
+
+Daemon references (supported methods):
+
+- `query`, `learn`, `maintain`, `health`, `info`, `save`, `reload`, `shutdown`, `inject`, `correction`.
+- `inject` supports TEACHING/CORRECTION/DIRECTIVE node types.
+- `correction` performs atomic penalize + inject in a single request.

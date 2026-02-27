@@ -137,7 +137,7 @@ OpenClaw agents do what `AGENTS.md` says. The simplest integration is:
 
 - **Before answering:** run a query, get context + fired IDs
 - **After answering:** call `learn` with +1/-1 using the fired IDs
-- **When corrected:** run `learn_correction.py` to both penalize and inject a correction
+- **When corrected:** use the daemon `correction` method to atomically penalize and inject a durable correction node
 
 Paste this block into your OpenClaw workspace `AGENTS.md` (edit `AGENT` and paths):
 
@@ -156,17 +156,15 @@ Always pass `--chat-id` so fired nodes are logged for later corrections.
 
 **Inject correction** (when corrected — same turn, don't wait for harvester):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/learn_correction.py \
-  --state ~/.openclawbrain/AGENT/state.json \
-  --chat-id '<chat_id>' --outcome -1.0 \
-  --content "The correction text here"
+echo '{"id":"correct-1","method":"correction","params":{"chat_id":"<chat_id>","outcome":-1.0,"content":"The correction text here"}}' \
+  | openclawbrain daemon --state ~/.openclawbrain/AGENT/state.json
 ```
-This penalizes the last query's fired nodes AND injects a CORRECTION node with inhibitory edges.
+This applies negative feedback to the last query's fired nodes and injects a CORRECTION node with inhibitory edges in one request.
 
 **Inject new knowledge** (when you learn something not in any workspace file):
 ```bash
-openclawbrain inject --state ~/.openclawbrain/AGENT/state.json \
-  --id "teaching::<short-id>" --content "The new fact" --type TEACHING
+echo '{"id":"inject-1","method":"inject","params":{"id":"teaching::<short-id>","content":"The new fact","type":"TEACHING"}}' \
+  | openclawbrain daemon --state ~/.openclawbrain/AGENT/state.json
 ```
 
 **Health:** `openclawbrain health --state ~/.openclawbrain/AGENT/state.json`
@@ -206,7 +204,7 @@ The daemon speaks NDJSON over `stdin`/`stdout`.
 - Response: one JSON object with matching `id` and either `result` or `error`.
 - Start-up cost is paid once (state loaded at process start); expected savings are 100-800ms on hot-path calls, with production measurement at ~504ms on Mac Mini M4 Pro.
 
-Supported methods: `query`, `learn`, `maintain`, `health`, `info`, `save`, `reload`, `shutdown`.
+Supported methods: `query`, `learn`, `maintain`, `health`, `info`, `save`, `reload`, `shutdown`, `inject`, `correction`.
 
 Example request and reply:
 
@@ -218,7 +216,7 @@ echo '{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4
 {"id":"req-1","result":{"fired_nodes":["a"],"context":"...","embed_query_ms":1.1,"traverse_ms":2.4,"total_ms":3.5}}
 ```
 
-- `inject` is still not available through the daemon endpoint; use `openclawbrain inject` for corrections or add new teaching content.
+- `inject` and `correction` are now available and are the preferred path for same-turn updates.
 - Daemon is intentionally stdio-only today (no socket/TCP server yet).
 
 ### Option B: launchd (macOS)
@@ -339,7 +337,7 @@ openclawbrain learn --state ~/.openclawbrain/main/state.json --outcome 1.0 --fir
 OpenClawBrain ships an OpenClaw adapter that logs fired IDs per chat.
 
 - Query: `query_brain.py --chat-id ...` writes `fired_log.jsonl`
-- Correction: `learn_correction.py --chat-id ... --content "..."` penalizes recent fired IDs *and* injects a correction node
+- Correction: `correction` daemon method (`method:"correction"`) penalizes recent fired IDs *and* injects a correction node
 
 That’s the ergonomic way to do “same-turn correction” inside OpenClaw.
 
@@ -426,7 +424,7 @@ Two practical options:
 ### “Corrections aren’t sticking”
 
 - Ensure you pass `--chat-id` on every query so fired nodes are logged.
-- On correction, run `learn_correction.py` in the same turn.
+- On correction, run daemon `correction` in the same turn.
 
 ### “state.json is getting big”
 

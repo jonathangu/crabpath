@@ -57,11 +57,13 @@ for nid, content in texts.items():
 
 Real-time correction flow:
 `python3 query_brain.py --chat-id CHAT_ID`
-`python3 learn_correction.py --chat-id CHAT_ID`
+Use daemon `correction` for same-turn correction payloads (`method":"correction"`).
 
 ## Quick Reference
 - `openclawbrain init/query/learn/inject/health/doctor/info`
-- `query_brain.py --chat-id` and `learn_correction.py` for real-time correction pipelines
+- `query_brain.py --chat-id` for query/fired-log pipelines
+- daemon methods: `query`, `learn`, `maintain`, `health`, `info`, `save`, `reload`, `shutdown`, `inject`, `correction` for hot-path updates
+- `learn_correction.py` is superseded by daemon `correction` for same-turn fixes
 - `query_brain.py` traversal limits: `beam_width=8`, `max_hops=30`, `fire_threshold=0.01`
 - Hard traversal caps: `max_fired_nodes` and `max_context_chars` (defaults `None`; `query_brain.py` defaults `max_context_chars=20000`)
 - `examples/correction_flow/`, `examples/cold_start/`, `examples/openai_embedder/`
@@ -119,7 +121,7 @@ Real-time correction flow:
 - `openclawbrain connect --state S [--llm openai]`
 - `openclawbrain journal [--stats]`
 - `query_brain.py --chat-id CHAT_ID`
-- `learn_correction.py --chat-id CHAT_ID`
+- daemon `correction` (`method:"correction"` in NDJSON payload)
 
 ## Traversal defaults
 
