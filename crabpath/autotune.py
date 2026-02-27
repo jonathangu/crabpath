@@ -71,12 +71,15 @@ def measure_health(graph: Graph) -> GraphHealth:
 
 
 def autotune(graph: Graph, health: GraphHealth) -> list[dict]:
-    """Return suggested adjustments for the four health knobs.
+    """Return suggested adjustments for graph-level health tuning.
+
+    ``graph`` is required because orphan and cross-file statistics come directly
+    from structure traversal. ``health`` is a precomputed health snapshot used to
+    decide which knobs to adjust.
 
     Knobs:
     - ``half_life``
     - ``hebbian_increment``
-    - ``reflex_threshold``
     - ``promotion_threshold``
     """
     deltas: list[dict] = []

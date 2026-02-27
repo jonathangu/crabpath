@@ -22,18 +22,19 @@ def log_event(event: dict, journal_path: str | None = None) -> None:
 def log_query(
     query_text: str,
     fired_ids: list[str],
-    node_count: int,
+    node_count: int | None = None,
     journal_path: str | None = None,
     metadata: dict[str, object] | None = None,
 ) -> None:
     """Log a query event to the journal."""
+    resolved_node_count = node_count if node_count is not None else len(fired_ids)
     log_event(
         {
             "type": "query",
             "query": query_text,
             "fired": fired_ids,
             "fired_count": len(fired_ids),
-            "node_count": node_count,
+            "node_count": resolved_node_count,
             "metadata": metadata,
         },
         journal_path,

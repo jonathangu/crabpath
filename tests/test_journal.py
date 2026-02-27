@@ -20,6 +20,17 @@ def test_log_query_appends(tmp_path: Path) -> None:
     assert "iso" in entries[0]
 
 
+def test_log_query_defaults_node_count_to_fired_ids_length(tmp_path: Path) -> None:
+    """test log query defaults node_count to len(fired_ids)."""
+    path = tmp_path / "journal.jsonl"
+    log_query(query_text="deploy", fired_ids=["a", "b", "c"], journal_path=str(path))
+
+    entries = read_journal(journal_path=str(path))
+    assert len(entries) == 1
+    assert entries[0]["fired_count"] == 3
+    assert entries[0]["node_count"] == 3
+
+
 def test_log_learn_appends(tmp_path: Path) -> None:
     """test log learn appends."""
     path = tmp_path / "journal.jsonl"

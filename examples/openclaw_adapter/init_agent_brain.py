@@ -17,6 +17,7 @@ from crabpath.replay import extract_queries, extract_queries_from_dir, replay_qu
 EMBED_MODEL = "openai-text-embedding-3-small"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
+EMBED_BATCH_SIZE = 100
 
 
 def require_api_key() -> str:
@@ -32,12 +33,16 @@ def build_embed_batch_fn(client: OpenAI):
     def embed_batch(texts: list[tuple[str, str]]) -> dict[str, list[float]]:
         if not texts:
             return {}
-        _, contents = zip(*texts)
-        response = client.embeddings.create(model=OPENAI_EMBEDDING_MODEL, input=list(contents))
-        return {
-            texts[idx][0]: response.data[idx].embedding
-            for idx in range(len(response.data))
-        }
+
+        results = {}
+        for start in range(0, len(texts), EMBED_BATCH_SIZE):
+            chunk = texts[start : start + EMBED_BATCH_SIZE]
+            _, contents = zip(*chunk)
+            response = client.embeddings.create(model=OPENAI_EMBEDDING_MODEL, input=list(contents))
+            for index, embedding in enumerate(response.data):
+                results[chunk[index][0]] = embedding.embedding
+
+        return results
 
     return embed_batch
 

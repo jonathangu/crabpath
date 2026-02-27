@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from ._batch import batch_or_single
 from ._util import _extract_json
+from .graph import Graph
 
 def _coerce_score(value: object) -> float:
     """ coerce score."""
@@ -22,7 +23,8 @@ def _coerce_score(value: object) -> float:
 
 def score_retrieval(
     query: str,
-    fired_nodes: list[tuple[str, str]],
+    fired_nodes: list[tuple[str, str]] | list[str],
+    graph: Graph | None = None,
     llm_fn: Callable[[str, str], str] | None = None,
     llm_batch_fn: Callable[[list[dict]], list[dict]] | None = None,
 ) -> dict[str, float]:
@@ -32,11 +34,27 @@ def score_retrieval(
     """
     if not fired_nodes:
         return {}
-    defaults = {node_id: 1.0 for node_id, _ in fired_nodes}
+
+    resolved_nodes: list[tuple[str, str]] = []
+    for item in fired_nodes:
+        if isinstance(item, tuple):
+            if len(item) != 2:
+                continue
+            node_id, content = item
+            resolved_nodes.append((node_id, content))
+        else:
+            if graph is None:
+                raise ValueError("graph is required when fired_nodes are node IDs")
+            resolved_nodes.append((item, (graph.get_node(item).content if graph.get_node(item) else "")))
+
+    if not resolved_nodes:
+        return {}
+
+    defaults = {node_id: 1.0 for node_id, _ in resolved_nodes}
     if llm_fn is None and llm_batch_fn is None:
         return defaults
 
-    lines = [f"- {node_id}: {(content or '').replace(chr(10), ' ')[:240]}" for node_id, content in fired_nodes]
+    lines = [f"- {node_id}: {(content or '').replace(chr(10), ' ')[:240]}" for node_id, content in resolved_nodes]
     user = f"Query: {query}\n\nRetrieved chunks:\n{chr(10).join(lines)}"
     system = (
         'Score how useful each document chunk was for answering this query. For each chunk, return a '

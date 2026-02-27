@@ -69,6 +69,24 @@ class HashEmbedder:
         return {name: self.embed(text) for name, text in texts}
 
 
+def _coerce_embed_inputs(texts: list[tuple[str, str]] | list[str]) -> list[tuple[str, str]]:
+    """Normalize embedding inputs to ``(node_id, text)`` pairs."""
+    if not texts:
+        return []
+
+    normalized: list[tuple[str, str]] = []
+    for idx, item in enumerate(texts):
+        if isinstance(item, tuple):
+            if len(item) != 2:
+                raise TypeError("default_embed_batch tuple entries must be (node_id, text)")
+            node_id, content = item
+        else:
+            node_id, content = str(idx), item
+        normalized.append((node_id, content))
+
+    return normalized
+
+
 _default_embedder: HashEmbedder | None = None
 
 
@@ -80,9 +98,9 @@ def default_embed(text: str) -> list[float]:
     return _default_embedder.embed(text)
 
 
-def default_embed_batch(texts: list[tuple[str, str]]) -> dict[str, list[float]]:
+def default_embed_batch(texts: list[tuple[str, str]] | list[str]) -> dict[str, list[float]]:
     """default embed batch."""
     global _default_embedder
     if _default_embedder is None:
         _default_embedder = HashEmbedder()
-    return _default_embedder.embed_batch(texts)
+    return _default_embedder.embed_batch(_coerce_embed_inputs(texts))

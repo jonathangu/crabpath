@@ -30,6 +30,20 @@ def test_score_retrieval_defaults_without_llm() -> None:
     assert scores == {"a": 1.0, "b": 1.0}
 
 
+def test_score_retrieval_accepts_node_ids_with_graph_lookup() -> None:
+    """test score retrieval accepts node ids and resolves content from graph."""
+    graph = Graph()
+    graph.add_node(Node("a", "alpha content"))
+    graph.add_node(Node("b", "beta content"))
+
+    def fake_llm(system_prompt: str, user_prompt: str) -> str:
+        """fake llm."""
+        return json.dumps({"scores": {"a": 0.95, "b": 0.2}})
+
+    scores = score_retrieval("find docs", ["a", "b"], graph=graph, llm_fn=fake_llm)
+    assert scores == {"a": 0.95, "b": 0.2}
+
+
 def test_suggest_merges_with_llm_confirmation() -> None:
     """test suggest merges with llm confirmation."""
     graph = Graph()
