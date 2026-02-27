@@ -1,33 +1,32 @@
 # CrabPath
 
-Pure routing graph engine for context-aware retrieval. Core is zero deps and zero network; the caller supplies semantic and LLM callbacks.
+Pure routing graph engine for context-aware retrieval. Core is zero dependencies and zero network; the caller supplies semantic and LLM callbacks.
 
 ## 1. CrabPath
 
-CrabPath is a deterministic graph engine that builds traversable context graphs and improves routing from feedback, without any external service requirement by default.
+CrabPath v8.0.0 is a deterministic graph engine that builds traversable context graphs and improves routing from feedback, without any external service requirement by default.
 
-## 2. Install
+## 2. Design Tenets
+
+- No network calls in core (not even for model downloads)
+- No secret discovery (no dotfiles, no keychain, no env probing)
+- No subprocess provider wrappers
+- Embedder identity stored in state metadata (`name`, `dim`, `schema_version`); hard-fail on dimension mismatch
+- One canonical state format (`state.json`)
+
+## 3. Install
 
 ```bash
 pip install crabpath
 ```
 
-## Design Tenets
-
-- No network calls in core (not even for model downloads)
-- No secret discovery (no dotfiles, no keychain, no env probing)
-- No subprocess provider wrappers
-- Embedder identity stored in graph metadata; dimension mismatches are errors
-- One canonical state format (state.json)
-
-## 3. Quick Start
+## 4. Quick Start (out of the box)
 
 ```python
-from crabpath import split_workspace, traverse, apply_outcome, VectorIndex
-from crabpath import HashEmbedder
+from crabpath import split_workspace, traverse, apply_outcome, VectorIndex, HashEmbedder
 
+embedder = HashEmbedder()  # default hash-v1 (1024-dim)
 graph, texts = split_workspace("./workspace")
-embedder = HashEmbedder()  # default hash-v1
 index = VectorIndex()
 
 for nid, content in texts.items():
@@ -39,42 +38,52 @@ result = traverse(graph, seeds)
 apply_outcome(graph, result.fired, outcome=1.0)
 ```
 
-## 4. Real Embeddings
+## 5. Real Embeddings via Caller Callbacks
 
 ```python
 from openai import OpenAI
-from crabpath import split_workspace, traverse, apply_outcome, VectorIndex
+from crabpath import split_workspace, VectorIndex
 from crabpath._batch import batch_or_single_embed
 
 client = OpenAI()
 
-def embed_batch(texts):
-    ids, contents = zip(*texts)
+def embed_batch_fn(items):
+    ids, contents = zip(*items)
     resp = client.embeddings.create(model="text-embedding-3-small", input=list(contents))
-    return {ids[i]: resp.data[i].embedding for i in range(len(ids))}
+    vectors = {ids[i]: resp.data[i].embedding for i in range(len(ids))}
+    if any(len(v) != 1536 for v in vectors.values()):
+        raise ValueError("dimension mismatch: expected 1536")
+    return vectors
 
 graph, texts = split_workspace("./workspace")
 index = VectorIndex()
-vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=embed_batch)
+vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=embed_batch_fn)
 for nid, vec in vecs.items():
     index.upsert(nid, vec)
 ```
 
-## 5. LLM Callbacks
+## 6. LLM Callbacks
 
 ```python
+from openai import OpenAI
+from crabpath import split_workspace
+
+client = OpenAI()
+
 def llm_fn(system, user):
     resp = client.chat.completions.create(
         model="gpt-5-mini",
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
     return resp.choices[0].message.content
 
-# Pass to split for LLM splitting, or traverse for routing
+# Pass to split for LLM chunking, or to query routes as needed
 graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 ```
 
-## 6. Session Replay
+## 7. Session Replay (prominent)
+
+Session replay is core in v8 and is the fastest way to warm-start a new brain from history.
 
 ```python
 from crabpath import replay_queries, split_workspace
@@ -89,18 +98,29 @@ Or via CLI:
 
 ```bash
 crabpath init --workspace ./ws --output ./data --sessions ./sessions/
-crabpath replay --graph ./data/graph.json --sessions ./sessions/
+crabpath replay --state ./data/state.json --sessions ./sessions/
 ```
 
-## 7. Three Embedding Tiers
+## 8. Three Embedding Tiers
 
-Capability | How to enable | Network | Dependencies
----|---|---|---
-Default (hash-v1) | `HashEmbedder` shipped in core | no | none
-Local semantic | `pip install crabpath[embeddings]` | optional (local model) | local embedding extras
-Remote semantic | callback `embed_fn` / `embed_batch_fn` (OpenAI, Gemini, etc.) | caller-provided | caller-provided
+| Tier | Capability | Network | Notes |
+| --- | --- | --- | --- |
+| 1 | Default hash-v1 | none | Built into core, zero deps, deterministic baseline |
+| 2 | Semantic callback | optional | Caller-provided `embed_fn` / `embed_batch_fn` (OpenAI, Gemini, local service, etc.) |
+| 3 | Replay | none | No new embedding calls; uses historical query signals and graph traversal history |
 
-## 8. CLI
+## 9. Benchmarks
+
+Reference benchmark (current repo) on CrabPath repo:
+
+- Keyword R@3: `0.942`
+- Hash R@3: `0.933`
+- CrabPath R@3: `0.892`
+- CrabPath + replay R@3: `0.908`
+
+## 10. CLI
+
+`--state` is the preferred API; `--graph`/`--index` are legacy compatibility flags.
 
 ```bash
 crabpath init --workspace W --output O [--sessions S]
@@ -110,19 +130,27 @@ crabpath health --state S
 crabpath replay --state S --sessions S
 crabpath merge --state S
 crabpath connect --state S
-crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json] (legacy)
-crabpath learn --graph G --outcome N --fired-ids a,b,c [--json] (legacy)
-crabpath replay --graph G --sessions S (legacy)
-crabpath health --graph G (legacy)
-crabpath merge --graph G (legacy)
-crabpath connect --graph G (legacy)
 crabpath journal [--stats]
+
+# Legacy
+crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json]
+crabpath learn --graph G --outcome N --fired-ids a,b,c [--json]
+crabpath replay --graph G --sessions S
+crabpath health --graph G
+crabpath merge --graph G
+crabpath connect --graph G
 ```
 
-## 9. Reproduce Results
+## 11. Reproduce Results
 
 See [REPRODUCE.md](REPRODUCE.md).
 
-## 10. Paper
+## 12. Paper
 
 https://jonathangu.com/crabpath/
+
+## 13. Status
+
+- 8 deterministic simulations: all PASS
+- 150 tests
+- Production: 3 agent brains using real OpenAI embeddings

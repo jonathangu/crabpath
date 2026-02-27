@@ -1,6 +1,6 @@
 # Reproduce CrabPath Results
 
-All paper claims are verified by deterministic simulations. No API keys, no network calls, no randomness.
+All paper claims are verified by deterministic simulations and one benchmark harness. No API keys are needed for simulation.
 
 ## Quick Start
 
@@ -26,35 +26,33 @@ brain_death                PASS         dormant=0.975
 individuation              PASS         diff_edges=27
 ```
 
-## Simulations → Paper Claims
+All eight simulations are deterministic and all PASS.
+
+## Table: Simulations → Paper Claims
 
 | Sim | Paper Claim | What It Tests |
 |-----|-------------|---------------|
-| `deploy_pipeline` | Deploy edges compile to reflex (weight → 1.0) | 50 queries, 4 pipeline edges, all reach reflex tier |
-| `negation` | Inhibitory weight reaches -0.94 | Bad path suppressed via negative outcomes |
-| `context_reduction` | 30 → 2.6 nodes (91% reduction) | Active context shrinks as graph learns |
-| `forgetting` | 93.3% dormant after 100 queries | Unused edges decay, graph stays sparse |
-| `edge_damping` | Damped edges discover branches, undamped loops | w' = w × 0.3^k prevents traversal cycles |
-| `domain_separation` | 5 cross-file edges emerge | Separate domains connected by co-firing |
-| `brain_death` | Autotune detects 97.5% dormant | Health metrics catch over-decay |
-| `individuation` | 27 edges differ between twin agents | Same files, different usage → different graphs |
+| `deploy_pipeline` | Repeated edges compile to reflex | 50 queries, 4 pipeline edges, reflex-tier convergence |
+| `negation` | Corrective negatives suppress bad guidance | Inhibitory learning (`-0.940`) on stale edge |
+| `context_reduction` | Context becomes focused over time | 30→2.6 fired nodes |
+| `forgetting` | Selective dormancy is learned | Dormant shares reach 93.3% |
+| `edge_damping` | Damped traversal avoids loops | `λ=0.3` reaches target; `λ=1.0` loops |
+| `domain_separation` | Sparse bridges while preserving clusters | 5 cross-file edges emerge |
+| `brain_death` | Health checks surface recovery pressure | Dormancy and recovery control behavior |
+| `individuation` | Same topology with workload-specific weights | 27 edges differ by >0.05 after divergent workloads |
 
 ## Run Tests
 
 ```bash
 pip install -e .
-python -m pytest -q
+python3 -m pytest tests/ -x -q
 ```
 
-Expected: 138 passed in <1s.
-
-## Details
-
-Each sim writes `*_results.json` with full data. The `run_all.py` runner checks each result's `claim` field and reports PASS/FAIL. All sims are deterministic — same input produces same output on any machine with Python 3.10+.
+Expected: 150 passed.
 
 ## Benchmarks
 
-CrabPath provides a local benchmark for the repository docs in `benchmarks/queries.json` and `benchmarks/run_benchmark.py`.
+CrabPath includes a deterministic benchmark harness at `benchmarks/run_benchmark.py`.
 
 ### Run
 
@@ -63,11 +61,11 @@ python3 benchmarks/run_benchmark.py
 python3 -m pytest tests/ -x -q
 ```
 
-The benchmark builds a graph from the repo using `split_workspace`, builds a hash vector index, runs:
+Benchmark output compares:
 
 1. keyword overlap
-2. hash embed similarity
-3. CrabPath traverse
-4. CrabPath with replay
+2. hash embedding
+3. CrabPath traversal
+4. CrabPath traversal + session replay
 
-and writes comparison output to `benchmarks/results.json`.
+Current reference results (CR@3): `0.942`, `0.933`, `0.892`, `0.908`.

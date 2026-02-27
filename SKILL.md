@@ -12,19 +12,13 @@ metadata:
 
 Pure graph core: zero deps, zero network calls. Caller provides callbacks.
 
-## Install
-
-```bash
-pip install crabpath
-```
-
 ## Design Tenets
 
-- No network calls in core (not even for model downloads)
-- No secret discovery (no dotfiles, no keychain, no env probing)
+- No network calls in core
+- No secret discovery (no dotfiles, keychain, or env probing)
 - No subprocess provider wrappers
-- Embedder identity stored in graph metadata; dimension mismatches are errors
-- One canonical state format (state.json)
+- Embedder identity in state metadata; dimension mismatches are errors
+- One canonical state format (`state.json`)
 
 ## Quick Start
 
@@ -38,35 +32,11 @@ for nid, content in texts.items():
     index.upsert(nid, embedder.embed(content))
 ```
 
-## Real embeddings callback
+## Embeddings and LLM callbacks
 
-```python
-from openai import OpenAI
-from crabpath import split_workspace
-from crabpath._batch import batch_or_single_embed
-
-client = OpenAI()
-
-def embed_batch(texts):
-    ids, contents = zip(*texts)
-    resp = client.embeddings.create(model="text-embedding-3-small", input=list(contents))
-    return {ids[i]: resp.data[i].embedding for i in range(len(ids))}
-
-graph, texts = split_workspace("./workspace")
-vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=embed_batch)
-```
-
-## LLM callback
-
-```python
-def llm_fn(system, user):
-    return client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
-    ).choices[0].message.content
-
-graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
-```
+- Default: `HashEmbedder` (hash-v1, 1024-dim)
+- Real: callback `embed_fn` / `embed_batch_fn` (e.g., `text-embedding-3-small`)
+- LLM routing: callback `llm_fn` using `gpt-5-mini` (example)
 
 ## Session Replay
 
@@ -74,23 +44,11 @@ graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 
 ## CLI
 
-`crabpath init --workspace W --output O`
+`--state` is preferred:
+
 `crabpath query TEXT --state S [--top N] [--json]`
-`crabpath learn --state S --outcome N --fired-ids a,b,c`
-`crabpath health --state S`
-`crabpath replay --state S --sessions S`
-`crabpath merge --state S`
-`crabpath connect --state S`
-`crabpath journal [--stats]`
 
-Legacy graph/index flags remain available:
-
-`crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json]`
-`crabpath learn --graph G --outcome N --fired-ids a,b,c`
-`crabpath replay --graph G --sessions S`
-`crabpath health --graph G`
-`crabpath merge --graph G`
-`crabpath connect --graph G`
+`--graph`/`--index` flags still supported for backward compatibility.
 
 ## Paper
 
