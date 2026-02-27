@@ -56,12 +56,33 @@ health -> decay -> merge -> prune -> connect
 - `run_maintenance()` (new)
 - or directly: `measure_health()`, `apply_decay()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
 
+## 4) Constitutional Anchors
+
+CrabPath uses node metadata to mark maintenance authority:
+
+- `authority="constitutional"`: immutable anchors (`SOUL.md`, `AGENTS.md`, `USER.md`-style hard rules).
+  - never decay
+  - never prune nodes or edges
+  - never merge
+- `authority="canonical"`: stable long-lived anchors (`MEMORY.md`, `TOOLS.md`-style references).
+  - decay at half speed (2x half-life)
+  - never prune if the node is still weighted
+  - merge only with LLM confirmation
+- `authority="overlay"` (default): normal maintenance policy for session and working nodes (`TEACHING`, `CORRECTION`, derived nodes).
+
+Maintenance behavior:
+
+- `prune_edges()` skips any edge touching a constitutional node.
+- `prune_orphan_nodes()` keeps constitutional and canonical nodes even if disconnected.
+- `run_maintenance()` merge candidates are filtered to exclude constitutional nodes, and canonical nodes only merge when LLM is enabled.
+- `run_maintenance()` decay skips constitutional sources and applies 2x half-life to canonical sources.
+
 ### When it runs
 
 Maintenance is **not** part of request path.
 Run it periodically (cron, timer, CI job, custom workflow) or after meaningful events (re-index, large workspace changes, etc.).
 
-## 4) Integration Contract
+## 5) Integration Contract
 
 ### Framework provides
 
@@ -105,7 +126,7 @@ apply_outcome(...)
 CrabPath handles query-time scoring and maintenance operators;
 you own orchestration, retries, and scheduler.
 
-## 5) Brain directory layout
+## 6) Brain directory layout
 
 A brain directory is the operational unit.
 
@@ -114,7 +135,7 @@ A brain directory is the operational unit.
 - `fired_log.jsonl` — optional fired-node history (chat/session based).
 - `injected_corrections.jsonl` — optional dedup ledger for correction nodes.
 
-## 6) Vocabulary table
+## 7) Vocabulary table
 
 | Term | Meaning |
 |---|---|
@@ -129,7 +150,7 @@ A brain directory is the operational unit.
 | Dormant edge | Low-significance edge from health perspective. |
 | Orphan | Node with no incoming and no outgoing edges. |
 
-## 7) Scheduling
+## 8) Scheduling
 
 Run maintenance with your scheduler of choice. CrabPath has no scheduler dependency.
 
@@ -164,7 +185,7 @@ jobs:
       - run: python3 examples/ops/run_maintenance.py --state ./brains/main/state.json
 ```
 
-## 8) Fast vs slow loop (concise)
+## 9) Fast vs slow loop (concise)
 
 ### Fast loop
 

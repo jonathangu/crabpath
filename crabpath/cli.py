@@ -79,6 +79,14 @@ def _build_parser() -> argparse.ArgumentParser:
     m.add_argument("--llm", choices=["none", "openai"], default="none")
     m.add_argument("--json", action="store_true")
 
+    a = sub.add_parser("anchor")
+    a.add_argument("--state", required=True)
+    a.add_argument("--node-id")
+    a.add_argument("--authority", choices=["constitutional", "canonical"])
+    a.add_argument("--remove", action="store_true")
+    a.add_argument("--list", action="store_true")
+    a.add_argument("--json", action="store_true")
+
     c = sub.add_parser("connect")
     c.add_argument("--state")
     c.add_argument("--graph")
@@ -635,6 +643,45 @@ def cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_anchor(args: argparse.Namespace) -> int:
+    """cmd anchor."""
+    graph, index, meta = _resolve_graph_index(args)
+    if args.list:
+        nodes = [
+            {"node_id": node.id, "authority": node.metadata.get("authority", "overlay")}
+            for node in graph.nodes()
+            if node.metadata.get("authority") in {"constitutional", "canonical"}
+        ]
+        payload = {"nodes": nodes, "count": len(nodes)}
+        print(json.dumps(payload, indent=2) if args.json else "\n".join(f"{node['node_id']}: {node['authority']}" for node in nodes) or "No anchored nodes.")
+        return 0
+
+    if not args.node_id:
+        raise SystemExit("--node-id required unless --list is set")
+    node = graph.get_node(args.node_id)
+    if node is None:
+        raise SystemExit(f"node not found: {args.node_id}")
+
+    current_authority = node.metadata.get("authority", "overlay")
+    if args.remove:
+        if "authority" in node.metadata:
+            node.metadata.pop("authority", None)
+            current_authority = "overlay"
+            save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=_state_meta(meta))
+        payload = {"node_id": args.node_id, "authority": current_authority}
+        print(json.dumps(payload) if args.json else f"{args.node_id} authority: {current_authority}")
+        return 0
+
+    if args.authority:
+        node.metadata["authority"] = args.authority
+        current_authority = args.authority
+        save_state(graph=graph, index=index or VectorIndex(), path=args.state, meta=_state_meta(meta))
+
+    payload = {"node_id": args.node_id, "authority": current_authority}
+    print(json.dumps(payload) if args.json else f"{args.node_id} authority: {current_authority}")
+    return 0
+
+
 def cmd_inject(args: argparse.Namespace) -> int:
     """cmd inject."""
     graph, index, meta = _resolve_graph_index(args)
@@ -979,6 +1026,7 @@ def main(argv: list[str] | None = None) -> int:
         "learn": cmd_learn,
         "merge": cmd_merge,
         "maintain": cmd_maintain,
+        "anchor": cmd_anchor,
         "connect": cmd_connect,
         "inject": cmd_inject,
         "replay": cmd_replay,

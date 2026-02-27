@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .decay import DecayConfig, apply_decay
-from .graph import Graph
+from .graph import Graph, Node
 from .index import VectorIndex
 from .journal import log_event, log_health
 from .merge import apply_merge, suggest_merges
@@ -22,6 +22,21 @@ def _health_payload(graph: Graph) -> dict:
     return health.__dict__ | {"nodes": graph.node_count(), "edges": graph.edge_count()}
 
 
+def _node_authority(node: Node | None) -> str:
+    """Get node authority with safe fallback."""
+    if node is None or not isinstance(node.metadata, dict):
+        return "overlay"
+    authority = node.metadata.get("authority")
+    if authority in {"constitutional", "canonical", "overlay"}:
+        return authority
+    return "overlay"
+
+
+def _node_ids_with_authority(graph: Graph, authority: str) -> set[str]:
+    """Return node IDs with a given authority."""
+    return {node.id for node in graph.nodes() if _node_authority(node) == authority}
+
+
 def prune_edges(graph: Graph, below: float = 0.01) -> int:
     """Delete edges with weight below threshold. Returns count deleted."""
     if below <= 0:
@@ -30,6 +45,15 @@ def prune_edges(graph: Graph, below: float = 0.01) -> int:
     removed = 0
     for source_id, edges in list(graph._edges.items()):
         for target_id, edge in list(edges.items()):
+            source_auth = _node_authority(graph.get_node(source_id))
+            target_auth = _node_authority(graph.get_node(target_id))
+            if source_auth == "constitutional" or target_auth == "constitutional":
+                continue
+            if (
+                ("canonical" in {source_auth, target_auth})
+                and abs(edge.weight) > 0.1
+            ):
+                continue
             if abs(edge.weight) < below:
                 graph.remove_edge(source_id, target_id)
                 removed += 1
@@ -40,6 +64,8 @@ def prune_orphan_nodes(graph: Graph) -> int:
     """Delete nodes with no incoming or outgoing edges. Returns count deleted."""
     orphaned: list[str] = []
     for node in graph.nodes():
+        if _node_authority(node) in {"constitutional", "canonical"}:
+            continue
         if not graph.incoming(node.id) and not graph.outgoing(node.id):
             orphaned.append(node.id)
 
@@ -172,7 +198,20 @@ def run_maintenance(
 
     if "decay" in selected:
         tasks_run.append("decay")
-        changed = apply_decay(target_graph, config=decay_config)
+        canonical_nodes = _node_ids_with_authority(target_graph, "canonical")
+        constitutional_nodes = _node_ids_with_authority(target_graph, "constitutional")
+
+        def _source_half_life(source_id: str) -> float:
+            if source_id in canonical_nodes:
+                return 2.0
+            return 1.0
+
+        changed = apply_decay(
+            target_graph,
+            config=decay_config,
+            skip_source_ids=constitutional_nodes,
+            source_half_life_scale=_source_half_life,
+        )
         decay_applied = not dry_run
         log_event(
             {
@@ -204,8 +243,18 @@ def run_maintenance(
     if "merge" in selected:
         tasks_run.append("merge")
         suggestions = suggest_merges(target_graph, llm_fn=llm_fn)
-        merges_proposed = len(suggestions)
-        for source_id, target_id in suggestions[:max_merges]:
+        filtered_suggestions: list[tuple[str, str]] = []
+        for source_id, target_id in suggestions:
+            source_node = target_graph.get_node(source_id)
+            target_node = target_graph.get_node(target_id)
+            if _node_authority(source_node) == "constitutional" or _node_authority(target_node) == "constitutional":
+                continue
+            if "canonical" in {_node_authority(source_node), _node_authority(target_node)} and llm_fn is None:
+                continue
+            filtered_suggestions.append((source_id, target_id))
+
+        merges_proposed = len(filtered_suggestions)
+        for source_id, target_id in filtered_suggestions[:max_merges]:
             if target_graph.get_node(source_id) is None or target_graph.get_node(target_id) is None:
                 continue
             apply_merge(target_graph, source_id, target_id)
