@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Unreleased
+
+### Maintenance loop and ops docs
+- Added `crabpath.maintain` with `run_maintenance`, `prune_edges`, and `prune_orphan_nodes`.
+- Added `crabpath maintain` CLI command with `--state`, `--tasks`, `--dry-run`, `--max-merges`, and `--prune-below`.
+- Added framework-agnostic examples in `examples/ops/` for fast loop and maintenance loop.
+- Added `docs/architecture.md` documenting fast/slow loops, integration contracts, and scheduler guidance.
+- Added `tests/test_maintain.py` covering maintenance execution, dry-run behavior, prune operations, merge effects, and report accounting.
+
 ## v10.4.0 (2026-02-27)
 
 ### True REINFORCE policy gradient

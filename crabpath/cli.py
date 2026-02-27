@@ -7,6 +7,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Iterable
+from dataclasses import asdict
 from pathlib import Path
 
 from .connect import apply_connections, suggest_connections
@@ -36,6 +37,7 @@ from .split import split_workspace
 from .hasher import HashEmbedder
 from .traverse import TraversalConfig, TraversalResult, traverse
 from ._util import _tokenize
+from .maintain import run_maintenance
 from .store import load_state, save_state
 from . import __version__
 
@@ -82,6 +84,15 @@ def _build_parser() -> argparse.ArgumentParser:
     c.add_argument("--graph")
     c.add_argument("--llm", choices=["none", "openai"], default="none")
     c.add_argument("--json", action="store_true")
+
+    p = sub.add_parser("maintain")
+    p.add_argument("--state", required=True)
+    p.add_argument("--tasks", default="health,decay,merge,prune")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--max-merges", type=int, default=5)
+    p.add_argument("--prune-below", type=float, default=0.01)
+    p.add_argument("--llm", choices=["none", "openai"], default="none")
+    p.add_argument("--json", action="store_true")
 
     x = sub.add_parser("inject")
     x.add_argument("--state", required=True)
@@ -903,6 +914,38 @@ def cmd_health(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_maintain(args: argparse.Namespace) -> int:
+    """cmd maintain."""
+    requested_tasks = [task.strip() for task in args.tasks.split(",") if task.strip()]
+    llm_fn, _ = _resolve_llm(args)
+    report = run_maintenance(
+        state_path=args.state,
+        tasks=requested_tasks,
+        llm_fn=llm_fn,
+        journal_path=_resolve_journal_path(args),
+        dry_run=args.dry_run,
+        max_merges=args.max_merges,
+        prune_below=args.prune_below,
+    )
+    if args.json:
+        print(json.dumps(asdict(report), indent=2))
+        return 0
+
+    print("\n".join([
+        "Maintenance report:",
+        f"  tasks: {', '.join(report.tasks_run) if report.tasks_run else '(none)'}",
+        f"  nodes: {report.health_before['nodes']} -> {report.health_after['nodes']}",
+        f"  edges: {report.edges_before} -> {report.edges_after}",
+        f"  merges: {report.merges_applied}/{report.merges_proposed}",
+        f"  pruned: edges={report.pruned_edges} nodes={report.pruned_nodes}",
+        f"  decay_applied: {report.decay_applied}",
+        f"  dry_run: {args.dry_run}",
+    ]))
+    if report.notes:
+        print(f"  notes: {', '.join(report.notes)}")
+    return 0
+
+
 def cmd_journal(args: argparse.Namespace) -> int:
     """cmd journal."""
     journal_path = _resolve_journal_path(args)
@@ -935,6 +978,7 @@ def main(argv: list[str] | None = None) -> int:
         "query": cmd_query,
         "learn": cmd_learn,
         "merge": cmd_merge,
+        "maintain": cmd_maintain,
         "connect": cmd_connect,
         "inject": cmd_inject,
         "replay": cmd_replay,
