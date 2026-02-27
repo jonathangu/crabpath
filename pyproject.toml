@@ -1,6 +1,6 @@
 [project]
 name = "crabpath"
-version = "11.1.0"
+version = "11.2.0"
 description = "Memory graph for AI agents that learns what to retrieve — and what to suppress."
 requires-python = ">=3.10"
 dependencies = []

@@ -1,0 +1,21 @@
+# Generated results (not needed in skill)
+sims/*_results.json
+benchmarks/results.json
+benchmarks/external/*.json
+benchmarks/external/.embedding_cache_*.json
+benchmarks/external/*_results.json
+
+# Build/cache
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Dev-only
+.git/
+worktrees/
+experiments/
+scripts/
