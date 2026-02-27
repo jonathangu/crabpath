@@ -1,6 +1,6 @@
 ---
 name: crabpath
-description: Memory graph engine with learned routing. Pure callbacks — caller provides embed/LLM functions.
+description: Memory graph engine with caller-provided embed and LLM callbacks; core is pure.
 metadata:
   openclaw:
     emoji: "🦀"
@@ -10,7 +10,7 @@ metadata:
 
 # CrabPath
 
-Memory graph engine. Zero deps. Zero network calls. Caller provides everything.
+Pure graph core: zero deps, zero network calls. Caller provides callbacks.
 
 ## Install
 
@@ -18,87 +18,55 @@ Memory graph engine. Zero deps. Zero network calls. Caller provides everything.
 pip install crabpath
 ```
 
-## Integration
+## Quick Start
 
 ```python
-from crabpath import split_workspace, traverse, apply_outcome, VectorIndex
-from crabpath._batch import batch_or_single_embed
-from crabpath.store import save_state, load_state
+from crabpath import split_workspace, HashEmbedder, VectorIndex
 
-# --- Build (once) ---
-graph, texts = split_workspace("~/.openclaw/workspace")
+graph, texts = split_workspace("./workspace")
+embedder = HashEmbedder()
 index = VectorIndex()
-vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=your_embed_batch)
-for nid, vec in vecs.items():
-    index.upsert(nid, vec)
-save_state(graph, index, "~/.crabpath/state.json")
-
-# --- Query (every turn) ---
-graph, index = load_state("~/.crabpath/state.json")
-seeds = index.search(your_embed("user question"), top_k=8)
-result = traverse(graph, seeds)
-context = result.context  # assembled text from fired nodes
-
-# --- Learn (after response) ---
-apply_outcome(graph, result.fired, outcome=1.0)  # +1 good, -1 bad
-save_state(graph, index, "~/.crabpath/state.json")
+for nid, content in texts.items():
+    index.upsert(nid, embedder.embed(content))
 ```
 
-## Callbacks
-
-CrabPath never calls any API. The caller provides:
+## Real embeddings callback
 
 ```python
-embed_fn(text: str) -> list[float]                              # single
-embed_batch_fn(texts: list[tuple[str, str]]) -> dict[str, list[float]]  # batch
-llm_fn(system: str, user: str) -> str                           # single
-llm_batch_fn(requests: list[dict]) -> list[dict]                # batch
+from openai import OpenAI
+from crabpath import split_workspace
+from crabpath._batch import batch_or_single_embed
+
+client = OpenAI()
+
+def embed_batch(texts):
+    ids, contents = zip(*texts)
+    resp = client.embeddings.create(model="text-embedding-3-small", input=list(contents))
+    return {ids[i]: resp.data[i].embedding for i in range(len(ids))}
+
+graph, texts = split_workspace("./workspace")
+vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=embed_batch)
 ```
 
-## Session Replay (warm start)
+## LLM callback
 
 ```python
-from crabpath.replay import extract_queries_from_dir, replay_queries
-queries = extract_queries_from_dir("~/.openclaw/agents/main/sessions/")
-replay_queries(graph=graph, queries=queries)
+def llm_fn(system, user):
+    return client.chat.completions.create(
+        model="gpt-5-mini",
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
+    ).choices[0].message.content
+
+graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 ```
 
-Or: `crabpath init --workspace W --output O --sessions ~/.openclaw/agents/main/sessions/`
+## Session Replay
+
+`replay_queries(graph, queries)` can warm-start from historical turns.
 
 ## CLI
 
-Pure graph operations only. No network calls.
-
-```
-crabpath init --workspace W --output O [--sessions S]
-crabpath query TEXT --graph G [--index I] [--query-vector-stdin]
-crabpath learn --graph G --outcome N --fired-ids a,b,c
-crabpath replay --graph G --sessions S
-crabpath health --graph G
-crabpath merge --graph G
-crabpath connect --graph G
-crabpath journal [--stats]
-```
-
-## Local Embeddings (optional)
-
-```bash
-pip install crabpath[embeddings]
-```
-
-```python
-from crabpath.embeddings import local_embed_fn, local_embed_batch_fn
-# all-MiniLM-L6-v2 — 80MB, CPU, no API key
-```
-
-## Default Embeddings
-
-By default (including CLI `init`/`query`), CrabPath uses `HashEmbedder`:
-
-- class: `crabpath.HashEmbedder`
-- embedder name: `hash-v1`
-- deterministic, zero dependencies, no network calls
-- dimension: 1024
+`crabpath init|query|learn|replay|health|merge|connect|journal`
 
 ## Paper
 

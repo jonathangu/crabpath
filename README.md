@@ -1,85 +1,72 @@
 # CrabPath
 
-Pure graph engine for retrieval routing. Zero deps. Zero network calls. Caller provides embeddings and LLM callbacks.
+Pure routing graph engine for context-aware retrieval. Core is zero deps and zero network; the caller supplies semantic and LLM callbacks.
 
-## Install
+## 1. CrabPath
+
+CrabPath is a deterministic graph engine that builds traversable context graphs and improves routing from feedback, without any external service requirement by default.
+
+## 2. Install
 
 ```bash
-pip install crabpath             # pure graph engine
-pip install crabpath[embeddings] # + local embeddings (no API key)
+pip install crabpath
 ```
 
-## Python API
+## 3. Quick Start
 
 ```python
 from crabpath import split_workspace, traverse, apply_outcome, VectorIndex
+from crabpath import HashEmbedder
 
-# 1. Split workspace into graph + texts
 graph, texts = split_workspace("./workspace")
-
-# 2. Caller embeds (use whatever you have)
+embedder = HashEmbedder()  # default hash-v1
 index = VectorIndex()
+
 for nid, content in texts.items():
-    index.upsert(nid, your_embed_fn(content))
+    index.upsert(nid, embedder.embed(content))
 
-# 3. Query
-seeds = index.search(your_embed_fn("how do I deploy"), top_k=8)
+query_vec = embedder.embed("how do I deploy to production?")
+seeds = index.search(query_vec, top_k=8)
 result = traverse(graph, seeds)
-
-# 4. Learn
 apply_outcome(graph, result.fired, outcome=1.0)
 ```
 
-## Batch Callbacks
+## 4. Real Embeddings
 
 ```python
-from crabpath._batch import batch_or_single, batch_or_single_embed
+from openai import OpenAI
+from crabpath import split_workspace, traverse, apply_outcome, VectorIndex
+from crabpath._batch import batch_or_single_embed
 
-# One call for all embeddings
-vecs = batch_or_single_embed(
-    list(texts.items()),
-    embed_batch_fn=your_batch_embed
-)
+client = OpenAI()
 
-# One call for all LLM work
-results = batch_or_single(
-    [{"id": "n0", "system": "summarize", "user": content}],
-    llm_batch_fn=your_batch_llm
-)
+def embed_batch(texts):
+    ids, contents = zip(*texts)
+    resp = client.embeddings.create(model="text-embedding-3-small", input=list(contents))
+    return {ids[i]: resp.data[i].embedding for i in range(len(ids))}
+
+graph, texts = split_workspace("./workspace")
+index = VectorIndex()
+vecs = batch_or_single_embed(list(texts.items()), embed_batch_fn=embed_batch)
+for nid, vec in vecs.items():
+    index.upsert(nid, vec)
 ```
 
-## Local Embeddings
-
-```bash
-pip install crabpath[embeddings]
-```
+## 5. LLM Callbacks
 
 ```python
-from crabpath.embeddings import local_embed_fn, local_embed_batch_fn
-# all-MiniLM-L6-v2, 80MB, CPU, no API key
+def llm_fn(system, user):
+    resp = client.chat.completions.create(
+        model="gpt-5-mini",
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
+    )
+    return resp.choices[0].message.content
+
+# Pass to split for LLM splitting, or traverse for routing
+graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 ```
 
-## Default Hash Embeddings
-
-If you don’t install `crabpath[embeddings]`, CrabPath uses a built-in zero-dependency
-`HashEmbedder` (`hash-v1`, 1024 dimensions) for indexing and query vectors.
-
-```python
-from crabpath import HashEmbedder
-
-embedder = HashEmbedder()  # default in CLI and default_embed
-vec = embedder.embed("deploy to production")
-vec2 = embedder.embed("deploy to production")
-assert vec == vec2  # deterministic
-```
-
-The `HashEmbedder` is deterministic and dependency-free: it tokenizes text into
-words and char n-grams, hashes features into a fixed vector size, and normalizes
-to unit length.
-
-## Session Replay (warm start)
-
-A fresh graph is 100% habitual — every edge requires deliberation. Replay warms it up by feeding historical session logs through the graph:
+## 6. Session Replay
 
 ```python
 from crabpath import replay_queries, split_workspace
@@ -88,21 +75,26 @@ from crabpath.replay import extract_queries_from_dir
 graph, texts = split_workspace("./workspace")
 queries = extract_queries_from_dir("./sessions/")
 replay_queries(graph=graph, queries=queries)
-# Graph now has learned edges from real usage patterns
 ```
 
 Or via CLI:
+
 ```bash
 crabpath init --workspace ./ws --output ./data --sessions ./sessions/
-# or separately:
 crabpath replay --graph ./data/graph.json --sessions ./sessions/
 ```
 
-On a 1,012-node graph, replaying 120 real queries created 39% cross-file edges and 5% reflex edges in seconds.
+## 7. Three Embedding Tiers
 
-## CLI (pure graph ops)
+Capability | How to enable | Network | Dependencies
+---|---|---|---
+Default (hash-v1) | `HashEmbedder` shipped in core | no | none
+Local semantic | `pip install crabpath[embeddings]` | optional (local model) | local embedding extras
+Remote semantic | callback `embed_fn` / `embed_batch_fn` (OpenAI, Gemini, etc.) | caller-provided | caller-provided
 
-```
+## 8. CLI
+
+```bash
 crabpath init --workspace W --output O [--sessions S]
 crabpath query TEXT --graph G [--index I] [--query-vector-stdin] [--top N] [--json]
 crabpath learn --graph G --outcome N --fired-ids a,b,c
@@ -113,15 +105,10 @@ crabpath connect --graph G
 crabpath journal [--stats]
 ```
 
-## Reproduce Results
+## 9. Reproduce Results
 
-```bash
-git clone https://github.com/jonathangu/crabpath.git && cd crabpath
-pip install -e . && python sims/run_all.py
-```
+See [REPRODUCE.md](REPRODUCE.md).
 
-8 deterministic sims. No API keys. See [REPRODUCE.md](REPRODUCE.md).
-
-## Paper
+## 10. Paper
 
 https://jonathangu.com/crabpath/
