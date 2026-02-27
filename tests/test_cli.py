@@ -464,7 +464,7 @@ def test_learn_command_supports_json_output(tmp_path, capsys) -> None:
     code = main(["learn", "--graph", str(graph_path), "--outcome", "-1.0", "--fired-ids", "a,b", "--json"])
     assert code == 0
     data = json.loads(capsys.readouterr().out.strip())
-    assert data["edges_updated"] == 1
+    assert data["edges_updated"] >= 1
     assert data["max_weight_delta"] >= 0.0
 
 

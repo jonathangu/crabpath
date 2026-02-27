@@ -60,7 +60,7 @@ python3 -m openclawbrain.socket_client --socket ~/.openclawbrain/main/daemon.soc
 - Built-in hash embeddings for offline/testing; OpenAI embeddings are recommended for production.
 - Builds a **`state.json`** brain from your workspace.
 - Queries follow learned routes instead of only similarity matches.
-- Positive feedback (`+1`) strengthens routes, negative (`-1`) creates inhibitory edges.
+- Positive feedback (`+1`) uses the default policy-gradient learner `apply_outcome_pg()` (conserving probability mass across traversed nodes), while negative (`-1`) creates inhibitory edges.
 - Over time, less noise appears and recurring mistakes are less likely.
 
 - OpenClawBrain integrates with your agent's file-based workspace through incremental sync, constitutional anchors, and automatic compaction.
@@ -105,6 +105,9 @@ openclawbrain query "how do I deploy" --state /tmp/brain/state.json --top 3 --js
 openclawbrain learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "deploy.md::0,deploy.md::1"
 # output
 # {"edges_updated": 2, "max_weight_delta": 0.155}
+#
+# `learn` defaults to `apply_outcome_pg()` for full-policy updates.
+# `apply_outcome()` remains available for simpler sparse updates.
 
 # 5. Inject a correction
 openclawbrain inject --state /tmp/brain/state.json \
@@ -146,6 +149,15 @@ What happens:
 4. Next query touching that topic: the correction appears, the bad route is dampened
 
 To add knowledge without suppressing anything, use `--type TEACHING` instead.
+
+### Structural corrections with split
+
+Alongside inhibitory edges and periodic merge, maintenance now supports runtime splitting:
+
+- `openclawbrain maintain` runs `split` between `decay` and `merge`.
+- `suggest_splits()` finds bloated multi-topic nodes (including merged-byline nodes).
+- `split_node()` rewires outgoing and incoming edges into focused child nodes, then removes the parent.
+- Inhibitory edges are always copied to every child, so suppressions are not lost.
 
 ## Adding new knowledge (no rebuild needed)
 
@@ -267,7 +279,7 @@ See `examples/openai_embedder/` for a complete example.
 | `merge` | Suggest and apply node merges |
 | `anchor` | Set/list/remove constitutional authority on nodes |
 | `connect` | Connect learning nodes to workspace neighborhoods |
-| `maintain` | Run structural maintenance (health, decay, prune, merge) |
+| `maintain` | Run structural maintenance (health, decay, split, merge, prune, connect) |
 | `compact` | Compact old daily notes into graph nodes |
 | `sync` | Incremental re-embed after file changes |
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
@@ -313,7 +325,7 @@ echo '{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4
 Supported methods (all 10):
 
 - `query`: run route traversal and return `fired_nodes`, `context`, timing, and seeds.
-- `learn`: apply outcomes (`+1/-1`) to existing edges and return `edges_updated`.
+- `learn`: apply outcomes (`+1/-1`) with default `apply_outcome_pg()` updates and return `edges_updated`.
 - `inject`: add TEACHING/CORRECTION/DIRECTIVE nodes and connect them to related workspace chunks.
 - `correction`: atomically apply negative feedback to last-fired nodes and inject a CORRECTION node.
 - `maintain`: run maintenance ops and return health/merge summary fields.
@@ -339,7 +351,7 @@ See `examples/ops/client_example.py` for a Python client and `docs/architecture.
 
 ## True Policy Gradient (apply_outcome_pg)
 
-`apply_outcome_pg` implements a full REINFORCE policy-gradient update.
+`apply_outcome_pg` implements a full REINFORCE policy-gradient update and is now the default learning rule used by daemon/CLI correction and learn paths.
 
 - It updates **all outgoing edges** for each visited node on the fired trajectory, not only traversed edges.
 - It uses the update:
@@ -430,6 +442,7 @@ python3 benchmarks/external/run_hotpotqa.py --limit 50
 from openclawbrain import (
     split_workspace,
     traverse,
+    apply_outcome_pg,
     apply_outcome,
     inject_node,
     inject_correction,
@@ -441,6 +454,8 @@ from openclawbrain import (
     load_state,
     ManagedState,
     measure_health,
+    suggest_splits,
+    split_node,
     replay_queries,
     score_retrieval,
 )
@@ -452,7 +467,7 @@ from openclawbrain import (
 - **How big:** ~180KB for 20 nodes (hash), ~60MB for 1,600 nodes (OpenAI embeddings)
 - **When to rebuild:** after major workspace restructuring or embedder changes
 - **Embedder changes:** OpenClawBrain stores the embedder name + dimension in state metadata and hard-fails on mismatch — no silent corruption
-- **Merging:** use `openclawbrain merge` to consolidate similar nodes as the graph grows
+- **Maintenance:** use `openclawbrain maintain` (`split` + `merge`) to rebalance structure as the graph evolves
 
 ## Cost control
 

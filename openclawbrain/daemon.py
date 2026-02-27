@@ -21,7 +21,7 @@ from .graph import Graph, Node
 from .hasher import HashEmbedder
 from .index import VectorIndex
 from .journal import log_health, log_learn, log_query
-from .learn import apply_outcome
+from .learn import apply_outcome, apply_outcome_pg
 from .maintain import connect_learning_nodes, prune_edges, prune_orphan_nodes
 from .merge import apply_merge, suggest_merges
 from .inject import _apply_inhibitory_edges, inject_node
@@ -356,7 +356,7 @@ def _handle_correction(
 
     edges_updated = 0
     if fired_ids:
-        updates = apply_outcome(graph=graph, fired_nodes=fired_ids, outcome=outcome)
+        updates = apply_outcome_pg(graph=graph, fired_nodes=fired_ids, outcome=outcome, baseline=0.0, temperature=1.0)
         edges_updated = len(updates)
         log_learn(
             fired_ids=fired_ids,
@@ -410,7 +410,7 @@ def _handle_learn(graph: Graph, params: dict[str, object], state_path: str) -> d
     fired_nodes = _parse_str_list(params.get("fired_nodes"), "fired_nodes")
     outcome = _parse_float(params.get("outcome"), "outcome", required=True)
 
-    updates = apply_outcome(graph=graph, fired_nodes=fired_nodes, outcome=outcome)
+    updates = apply_outcome_pg(graph=graph, fired_nodes=fired_nodes, outcome=outcome, baseline=0.0, temperature=1.0)
     log_learn(
         fired_ids=fired_nodes,
         outcome=outcome,

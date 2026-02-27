@@ -13,7 +13,15 @@ from .index import VectorIndex
 from .journal import log_event, log_health
 from .merge import apply_merge, suggest_merges
 from .autotune import measure_health
+from .split_node import split_node, suggest_splits
 from .store import load_state, save_state
+from ._util import _extract_json
+
+SPLIT_PROMPT = (
+    "Split the node content into coherent semantic chunks. "
+    'Return JSON: {"sections": ["chunk 1", "chunk 2", ...]}'
+)
+SPLIT_MAX_SPLITS = 3
 
 
 def _health_payload(graph: Graph) -> dict:
@@ -35,6 +43,27 @@ def _node_authority(node: Node | None) -> str:
 def _node_ids_with_authority(graph: Graph, authority: str) -> set[str]:
     """Return node IDs with a given authority."""
     return {node.id for node in graph.nodes() if _node_authority(node) == authority}
+
+
+def _extract_chunks(response: str) -> list[str]:
+    """Parse LLM split chunks from response payload."""
+    payload = _extract_json(response)
+    if isinstance(payload, dict):
+        for key in ("sections", "chunks"):
+            chunks = payload.get(key)
+            if isinstance(chunks, list):
+                parsed = [str(chunk).strip() for chunk in chunks if str(chunk).strip()]
+                if parsed:
+                    return parsed
+    return []
+
+
+def _paragraph_chunks(content: str) -> list[str]:
+    """Fallback split on blank-line boundaries."""
+    chunks = [part.strip() for part in content.split("\n\n") if part.strip()]
+    if chunks:
+        return chunks
+    return [content.strip()] if content.strip() else []
 
 
 def prune_edges(graph: Graph, below: float = 0.01) -> int:
@@ -165,7 +194,7 @@ def run_maintenance(
     decay_config: DecayConfig | None = None,
 ) -> MaintenanceReport:
     """Run an optional maintenance sweep over persisted graph state."""
-    task_order = ["health", "decay", "prune", "merge", "connect"]
+    task_order = ["health", "decay", "split", "merge", "prune", "connect"]
     default_tasks = ["health", "decay", "merge", "prune"]
     requested = (
         list(dict.fromkeys([task.strip() for task in tasks if task.strip()]))
@@ -218,6 +247,63 @@ def run_maintenance(
                 "type": "maintenance",
                 "task": "decay",
                 "edges_decayed": changed,
+                "dry_run": dry_run,
+            },
+            journal_path=journal_path,
+        )
+
+    if "split" in selected:
+        tasks_run.append("split")
+        suggestions = suggest_splits(target_graph, target_index, llm_fn=llm_fn)
+        split_candidates = []
+        split_candidates = [
+            candidate.node_id
+            for candidate in suggestions
+            if not candidate.needs_confirmation or llm_fn is not None
+        ]
+        split_proposed = len(split_candidates)
+
+        if embed_fn is None:
+            notes.append("split skipped: embed_fn is required for split_node")
+            split_applied = 0
+        else:
+            split_applied = 0
+            split_candidates = [
+                candidate_id
+                for candidate_id in split_candidates
+                if _node_authority(target_graph.get_node(candidate_id)) != "constitutional"
+            ]
+
+            for candidate_id in split_candidates[:SPLIT_MAX_SPLITS]:
+                candidate_node = target_graph.get_node(candidate_id)
+                if candidate_node is None:
+                    continue
+
+                chunks: list[str] = []
+                if llm_fn is not None:
+                    response = llm_fn(SPLIT_PROMPT, candidate_node.content)
+                    chunks = _extract_chunks(response)
+                if not chunks:
+                    chunks = _paragraph_chunks(candidate_node.content)
+
+                if not chunks:
+                    continue
+                split_node(
+                    target_graph,
+                    target_index,
+                    candidate_id,
+                    chunks,
+                    embed_fn=embed_fn,
+                )
+                split_applied += 1
+
+        log_event(
+            {
+                "type": "maintenance",
+                "task": "split",
+                "suggested": split_proposed,
+                "applied": split_applied,
+                "max_splits": SPLIT_MAX_SPLITS,
                 "dry_run": dry_run,
             },
             journal_path=journal_path,
@@ -304,7 +390,7 @@ def run_maintenance(
 
     if dry_run:
         notes.append("dry_run=True; no state write performed")
-    elif any(task in selected for task in ("decay", "prune", "merge", "connect")):
+    elif any(task in selected for task in ("decay", "split", "prune", "merge", "connect")):
         save_state(graph=target_graph, index=target_index, path=str(Path(state_path)), meta=meta)
 
     health_after = _health_payload(target_graph)

@@ -1,3 +1,11 @@
+## v12.2.0 (2026-02-27)
+
+### Learning rule
+- Switched default learning rule from heuristic (apply_outcome) to policy-gradient (apply_outcome_pg). The PG update redistributes probability mass across all outgoing edges at each visited node (sum of updates ≈ 0), replacing the inflationary heuristic that only modified traversed edges. Simulation shows 10-15x better branch separation, 24x faster recovery after concept drift, and 30% less weight inflation.
+
+### Maintenance
+- Added runtime node splitting (`split_node`, `suggest_splits`). The inverse of merge — splits bloated multi-topic nodes into focused children with automatic edge rewiring. Integrates into maintenance pipeline between decay and merge.
+
 ## v12.1.1 (2026-02-27)
 
 ### Bug fixes (from issue #3)

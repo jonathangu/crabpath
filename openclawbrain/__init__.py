@@ -12,6 +12,7 @@ from .hasher import HashEmbedder, default_embed, default_embed_batch
 from .score import score_retrieval
 from .connect import apply_connections, suggest_connections
 from .merge import apply_merge, suggest_merges
+from .split_node import SplitCandidate, SplitResult, split_node, suggest_splits
 from .replay import replay_queries
 from .split import generate_summaries, split_workspace
 from .sync import DEFAULT_AUTHORITY_MAP, SyncReport, sync_workspace
@@ -55,6 +56,10 @@ __all__ = [
     "score_retrieval",
     "suggest_merges",
     "apply_merge",
+    "SplitCandidate",
+    "SplitResult",
+    "split_node",
+    "suggest_splits",
     "run_maintenance",
     "suggest_connections",
     "apply_connections",

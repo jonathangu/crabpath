@@ -27,7 +27,7 @@ from .journal import (
     journal_stats,
     read_journal,
 )
-from .learn import apply_outcome
+from .learn import apply_outcome_pg
 from .merge import apply_merge, suggest_merges
 from .replay import (
     extract_interactions,
@@ -645,7 +645,13 @@ def cmd_learn(args: argparse.Namespace) -> int:
     if not fired_ids:
         raise SystemExit("provide at least one fired id")
 
-    updates = apply_outcome(graph, fired_nodes=fired_ids, outcome=args.outcome)
+    updates = apply_outcome_pg(
+        graph=graph,
+        fired_nodes=fired_ids,
+        outcome=args.outcome,
+        baseline=0.0,
+        temperature=1.0,
+    )
     if state_path is not None:
         state_meta = _state_meta(meta)
         save_state(graph=graph, index=index or VectorIndex(), path=state_path, meta=state_meta)

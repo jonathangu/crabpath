@@ -26,8 +26,8 @@ query -> traverse -> log trace -> feedback -> learn
 2. `traverse()` walks the graph, producing fired nodes and context.
 3. A query trace is logged with `log_query()`.
 4. Feedback arrives as `outcome` and is applied with:
-   - `apply_outcome()` for local credit assignment, or
-   - `apply_outcome_pg()` for full-policy updates.
+   - `apply_outcome_pg()` for the default full-policy updates, or
+   - `apply_outcome()` for local credit assignment with a simpler sparse update.
 5. New material can be added with `inject()`.
 
 ## 2-b) Persistent Worker (`openclawbrain daemon`)
@@ -102,19 +102,22 @@ Missing vs adapter scripts (current production reality):
 ### What happens
 
 ```text
-health -> decay -> merge -> prune -> connect
+health -> decay -> split -> merge -> prune -> connect
 ```
 
 1. **Health snapshot**: measure graph structure and quality with `measure_health()`.
 2. **Decay**: weaken dormant edges with `apply_decay()`.
-3. **Merge**: propose and apply structural merges with `suggest_merges()` and `apply_merge()`.
-4. **Prune**: remove weak edges and orphaned nodes.
-5. **Connect**: connect learning nodes to workspace neighborhoods.
+3. **Split**: identify bloated multi-topic nodes with `suggest_splits()` and apply `split_node()`.
+4. **Merge**: propose and apply structural merges with `suggest_merges()` and `apply_merge()`.
+5. **Prune**: remove weak edges and orphaned nodes.
+6. **Connect**: connect learning nodes to workspace neighborhoods.
 
 ### Functions used
 
 - `run_maintenance()` (new)
-- or directly: `measure_health()`, `apply_decay()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
+- or directly: `measure_health()`, `apply_decay()`, `suggest_splits()`, `split_node()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
+
+Split and merge form a balancing pair: split raises topic granularity when nodes become overloaded, while merge later recombines co-firing fragments when redundancy and similarity make them better represented as one node.
 
 ## 4) Constitutional Anchors
 
@@ -134,7 +137,7 @@ Maintenance behavior:
 
 - `prune_edges()` skips any edge touching a constitutional node.
 - `prune_orphan_nodes()` keeps constitutional and canonical nodes even if disconnected.
-- `run_maintenance()` merge candidates are filtered to exclude constitutional nodes, and canonical nodes only merge when LLM is enabled.
+- `run_maintenance()` split candidates skip constitutional nodes, mark canonical nodes as confirmation-only, and merge candidates are filtered to exclude constitutional nodes; canonical merges require LLM confirmation.
 - `run_maintenance()` decay skips constitutional sources and applies 2x half-life to canonical sources.
 
 ### When it runs
@@ -199,7 +202,7 @@ run_maintenance(
     llm_fn=llm_fn,
 )
 
-apply_outcome(...)
+apply_outcome_pg(...)
 
 ```
 
@@ -238,6 +241,7 @@ A brain directory is the operational unit.
 | Feedback signal | Scalar outcome for later reinforcement (`+1` good, `-1` bad). |
 | Online learning | Per-query weight updates using outcomes. |
 | Maintenance | Periodic structural updates over the stored graph. |
+| Split | Break overloaded, broad nodes into focused children. |
 | Prune | Remove weak edges and orphaned nodes. |
 | Merge | Combine redundant/co-firing nodes. |
 | Connect | Attach learning nodes back into workspace neighborhoods. |
@@ -251,11 +255,11 @@ Run maintenance with your scheduler of choice. OpenClawBrain has no scheduler de
 ### cron
 
 ```cron
-# Nightly graph health + decay + merge + prune
+# Nightly graph health + decay + split + prune
 0 3 * * * /usr/bin/python3 -m openclawbrain.cli maintain --state ~/.openclawbrain/main/state.json
 
 # Weekly deep sweep
-0 4 * * 0 /usr/bin/python3 -m openclawbrain.cli maintain --state ~/.openclawbrain/main/state.json --tasks health,decay,prune,merge,connect
+0 4 * * 0 /usr/bin/python3 -m openclawbrain.cli maintain --state ~/.openclawbrain/main/state.json --tasks health,decay,split,merge,prune,connect
 ```
 
 ### systemd timer
@@ -284,14 +288,14 @@ jobs:
 ### Fast loop
 
 - **Query path**: `query -> traverse -> log_query`
-- **Learning**: `apply_outcome()` / `apply_outcome_pg()`
+- **Learning**: `apply_outcome_pg()` (default) / `apply_outcome()` (simpler alternative)
 - **Insertions**: `inject_*`
 
 ### Slow loop
 
 - **Maintenance command**: `openclawbrain maintain ...`
 - **Health metrics**: `measure_health()` and `log_health()`
-- **Topology updates**: decay, merge, prune, connect
+- **Topology updates**: decay, split, merge, prune, connect
 
 ## 9) ASCII diagram
 
@@ -300,8 +304,9 @@ jobs:
   user ──▶ query ──▶ fired nodes ──▶ response     ──▶   maintenance runner
                 │         │                               │
                 │         └─▶ log trace (journal/fired)    ├─ health + decay
+                │                                         ├─ split
                 │                                         ├─ merge
-        feedback (+/-)                                    ├─ prune
+                feedback (+/-)                                    ├─ prune
                 │                                         ├─ connect
                 └─▶ learn/inject                           └─ publish new state.json
 ```
@@ -309,7 +314,7 @@ jobs:
 ## 10) Practical notes
 
 - Use `run_maintenance()` for a complete slow-loop pass.
-- Keep `--tasks` tight when experimenting (`health,decay` first, then add `merge`/`prune`/`connect`).
+- Keep `--tasks` tight when experimenting (`health,decay` first, then add `split`/`merge`/`prune`/`connect`).
 - Keep telemetry consistent so regressions are diagnosable.
 
 ## 11) Context Lifecycle
@@ -322,7 +327,7 @@ The full cycle is:
 - Harvester runs periodically → ingests file changes + session corrections
 - OpenClawBrain sync → re-embeds changed chunks, sets authority levels
 - OpenClawBrain learns → online edge updates from outcomes
-- OpenClawBrain maintains → structural ops (decay/prune/merge)
+- OpenClawBrain maintains → structural ops (decay/split/merge/prune/connect)
 - Files get compacted → old daily notes shrink, content migrates to graph
 
 ```text
