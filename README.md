@@ -235,6 +235,22 @@ result = traverse(
 
 `query` and `query_brain.py` honor these budgets and stop as soon as any termination condition is met.
 
+## External benchmarks
+
+External retrieval benchmarks are optional and use separately downloaded datasets.
+CrabPath ships a quick-start workflow for MultiHop-RAG and HotPotQA in
+`benchmarks/external/README.md`, but the datasets are not in the repository.
+
+Quick run (from project root):
+
+```bash
+mkdir -p benchmarks/external
+curl -L https://huggingface.co/datasets/yixuantt/MultiHopRAG/raw/main/MultiHopRAG.json -o benchmarks/external/multihop_rag.json
+curl -L https://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json -o benchmarks/external/hotpotqa_dev_distractor.json
+python3 benchmarks/external/run_multihop_rag.py --limit 50
+python3 benchmarks/external/run_hotpotqa.py --limit 50
+```
+
 ## Python API
 
 ```python

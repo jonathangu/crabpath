@@ -11,6 +11,10 @@
 - Exported `apply_outcome_pg` from `crabpath.__init__`.
 - Extended `LearningConfig` with `temperature` and `baseline`.
 
+### External benchmark additions
+- Added external benchmark harness support for MultiHop-RAG and HotPotQA.
+- Added OpenAI embedding cache support for benchmark scripts to support fast repeat runs.
+
 ## v10.3.0 (2026-02-27)
 
 ### Traversal tiers recalibrated from production data

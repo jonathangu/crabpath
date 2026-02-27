@@ -70,6 +70,23 @@ Benchmark output compares:
 
 Run `python3 benchmarks/run_benchmark.py` to see current deterministic results for this commit.
 
+## External benchmarks (optional, dataset downloads required)
+
+Benchmarks for external corpora are documented in `benchmarks/external/README.md`.
+The external datasets are optional and are **not included** in this repository.
+
+Download the datasets and run a quick end-to-end check:
+
+```bash
+mkdir -p benchmarks/external
+curl -L https://huggingface.co/datasets/yixuantt/MultiHopRAG/raw/main/MultiHopRAG.json -o benchmarks/external/multihop_rag.json
+curl -L https://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json -o benchmarks/external/hotpotqa_dev_distractor.json
+python3 benchmarks/external/run_multihop_rag.py --limit 50
+python3 benchmarks/external/run_hotpotqa.py --limit 50
+```
+
+For full benchmark runs and tuning options, see `benchmarks/external/README.md`.
+
 ## Live Injection Verification
 
 Live injection is covered by `tests/test_inject.py` and can also be exercised directly with a simple state payload.

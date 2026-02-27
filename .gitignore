@@ -49,6 +49,11 @@ benchmarks/results.json
 # Public benchmark fixtures (required for reproducibility)
 !scripts/hotpot_subset_100.json
 
+# Optional external benchmark datasets and outputs (download separately)
+benchmarks/external/*.json
+benchmarks/external/.embedding_cache_*.json
+benchmarks/external/*_results.json
+
 *.events.db
 snapshots/
 
