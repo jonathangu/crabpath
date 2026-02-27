@@ -405,6 +405,86 @@ def _handle_correction(
     return payload, should_write
 
 
+def _handle_self_correct(
+    daemon_state: "_DaemonState",
+    graph: Graph,
+    index: VectorIndex,
+    embed_fn: Callable[[str], list[float]] | None,
+    state_path: str,
+    params: dict[str, object],
+) -> tuple[dict[str, object], bool]:
+    """Handle autonomous self-correction from agent failure observations."""
+    raw_content = params.get("content")
+    if not isinstance(raw_content, str) or not raw_content.strip():
+        raise ValueError("content is required")
+    content = raw_content.strip()
+
+    fired_ids = _parse_str_list(params.get("fired_ids"), "fired_ids", required=False)
+    outcome = _parse_float(params.get("outcome"), "outcome", required=False, default=-1.0)
+
+    raw_node_type = params.get("node_type")
+    if raw_node_type is None:
+        node_type = "CORRECTION"
+    elif raw_node_type in {"CORRECTION", "TEACHING"}:
+        node_type = raw_node_type
+    else:
+        raise ValueError("node_type must be one of: CORRECTION, TEACHING")
+
+    should_write = False
+    edges_updated = 0
+    if fired_ids and outcome != 0:
+        updates = apply_outcome_pg(
+            graph=graph,
+            fired_nodes=fired_ids,
+            outcome=outcome,
+            baseline=0.0,
+            temperature=1.0,
+        )
+        edges_updated = len(updates)
+        if edges_updated:
+            should_write = True
+        log_learn(
+            fired_ids=fired_ids,
+            outcome=outcome,
+            journal_path=_journal_path(state_path),
+            metadata={"source": "self"},
+        )
+
+    node_id = _correction_node_id(content)
+    correction_injected = False
+    if graph.get_node(node_id) is None:
+        resolved_embed = embed_fn or HashEmbedder().embed
+        inject_node(
+            graph=graph,
+            index=index,
+            node_id=node_id,
+            content=content,
+            metadata={"type": node_type, "source": "self", "auto": True},
+            embed_fn=resolved_embed,
+        )
+        correction_injected = True
+        should_write = True
+
+    if node_type == "CORRECTION" and fired_ids:
+        edges_added = _apply_inhibitory_edges(
+            graph=graph,
+            source_id=node_id,
+            targets=fired_ids,
+            inhibition_strength=-0.5,
+            inhibition_lr=0.08,
+        )
+        edges_updated += edges_added
+        if edges_added:
+            should_write = True
+
+    return {
+        "edges_updated": edges_updated,
+        "node_injected": correction_injected,
+        "node_id": node_id,
+        "fired_ids_penalized": fired_ids,
+    }, should_write
+
+
 def _handle_learn(graph: Graph, params: dict[str, object], state_path: str) -> dict[str, int]:
     """Handle learning updates."""
     fired_nodes = _parse_str_list(params.get("fired_nodes"), "fired_nodes")
@@ -711,6 +791,15 @@ def main(argv: list[str] | None = None) -> int:
                     payload = {"reloaded": True}
                 elif method == "correction":
                     payload, should_write = _handle_correction(
+                        daemon_state=daemon_state,
+                        graph=daemon_state.graph,
+                        index=daemon_state.index,
+                        embed_fn=embed_fn,
+                        state_path=state_path,
+                        params=params,
+                    )
+                elif method == "self_correct":
+                    payload, should_write = _handle_self_correct(
                         daemon_state=daemon_state,
                         graph=daemon_state.graph,
                         index=daemon_state.index,

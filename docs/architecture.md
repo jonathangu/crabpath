@@ -30,6 +30,11 @@ query -> traverse -> log trace -> feedback -> learn
    - `apply_outcome()` for local credit assignment with a simpler sparse update.
 5. New material can be added with `inject()`.
 
+For autonomous agents, the same primitives are combined in a new fast-loop path:
+`self_correct` applies `apply_outcome_pg()` for the triggering fired IDs and injects a
+lesson node in one call. In `CORRECTION` mode it also wires inhibitory edges for mistake suppression; in
+`TEACHING` mode it only adds positive knowledge connections.
+
 ## 2-b) Persistent Worker (`openclawbrain daemon`)
 
 OpenClawBrain now supports a persistent worker process (`openclawbrain daemon`) that keeps
@@ -62,6 +67,7 @@ Supported methods:
 - `learn`: returns `edges_updated`
 - `inject`: writes a new node and returns `{injected, node_id}`
 - `correction`: penalizes recent query history for a chat and optionally injects a correction node
+- `self_correct`: penalizes provided `fired_ids` and injects a CORRECTION or TEACHING node in one call
 - `maintain`: returns `health_before`, `health_after`, `merges_applied`
 - `health`: returns health metrics
 - `info`: returns node/edge counts and `embedder`

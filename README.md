@@ -160,6 +160,44 @@ Alongside inhibitory edges and periodic merge, maintenance now supports runtime 
 - Inhibitory edges are always copied to every child, so suppressions are not lost.
 - `openclawbrain maintain` now also includes optional homeostatic controls: decay half-life auto-adjusts to keep reflex-edge ratio in range, and per-node synaptic scaling limits outgoing positive mass.
 
+## Self-correction (autonomous learning)
+
+When an agent detects its own mistake (without human feedback), it can self-correct in one call:
+
+```bash
+# Agent detected a failure — inject lesson and penalize the bad retrieval path
+openclawbrain self-correct --state brain/state.json \
+  --content 'Always download model artifacts before terminating training instances' \
+  --fired-ids 'infra.md::3,cleanup.md::1' \
+  --type CORRECTION
+
+# Agent learned something new (no mistake, just a lesson)
+openclawbrain self-correct --state brain/state.json \
+  --content 'GBM training takes ~40 min on g5.xlarge' \
+  --type TEACHING
+```
+
+What happens:
+1. **CORRECTION mode**: penalizes the fired nodes (weakens the path that led to the mistake), then injects a correction node with inhibitory edges. Future queries on the same topic will avoid the bad path.
+2. **TEACHING mode**: injects a new knowledge node with positive connections. No penalization — just adds information.
+
+Via socket (Python):
+
+```python
+from openclawbrain.socket_client import OCBClient
+
+with OCBClient('~/.openclawbrain/main/daemon.sock') as client:
+    # Agent detected its own mistake
+    client.self_correct(
+        content='Always download artifacts before terminating instances',
+        fired_ids=['infra.md::3', 'cleanup.md::1'],
+        outcome=-1.0,
+        node_type='CORRECTION',
+    )
+```
+
+This enables autonomous learning: agents observe outcomes, detect failures, and teach themselves — no human in the loop.
+
 ## Adding new knowledge (no rebuild needed)
 
 When you learn something that isn't in any workspace file, inject it directly:

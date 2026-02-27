@@ -79,6 +79,18 @@ class OCBClient:
             params["content"] = content
         return self.request("correction", params)
 
+    def self_correct(
+        self,
+        content: str,
+        fired_ids: list[str] | None = None,
+        outcome: float = -1.0,
+        node_type: str = "CORRECTION",
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"content": content, "outcome": outcome, "node_type": node_type}
+        if fired_ids is not None:
+            params["fired_ids"] = fired_ids
+        return self.request("self_correct", params)
+
     def inject(
         self,
         node_id: str,

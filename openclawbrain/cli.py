@@ -154,6 +154,14 @@ def _build_parser() -> argparse.ArgumentParser:
     x.add_argument("--vector-stdin", action="store_true")
     x.add_argument("--json", action="store_true")
 
+    sc = sub.add_parser("self-correct")
+    sc.add_argument("--state", required=True)
+    sc.add_argument("--content", required=True, help="The lesson learned")
+    sc.add_argument("--fired-ids", default="", help="Comma-separated node IDs to penalize")
+    sc.add_argument("--outcome", type=float, default=-1.0)
+    sc.add_argument("--type", choices=["CORRECTION", "TEACHING"], default="CORRECTION", dest="node_type")
+    sc.add_argument("--json", dest="json_output", action="store_true")
+
     r = sub.add_parser("replay")
     r.add_argument("--state")
     r.add_argument("--graph")
@@ -864,6 +872,83 @@ def cmd_inject(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_self_correct(args: argparse.Namespace) -> int:
+    """cmd self-correct."""
+    graph, index, meta = _resolve_graph_index(args, allow_default_state=False)
+    state_path = _resolve_state_path(args.state, allow_default=False)
+    if state_path is None:
+        raise SystemExit("--state is required for self-correct")
+    if index is None:
+        index = VectorIndex()
+    embed_fn, _, embedder_name, _ = _resolve_embedder(args, meta)
+    if embedder_name == HashEmbedder().name:
+        _ensure_hash_embedder_compat(meta)
+
+    edges_updated = 0
+    fired_ids = [value.strip() for value in args.fired_ids.split(",") if value.strip()]
+    if fired_ids and args.outcome != 0:
+        updates = apply_outcome_pg(
+            graph=graph,
+            fired_nodes=fired_ids,
+            outcome=args.outcome,
+            baseline=0.0,
+            temperature=1.0,
+        )
+        edges_updated = len(updates)
+        log_learn(
+            fired_ids=fired_ids,
+            outcome=args.outcome,
+            journal_path=_resolve_journal_path(args, allow_default_state=True),
+            metadata={"source": "self"},
+        )
+
+    from .daemon import _correction_node_id
+
+    summary = args.content.split("\n", 1)[0] or args.content
+    node_id = _correction_node_id(args.content)
+    node_existed = graph.get_node(node_id) is not None
+
+    metadata = {"source": "self", "type": args.node_type, "auto": True}
+
+    if args.node_type == "CORRECTION":
+        payload = inject_correction(
+            graph=graph,
+            index=index,
+            node_id=node_id,
+            content=args.content,
+            summary=summary,
+            metadata=metadata,
+            embed_fn=embed_fn,
+            connect_top_k=3,
+            connect_min_sim=0.0 if embedder_name == HashEmbedder().name else 0.3,
+        )
+    else:
+        payload = inject_node(
+            graph=graph,
+            index=index,
+            node_id=node_id,
+            content=args.content,
+            summary=summary,
+            metadata=metadata,
+            embed_fn=embed_fn,
+            connect_top_k=3,
+            connect_min_sim=0.0 if embedder_name == HashEmbedder().name else 0.3,
+        )
+
+    state_meta = _state_meta(meta)
+    save_state(graph=graph, index=index, path=state_path, meta=state_meta)
+
+    output = {
+        "node_id": payload["node_id"],
+        "node_injected": not node_existed,
+        "edges_updated": edges_updated,
+        "fired_ids_penalized": fired_ids,
+    }
+
+    print(json.dumps(output, indent=2) if args.json_output else f"Self-correct updated {state_path}")
+    return 0
+
+
 def cmd_replay(args: argparse.Namespace) -> int:
     """cmd replay."""
     graph, index, meta = _resolve_graph_index(args, allow_default_state=True)
@@ -1250,6 +1335,7 @@ def main(argv: list[str] | None = None) -> int:
         "daemon": cmd_daemon,
         "inject": cmd_inject,
         "replay": cmd_replay,
+        "self-correct": cmd_self_correct,
         "health": cmd_health,
         "journal": cmd_journal,
         "doctor": cmd_doctor,
