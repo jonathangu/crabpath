@@ -39,6 +39,7 @@ scratch/
 
 # CrabPath data (keep in private repo)
 *.json
+!benchmarks/results.json
 !package.json
 
 # Public benchmark fixtures (required for reproducibility)

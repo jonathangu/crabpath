@@ -51,3 +51,23 @@ Expected: 138 passed in <1s.
 ## Details
 
 Each sim writes `*_results.json` with full data. The `run_all.py` runner checks each result's `claim` field and reports PASS/FAIL. All sims are deterministic — same input produces same output on any machine with Python 3.10+.
+
+## Benchmarks
+
+CrabPath provides a local benchmark for the repository docs in `benchmarks/queries.json` and `benchmarks/run_benchmark.py`.
+
+### Run
+
+```bash
+python3 benchmarks/run_benchmark.py
+python3 -m pytest tests/ -x -q
+```
+
+The benchmark builds a graph from the repo using `split_workspace`, builds a hash vector index, runs:
+
+1. keyword overlap
+2. hash embed similarity
+3. CrabPath traverse
+4. CrabPath with replay
+
+and writes comparison output to `benchmarks/results.json`.

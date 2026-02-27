@@ -1,0 +1,1551 @@
+{
+  "generated_at": "2026-02-27T00:59:27.971643+00:00",
+  "workspace": "/Users/guclaw/crabpath",
+  "query_source": "benchmarks/queries.json",
+  "query_count": 20,
+  "graph_nodes": 36,
+  "chunks": 36,
+  "embedder": "hash-v1",
+  "embedder_dim": 1024,
+  "traversal": {
+    "max_hops": 8,
+    "beam_width": 4,
+    "seed_k": 8
+  },
+  "methods": {
+    "keyword_overlap": {
+      "scores": {
+        "Recall@3": 0.9416666666666667,
+        "Recall@5": 1.0,
+        "Precision@3": 0.5833333333333333,
+        "MRR": 0.9
+      },
+      "per_query": [
+        {
+          "query": "What is CrabPath and what is it designed for?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How does CrabPath stay pure with no network calls and zero Python dependencies by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I split markdown workspace content into a graph of chunks?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Show the quick start flow for split_workspace with HashEmbedder and VectorIndex.",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I use the default hash-v1 embedder in a local workflow?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I plug in OpenAI embeddings when indexing workspace files?",
+          "relevant": [
+            "README.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 0.5
+          }
+        },
+        {
+          "query": "How do I replay historical queries to warm start a graph?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I initialize state from a workspace using CLI?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
+          }
+        },
+        {
+          "query": "How do I run semantic query retrieval with index search plus graph traversal?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do keyword-seeded retrieval and overlap scoring work?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.5
+          }
+        },
+        {
+          "query": "What CLI commands are available for query, learn, health, replay, merge, and connect?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What is stored in CrabPath's canonical state.json format?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Which simulation claims can be reproduced and what do they validate?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How is deterministic behavior guaranteed in CrabPath simulations and benchmarks?",
+          "relevant": [
+            "README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What does the hash embedder example readme tell me to run?",
+          "relevant": [
+            "examples/hash_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md",
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 0.5
+          }
+        },
+        {
+          "query": "How do I run the OpenAI embedder example and what env setup does it need?",
+          "relevant": [
+            "examples/openai_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can replay use JSONL session logs?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What embedder name and dimension are used by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Where are the paper references and reproducibility claims documented?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Can I run all reproducibility checks from one command line script?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "SKILL.md",
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        }
+      ]
+    },
+    "hash_embed_similarity": {
+      "scores": {
+        "Recall@3": 0.9333333333333332,
+        "Recall@5": 0.9833333333333332,
+        "Precision@3": 0.5833333333333334,
+        "MRR": 0.9333333333333332
+      },
+      "per_query": [
+        {
+          "query": "What is CrabPath and what is it designed for?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How does CrabPath stay pure with no network calls and zero Python dependencies by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I split markdown workspace content into a graph of chunks?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Show the quick start flow for split_workspace with HashEmbedder and VectorIndex.",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I use the default hash-v1 embedder in a local workflow?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I plug in OpenAI embeddings when indexing workspace files?",
+          "relevant": [
+            "README.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I replay historical queries to warm start a graph?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I initialize state from a workspace using CLI?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run semantic query retrieval with index search plus graph traversal?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do keyword-seeded retrieval and overlap scoring work?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What CLI commands are available for query, learn, health, replay, merge, and connect?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What is stored in CrabPath's canonical state.json format?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Which simulation claims can be reproduced and what do they validate?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How is deterministic behavior guaranteed in CrabPath simulations and benchmarks?",
+          "relevant": [
+            "README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "SKILL.md",
+            "README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What does the hash embedder example readme tell me to run?",
+          "relevant": [
+            "examples/hash_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run the OpenAI embedder example and what env setup does it need?",
+          "relevant": [
+            "examples/openai_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md",
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can replay use JSONL session logs?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What embedder name and dimension are used by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        },
+        {
+          "query": "Where are the paper references and reproducibility claims documented?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Can I run all reproducibility checks from one command line script?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md",
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        }
+      ]
+    },
+    "crabpath_traverse": {
+      "scores": {
+        "Recall@3": 0.8916666666666666,
+        "Recall@5": 0.9166666666666666,
+        "Precision@3": 0.55,
+        "MRR": 0.9333333333333332
+      },
+      "per_query": [
+        {
+          "query": "What is CrabPath and what is it designed for?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How does CrabPath stay pure with no network calls and zero Python dependencies by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I split markdown workspace content into a graph of chunks?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Show the quick start flow for split_workspace with HashEmbedder and VectorIndex.",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I use the default hash-v1 embedder in a local workflow?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I plug in OpenAI embeddings when indexing workspace files?",
+          "relevant": [
+            "README.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I replay historical queries to warm start a graph?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I initialize state from a workspace using CLI?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run semantic query retrieval with index search plus graph traversal?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do keyword-seeded retrieval and overlap scoring work?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What CLI commands are available for query, learn, health, replay, merge, and connect?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What is stored in CrabPath's canonical state.json format?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Which simulation claims can be reproduced and what do they validate?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How is deterministic behavior guaranteed in CrabPath simulations and benchmarks?",
+          "relevant": [
+            "README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What does the hash embedder example readme tell me to run?",
+          "relevant": [
+            "examples/hash_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run the OpenAI embedder example and what env setup does it need?",
+          "relevant": [
+            "examples/openai_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can replay use JSONL session logs?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What embedder name and dimension are used by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        },
+        {
+          "query": "Where are the paper references and reproducibility claims documented?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Can I run all reproducibility checks from one command line script?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        }
+      ]
+    },
+    "crabpath_with_replay": {
+      "scores": {
+        "Recall@3": 0.9083333333333332,
+        "Recall@5": 0.9583333333333333,
+        "Precision@3": 0.5666666666666668,
+        "MRR": 0.9333333333333332
+      },
+      "per_query": [
+        {
+          "query": "What is CrabPath and what is it designed for?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How does CrabPath stay pure with no network calls and zero Python dependencies by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.6666666666666666,
+            "Recall@5": 0.6666666666666666,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I split markdown workspace content into a graph of chunks?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Show the quick start flow for split_workspace with HashEmbedder and VectorIndex.",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I use the default hash-v1 embedder in a local workflow?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/hash_embedder/README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can I plug in OpenAI embeddings when indexing workspace files?",
+          "relevant": [
+            "README.md",
+            "examples/openai_embedder/README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/openai_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I replay historical queries to warm start a graph?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I initialize state from a workspace using CLI?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "examples/hash_embedder/README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run semantic query retrieval with index search plus graph traversal?",
+          "relevant": [
+            "README.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do keyword-seeded retrieval and overlap scoring work?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What CLI commands are available for query, learn, health, replay, merge, and connect?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What is stored in CrabPath's canonical state.json format?",
+          "relevant": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Which simulation claims can be reproduced and what do they validate?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How is deterministic behavior guaranteed in CrabPath simulations and benchmarks?",
+          "relevant": [
+            "README.md",
+            "REPRODUCE.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 1.0,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What does the hash embedder example readme tell me to run?",
+          "relevant": [
+            "examples/hash_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How do I run the OpenAI embedder example and what env setup does it need?",
+          "relevant": [
+            "examples/openai_embedder/README.md",
+            "README.md"
+          ],
+          "predicted_files": [
+            "examples/openai_embedder/README.md",
+            "examples/hash_embedder/README.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 0.5,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "How can replay use JSONL session logs?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.6666666666666666,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "What embedder name and dimension are used by default?",
+          "relevant": [
+            "README.md",
+            "SKILL.md"
+          ],
+          "predicted_files": [
+            "examples/hash_embedder/README.md",
+            "examples/openai_embedder/README.md",
+            "SKILL.md",
+            "README.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 0.5,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        },
+        {
+          "query": "Where are the paper references and reproducibility claims documented?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "REPRODUCE.md",
+            "README.md",
+            "SKILL.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 1.0
+          }
+        },
+        {
+          "query": "Can I run all reproducibility checks from one command line script?",
+          "relevant": [
+            "REPRODUCE.md"
+          ],
+          "predicted_files": [
+            "README.md",
+            "SKILL.md",
+            "REPRODUCE.md"
+          ],
+          "scores": {
+            "Recall@3": 1.0,
+            "Recall@5": 1.0,
+            "Precision@3": 0.3333333333333333,
+            "MRR": 0.3333333333333333
+          }
+        }
+      ]
+    }
+  }
+}
