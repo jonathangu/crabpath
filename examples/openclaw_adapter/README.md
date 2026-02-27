@@ -19,7 +19,10 @@ Script specifics:
 
 - `rebuild_all_brains.py`: full rebuild from workspace + learning DB + sessions, then connect learning nodes to workspace nodes and run health checks.
 - `connect_learnings.py`: standalone utility to connect learning nodes to workspace nodes for one `--agent` or explicit `--state`.
-- `init_agent_brain.py`: simpler rebuild from workspace + sessions (no learning DB).
+- `init_agent_brain.py`: simpler rebuild from workspace + sessions with optional learning DB integration:
+  - `--learning-db <path>`: load active learnings from SQLite as learning nodes
+  - `--connect-learnings` / `--no-connect-learnings`: enable or disable the learning/learning->workspace connection and correction inhibition step (defaults to enabled when `--learning-db` is passed)
+  - `--batch-size <int>`: override OpenAI embedding batch size (default `100`)
 - `query_brain.py`: query a brain with OpenAI embeddings.
 - `agents_hook.md`: AGENTS.md integration block.
 
