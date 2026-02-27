@@ -38,6 +38,11 @@ def openai_llm_fn(system: str, user: str) -> str:
     return message.content
 
 
+def chat_completion(system: str, user: str) -> str:
+    """Backward-compatible wrapper for single completion calls."""
+    return openai_llm_fn(system, user)
+
+
 def openai_llm_batch_fn(requests: list[dict]) -> list[dict]:
     """Run OpenAI chat requests sequentially."""
     results: list[dict] = []

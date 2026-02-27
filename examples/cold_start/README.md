@@ -58,6 +58,17 @@ Expected: learn summary
 {"edges_updated":2,"max_weight_delta":0.09}
 ```
 
+## 3b) Add new knowledge
+
+```bash
+crabpath inject --state /tmp/cold-start-brain/state.json \
+  --id "teaching::deploy-tip" \
+  --content "Always notify #ops before deploying on Fridays" \
+  --type TEACHING --json
+```
+
+Expected: the node connects to deploy.md chunks without creating inhibitory edges.
+
 ## 4) Query after routing change
 
 ```bash

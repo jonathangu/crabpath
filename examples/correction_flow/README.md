@@ -9,6 +9,9 @@ The fix is simple:
 2. On correction, load the latest matching fired nodes by `chat_id`.
 3. Penalize those fired nodes immediately and optionally inject a `CORRECTION` node.
 
+`correct.py` and `learn_correction.py` only handle `CORRECTION` nodes.
+For `TEACHING` (new factual additions), use `crabpath inject --type TEACHING` directly.
+
 ## Example scripts
 
 - `query_with_logging.py`

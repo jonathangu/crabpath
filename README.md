@@ -45,6 +45,12 @@ crabpath learn --state /tmp/brain/state.json --outcome 1.0 --fired-ids "deploy.m
 crabpath inject --state /tmp/brain/state.json \
   --id "fix::1" --content "Never skip CI for hotfixes" --type CORRECTION
 
+# 5b. Add new knowledge (no correction needed, just a new fact)
+crabpath inject --state /tmp/brain/state.json \
+  --id "teaching::monitoring-tip" \
+  --content "Check Grafana dashboards before every deploy" \
+  --type TEACHING
+
 # 6. Query again and see the route change
 crabpath query "can I skip CI" --state /tmp/brain/state.json --top 3
 # output
@@ -73,6 +79,27 @@ What happens:
 2. It connects that node to the most related workspace chunks
 3. It adds **inhibitory edges** — negative-weight links that suppress those chunks
 4. Next query touching that topic: the correction appears, the bad route is dampened
+
+To add knowledge without suppressing anything, use `--type TEACHING` instead.
+
+## Adding new knowledge (no rebuild needed)
+
+When you learn something that isn't in any workspace file, inject it directly:
+
+```bash
+crabpath inject --state brain/state.json \
+  --id "teaching::codex-spark" \
+  --content "Use Codex CLI with gpt-5.3-codex-spark for coding tasks — free on Pro plan" \
+  --type TEACHING
+```
+
+TEACHING nodes connect to related workspace chunks just like CORRECTION nodes,
+but without inhibitory edges — they add knowledge instead of suppressing it.
+
+Three injection types:
+- **CORRECTION** — creates inhibitory edges that suppress related wrong paths
+- **TEACHING** — adds knowledge with normal positive connections
+- **DIRECTIVE** — same as TEACHING (use for standing instructions)
 
 For agent frameworks that need to correlate corrections with earlier queries,
 see `examples/correction_flow/` for the fired-node logging pattern.
@@ -115,6 +142,7 @@ crabpath query "incident runbook for deploy failures" --state /tmp/brain/state.j
 | Retrieval | Similarity search | Learned graph traversal |
 | Feedback | None | `learn +1/-1` updates edge weights |
 | Wrong answers | Can keep resurfacing | Inhibitory edges suppress them |
+| Adding knowledge | Re-index/re-embed | `inject --type TEACHING` (no rebuild) |
 | Over time | Same results for same query | Routes become habitual behavior |
 | Dependencies | Vector DB or service | Zero dependencies |
 
@@ -124,6 +152,7 @@ crabpath query "incident runbook for deploy failures" --state /tmp/brain/state.j
 |---|----------|-----------|-----------|--------|
 | What it learns | Retrieval routes | Nothing | Reasoning via self-reflection text | Memory read/write policies |
 | Negative feedback | Inhibitory edges suppress bad paths | None | None (additive only) | None |
+| New knowledge | `inject` node (no rebuild) | Re-embed corpus | Add to reflection prompt | Update tier config |
 | Integration | Standalone library, any agent | Vector DB required | Tied to agent loop | Tied to agent architecture |
 | Cold start | Hash embeddings, no API key | Needs embedding service | Needs prior episodes | Needs configured tiers |
 | State | Single `state.json` file | External DB | Prompt history | Multi-tier storage |
@@ -169,7 +198,7 @@ See `examples/openai_embedder/` for a complete example.
 | `init` | Build brain from workspace files |
 | `query` | Search the graph |
 | `learn` | Reinforce (+) or suppress (-) fired paths |
-| `inject` | Add a node with connections (CORRECTION creates inhibitory edges) |
+| `inject` | Add a node: CORRECTION (inhibitory edges), TEACHING (positive connections), DIRECTIVE |
 | `replay` | Warm-start from session history |
 | `health` | Graph health metrics |
 | `doctor` | Validate state integrity |
