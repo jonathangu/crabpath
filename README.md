@@ -4,7 +4,7 @@ Pure routing graph engine for context-aware retrieval. Core is zero dependencies
 
 ## 1. CrabPath
 
-CrabPath v8.0.0 is a deterministic graph engine that builds traversable context graphs and improves routing from feedback, without any external service requirement by default.
+CrabPath is a deterministic graph engine that builds traversable context graphs and improves routing from feedback, without any external service requirement by default.
 
 ## 2. Design Tenets
 
@@ -84,7 +84,7 @@ graph, texts = split_workspace("./workspace", llm_fn=llm_fn)
 
 ## 7. Session Replay (prominent)
 
-Session replay is core in v8 and is the fastest way to warm-start a new brain from history.
+Session replay is the fastest way to warm-start a new brain from history.
 
 ```python
 from crabpath import replay_queries, split_workspace
