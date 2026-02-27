@@ -160,26 +160,36 @@ Alongside inhibitory edges and periodic merge, maintenance now supports runtime 
 - Inhibitory edges are always copied to every child, so suppressions are not lost.
 - `openclawbrain maintain` now also includes optional homeostatic controls: decay half-life auto-adjusts to keep reflex-edge ratio in range, and per-node synaptic scaling limits outgoing positive mass.
 
-## Self-correction (autonomous learning)
+## Self-learning (autonomous agent learning)
 
-When an agent detects its own mistake (without human feedback), it can self-correct in one call:
+Agents can learn from their own observations — both mistakes and successes — without human feedback:
 
 ```bash
-# Agent detected a failure — inject lesson and penalize the bad retrieval path
-openclawbrain self-correct --state brain/state.json \
+# Agent detected a failure — penalize the bad path and inject a correction
+openclawbrain self-learn --state brain/state.json \
   --content 'Always download model artifacts before terminating training instances' \
   --fired-ids 'infra.md::3,cleanup.md::1' \
-  --type CORRECTION
+  --outcome -1.0 --type CORRECTION
 
-# Agent learned something new (no mistake, just a lesson)
-openclawbrain self-correct --state brain/state.json \
+# Agent succeeded — reinforce the good path and record what worked
+openclawbrain self-learn --state brain/state.json \
+  --content 'Download-then-terminate sequence works reliably for model training' \
+  --fired-ids 'infra.md::3,download.md::1' \
+  --outcome 1.0 --type TEACHING
+
+# Agent learned something new (neutral — just adding knowledge)
+openclawbrain self-learn --state brain/state.json \
   --content 'GBM training takes ~40 min on g5.xlarge' \
-  --type TEACHING
+  --outcome 0 --type TEACHING
 ```
 
-What happens:
-1. **CORRECTION mode**: penalizes the fired nodes (weakens the path that led to the mistake), then injects a correction node with inhibitory edges. Future queries on the same topic will avoid the bad path.
-2. **TEACHING mode**: injects a new knowledge node with positive connections. No penalization — just adds information.
+The full spectrum:
+
+| Situation | outcome | type | Effect |
+|-----------|---------|------|--------|
+| Agent made a mistake | -1.0 | CORRECTION | Penalize fired path + inject with inhibitory edges |
+| Agent learned a fact | 0.0 | TEACHING | Inject knowledge only, no weight changes |
+| Agent succeeded | +1.0 | TEACHING | Reinforce fired path + inject positive knowledge |
 
 Via socket (Python):
 
@@ -188,15 +198,23 @@ from openclawbrain.socket_client import OCBClient
 
 with OCBClient('~/.openclawbrain/main/daemon.sock') as client:
     # Agent detected its own mistake
-    client.self_correct(
+    client.self_learn(
         content='Always download artifacts before terminating instances',
         fired_ids=['infra.md::3', 'cleanup.md::1'],
         outcome=-1.0,
         node_type='CORRECTION',
     )
+
+    # Agent observed a success — reinforce
+    client.self_learn(
+        content='Chunked download with checksum verification works reliably',
+        fired_ids=['download.md::0', 'validate.md::1'],
+        outcome=1.0,
+        node_type='TEACHING',
+    )
 ```
 
-This enables autonomous learning: agents observe outcomes, detect failures, and teach themselves — no human in the loop.
+This enables autonomous learning loops: agents observe outcomes, detect failures and successes, and teach themselves — no human in the loop. `self-correct` is available as a CLI/API alias for backward compatibility.
 
 ## Adding new knowledge (no rebuild needed)
 

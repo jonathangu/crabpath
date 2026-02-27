@@ -79,6 +79,24 @@ class OCBClient:
             params["content"] = content
         return self.request("correction", params)
 
+    def self_learn(
+        self,
+        content: str,
+        fired_ids: list[str] | None = None,
+        outcome: float = -1.0,
+        node_type: str = "CORRECTION",
+    ) -> dict[str, Any]:
+        """Autonomous agent learning — corrections and positive reinforcement.
+
+        outcome < 0 + CORRECTION: penalize path, inject with inhibitory edges
+        outcome = 0 + TEACHING: inject knowledge only, no weight changes
+        outcome > 0 + TEACHING: reinforce path, inject positive knowledge
+        """
+        params: dict[str, Any] = {"content": content, "outcome": outcome, "node_type": node_type}
+        if fired_ids is not None:
+            params["fired_ids"] = fired_ids
+        return self.request("self_learn", params)
+
     def self_correct(
         self,
         content: str,
@@ -86,10 +104,8 @@ class OCBClient:
         outcome: float = -1.0,
         node_type: str = "CORRECTION",
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"content": content, "outcome": outcome, "node_type": node_type}
-        if fired_ids is not None:
-            params["fired_ids"] = fired_ids
-        return self.request("self_correct", params)
+        """Alias for self_learn (backward compatibility)."""
+        return self.self_learn(content=content, fired_ids=fired_ids, outcome=outcome, node_type=node_type)
 
     def inject(
         self,

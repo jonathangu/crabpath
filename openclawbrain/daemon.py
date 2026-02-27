@@ -405,7 +405,7 @@ def _handle_correction(
     return payload, should_write
 
 
-def _handle_self_correct(
+def _handle_self_learn(
     daemon_state: "_DaemonState",
     graph: Graph,
     index: VectorIndex,
@@ -413,7 +413,7 @@ def _handle_self_correct(
     state_path: str,
     params: dict[str, object],
 ) -> tuple[dict[str, object], bool]:
-    """Handle autonomous self-correction from agent failure observations."""
+    """Handle autonomous agent learning — both corrections and positive reinforcement."""
     raw_content = params.get("content")
     if not isinstance(raw_content, str) or not raw_content.strip():
         raise ValueError("content is required")
@@ -798,8 +798,8 @@ def main(argv: list[str] | None = None) -> int:
                         state_path=state_path,
                         params=params,
                     )
-                elif method == "self_correct":
-                    payload, should_write = _handle_self_correct(
+                elif method in ("self_learn", "self_correct"):
+                    payload, should_write = _handle_self_learn(
                         daemon_state=daemon_state,
                         graph=daemon_state.graph,
                         index=daemon_state.index,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from openclawbrain.graph import Edge, Graph, Node
 from openclawbrain.index import VectorIndex
-from openclawbrain.daemon import _handle_self_correct, _DaemonState
+from openclawbrain.daemon import _handle_self_learn, _DaemonState
 from openclawbrain.hasher import HashEmbedder
 from openclawbrain.socket_client import OCBClient
 
@@ -43,7 +43,7 @@ def test_self_correct_injects_correction_node() -> None:
     g, idx = _simple_graph()
     ds = _make_daemon_state(g, idx)
 
-    payload, should_write = _handle_self_correct(
+    payload, should_write = _handle_self_learn(
         daemon_state=ds,
         graph=g,
         index=idx,
@@ -76,7 +76,7 @@ def test_self_correct_teaching_no_inhibitory() -> None:
     g, idx = _simple_graph()
     ds = _make_daemon_state(g, idx)
 
-    payload, should_write = _handle_self_correct(
+    payload, should_write = _handle_self_learn(
         daemon_state=ds,
         graph=g,
         index=idx,
@@ -107,7 +107,7 @@ def test_self_correct_without_fired_ids() -> None:
     g, idx = _simple_graph()
     ds = _make_daemon_state(g, idx)
 
-    payload, should_write = _handle_self_correct(
+    payload, should_write = _handle_self_learn(
         daemon_state=ds,
         graph=g,
         index=idx,
@@ -130,7 +130,7 @@ def test_self_correct_penalizes_fired_ids() -> None:
 
     w_before = g._edges["a"]["b"].weight
 
-    _handle_self_correct(
+    _handle_self_learn(
         daemon_state=ds,
         graph=g,
         index=idx,
@@ -145,6 +145,54 @@ def test_self_correct_penalizes_fired_ids() -> None:
 
     w_after = g._edges["a"]["b"].weight
     assert w_after != w_before, "Edge weight should have changed after negative outcome"
+
+
+def test_self_learn_positive_reinforcement() -> None:
+    """Positive outcome + TEACHING reinforces the path without inhibition."""
+    g, idx = _simple_graph()
+    ds = _make_daemon_state(g, idx)
+
+    w_before = g._edges["a"]["b"].weight
+
+    payload, should_write = _handle_self_learn(
+        daemon_state=ds,
+        graph=g,
+        index=idx,
+        embed_fn=HashEmbedder().embed,
+        state_path="/tmp/fake_state.json",
+        params={
+            "content": "Downloading artifacts before terminating works reliably",
+            "fired_ids": ["a", "b"],
+            "outcome": 1.0,
+            "node_type": "TEACHING",
+        },
+    )
+
+    assert should_write is True
+    assert payload["node_injected"] is True
+    node_id = payload["node_id"]
+    assert g.get_node(node_id).metadata["type"] == "TEACHING"
+
+    # No inhibitory edges from TEACHING
+    for _, edge in g.outgoing(node_id):
+        assert edge.weight >= 0
+
+    # Positive outcome should have changed edge weights (reinforcement)
+    w_after = g._edges["a"]["b"].weight
+    assert w_after != w_before
+
+
+def test_self_learn_client_methods_exist() -> None:
+    """OCBClient has both self_learn and self_correct methods."""
+    assert hasattr(OCBClient, "self_learn")
+    assert hasattr(OCBClient, "self_correct")
+    import inspect
+    sig = inspect.signature(OCBClient.self_learn)
+    params = list(sig.parameters.keys())
+    assert "content" in params
+    assert "fired_ids" in params
+    assert "outcome" in params
+    assert "node_type" in params
 
 
 def test_self_correct_client_method_exists() -> None:

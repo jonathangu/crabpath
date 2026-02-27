@@ -154,10 +154,18 @@ def _build_parser() -> argparse.ArgumentParser:
     x.add_argument("--vector-stdin", action="store_true")
     x.add_argument("--json", action="store_true")
 
+    sl = sub.add_parser("self-learn")
+    sl.add_argument("--state", required=True)
+    sl.add_argument("--content", required=True, help="The lesson learned")
+    sl.add_argument("--fired-ids", default="", help="Comma-separated node IDs to penalize/reinforce")
+    sl.add_argument("--outcome", type=float, default=-1.0, help="Negative=correct mistake, 0=neutral, positive=reinforce success")
+    sl.add_argument("--type", choices=["CORRECTION", "TEACHING"], default="CORRECTION", dest="node_type")
+    sl.add_argument("--json", dest="json_output", action="store_true")
+
     sc = sub.add_parser("self-correct")
     sc.add_argument("--state", required=True)
-    sc.add_argument("--content", required=True, help="The lesson learned")
-    sc.add_argument("--fired-ids", default="", help="Comma-separated node IDs to penalize")
+    sc.add_argument("--content", required=True, help="Alias for self-learn")
+    sc.add_argument("--fired-ids", default="")
     sc.add_argument("--outcome", type=float, default=-1.0)
     sc.add_argument("--type", choices=["CORRECTION", "TEACHING"], default="CORRECTION", dest="node_type")
     sc.add_argument("--json", dest="json_output", action="store_true")
@@ -1335,6 +1343,7 @@ def main(argv: list[str] | None = None) -> int:
         "daemon": cmd_daemon,
         "inject": cmd_inject,
         "replay": cmd_replay,
+        "self-learn": cmd_self_correct,
         "self-correct": cmd_self_correct,
         "health": cmd_health,
         "journal": cmd_journal,
