@@ -262,6 +262,7 @@ def _chunk_config_like(content: str) -> list[str]:
 
 
 _MAX_CHUNK_CHARS = 12_000  # ~3000 tokens, safely under embedding model limits
+DEFAULT_LLM_SPLIT_MIN_CHARS = 7_000
 
 
 def _rechunk_oversized(chunks: list[str], max_chars: int = _MAX_CHUNK_CHARS) -> list[str]:
@@ -462,7 +463,7 @@ def split_workspace(
         use_llm = False
         if llm_fn is not None or llm_batch_fn is not None:
             if should_use_llm_for_file is None:
-                use_llm = True
+                use_llm = len(text) >= DEFAULT_LLM_SPLIT_MIN_CHARS
             else:
                 try:
                     use_llm = bool(should_use_llm_for_file(rel, text))

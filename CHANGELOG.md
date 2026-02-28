@@ -13,6 +13,7 @@
 - `init` now defaults to `--embedder auto --llm auto`, which tries OpenAI and falls back to hash/none gracefully.
 - Added `--edges-only` flag for replay to explicitly request old edge-only behavior.
 - Guarded `full_learning.py` OpenAI imports with try/except so the module loads without openai installed.
+- `split.py`: `split_workspace` now auto-gates LLM file splitting by default; LLM is used by default only for files with >= `DEFAULT_LLM_SPLIT_MIN_CHARS` characters. Set `should_use_llm_for_file=lambda rel, text: True` to force LLM splitting on all files.
 
 ### Full-learning replay and harvest
 

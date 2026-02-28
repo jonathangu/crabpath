@@ -130,6 +130,7 @@ def test_split_workspace_with_llm_fn_signature_matches_contract(tmp_path: Path) 
     graph, texts = split_workspace(
         str(workspace),
         llm_fn=lambda _system, user: json.dumps({"sections": ["One section", "Two section"]}),
+        should_use_llm_for_file=lambda _rel, _text: True,
     )
 
     assert graph.node_count() == 2

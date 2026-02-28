@@ -163,7 +163,9 @@ def test_split_with_llm_json_sections(tmp_path: Path) -> None:
         calls.append((system, user))
         return json.dumps({"sections": ["Section 1: Intro.", "Section 2: Deep dive.", "Section 3: Checklist."]})
 
-    graph, texts = split_workspace(str(workspace), llm_fn=fake_llm)
+    graph, texts = split_workspace(
+        str(workspace), llm_fn=fake_llm, should_use_llm_for_file=lambda _rel, _text: True
+    )
 
     assert len(graph.nodes()) == 3
     assert list(texts.values()) == ["Section 1: Intro.", "Section 2: Deep dive.", "Section 3: Checklist."]
@@ -196,9 +198,31 @@ def test_split_with_llm_parse_fallback_to_headers(tmp_path: Path) -> None:
         """bad llm."""
         return "not-json"
 
-    graph, texts = split_workspace(str(workspace), llm_fn=bad_llm)
-    assert len(graph.nodes()) == 2
-    assert texts["note.md::0"].startswith("## Intro")
+    graph, texts = split_workspace(
+        str(workspace),
+        llm_fn=bad_llm,
+        should_use_llm_for_file=lambda _rel, _text: True,
+    )
+
+
+def test_split_with_llm_default_off_for_small_file(tmp_path: Path) -> None:
+    """test LLM split is off by default for small files."""
+    workspace = tmp_path / "split_llm_small"
+    workspace.mkdir()
+    (workspace / "note.md").write_text("Short paragraph for quick splitting.", encoding="utf-8")
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_llm(system: str, user: str) -> str:
+        """fake llm."""
+        calls.append((system, user))
+        return json.dumps({"sections": ["Section 1"]})
+
+    graph, texts = split_workspace(str(workspace), llm_fn=fake_llm)
+
+    assert len(graph.nodes()) == 1
+    assert not calls
+    assert texts["note.md::0"] == "Short paragraph for quick splitting."
 
 
 def test_split_json_file_with_long_payload_handles_supported_extension(tmp_path: Path) -> None:
