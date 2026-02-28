@@ -14,10 +14,16 @@
 - Added homeostatic decay with adaptive half-life (bounded to 60-300): reflex-edge ratio is tracked and used to speed up/slow down decay to maintain a 5-15% reflex band.
 - Added synaptic scaling between decay and split: outgoing positive mass is softly capped per node (`budget=5.0`) to prevent hub dominance and preserve network balance.
 
-### Self-correction API
-- Added `self_correct` daemon method, socket client method, and CLI subcommand for agent-initiated autonomous learning.
-- Added combined support for **CORRECTION** (penalize fired IDs and add inhibitory edges) and **TEACHING** (add lesson without suppression).
-- Autonomous corrections are logged with metadata source `self`, enabling feedback loops without human action.
+### Autonomous learning API (`self_learn`)
+- New `self_learn` daemon method, socket client method, and CLI subcommand. Enables agents to learn from self-observed outcomes without human feedback.
+- Full spectrum: negative outcome + CORRECTION (penalize + inhibit), neutral + TEACHING (inject only), positive outcome + TEACHING (reinforce + inject).
+- `self_correct` available as backward-compatible alias.
+- Unified internal `_do_learn` core — `learn`, `correction`, and `self_learn` all delegate to one function. No duplicated logic.
+
+### Bug fixes
+- **CRITICAL**: `save_state` is now atomic (write to temp → fsync → rename). Keeps `.bak` of previous state. A crash during save can no longer corrupt the brain.
+- `read_journal` skips malformed JSON lines instead of crashing the entire health/replay pipeline.
+- `split_workspace` skips non-UTF8/binary files instead of failing the entire init pass.
 
 ## v12.1.1 (2026-02-27)
 
