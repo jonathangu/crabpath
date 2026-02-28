@@ -333,6 +333,8 @@ See `examples/openai_embedder/` for a complete example.
 | `init` | Build a brain from workspace files |
 | `query` | Traverse graph and return context |
 | `learn` | Apply outcome feedback to fired edges |
+| `self-learn` | Add outcome-aware lesson entries from agent observations |
+| `self-correct` | Alias for `self-learn` |
 | `merge` | Suggest and apply node merges |
 | `anchor` | Set/list/remove constitutional authority on nodes |
 | `connect` | Connect learning nodes to workspace neighborhoods |

@@ -205,6 +205,19 @@ def connect_learnings(state_path: str, top_k: int = 3, min_sim: float = 0.3):
     return edges_added
 
 
+def _state_paths(args: argparse.Namespace) -> list[Path]:
+    """Resolve target states with --state as primary interface."""
+    if args.state:
+        return [Path(args.state).expanduser()]
+
+    if args.agent:
+        if args.agent not in AGENT_STATES:
+            raise SystemExit(f"unknown agent: {args.agent}")
+        return [AGENT_STATES[args.agent]]
+
+    return list(AGENT_STATES.values())
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Connect learning nodes into workspace neighborhoods for one or more adapter states"
@@ -223,12 +236,10 @@ def main():
     if args.min_sim < 0:
         raise SystemExit("--min-sim must be >= 0")
 
-    if args.state:
-        state_paths = [Path(args.state)]
-    elif args.agent:
-        state_paths = [AGENT_STATES[args.agent]]
-    else:
-        state_paths = list(AGENT_STATES.values())
+    state_paths = _state_paths(args)
+    for state_path in state_paths:
+        if not state_path.exists():
+            raise SystemExit(f"state file not found: {state_path}")
 
     for state_path in state_paths:
         label = str(state_path)

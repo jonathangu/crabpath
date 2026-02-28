@@ -162,6 +162,26 @@ Maintenance behavior:
 Maintenance is **not** part of request path.
 Run it periodically (cron, timer, CI job, custom workflow) or after meaningful events (re-index, large workspace changes, etc.).
 
+### Cron examples for OpenClaw workflows
+
+```cron
+# Daily compact (summarize old notes)
+0 2 * * * /usr/bin/openclawbrain compact --state /opt/openclawbrain/brain/state.json --memory-dir /opt/openclawbrain/memory
+
+# Sync after workspace changes (example: every 10 minutes, or invoke from your file-change hook)
+*/10 * * * * /usr/bin/openclawbrain sync --workspace /opt/openclawbrain/workspace --state /opt/openclawbrain/brain/state.json --embedder openai
+```
+
+OpenClaw cron jobs typically wrap these commands in one file, such as `~/Library/LaunchAgents/com.openclawbrain.maintenance.plist` or a small shell script invoked by systemd, so they can inherit your preferred environment and logging policy.
+
+Equivalent example commands:
+
+```bash
+openclawbrain compact --state brain/state.json --memory-dir ./memory
+
+openclawbrain sync --workspace ./workspace --state brain/state.json --embedder openai
+```
+
 ## 5) Integration with OpenClaw
 
 OpenClawBrain is designed to plug into OpenClaw’s existing contract:

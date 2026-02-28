@@ -583,6 +583,18 @@ def cmd_init(args: argparse.Namespace) -> int:
         output_dir = output_dir.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    old_state_path = output_dir / "state.json"
+    prior_meta: dict[str, object] = {}
+    preserved_nodes: list[Node] = []
+    old_index: VectorIndex | None = None
+    if old_state_path.is_file():
+        old_graph, old_index, prior_meta = load_state(str(old_state_path))
+        preserved_nodes = [
+            node
+            for node in old_graph.nodes()
+            if node.metadata.get("type") in {"CORRECTION", "TEACHING", "DIRECTIVE"}
+        ]
+
     llm_fn, llm_batch_fn = _resolve_llm(args)
     graph, texts = split_workspace(args.workspace, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
     if args.sessions is not None:
@@ -593,7 +605,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
         replay_queries(graph=graph, queries=interactions)
 
-    embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, {})
+    embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, prior_meta)
     print(
         f"Embedding {len(texts)} texts ({embedder_name}, dim={embedder_dim})",
         file=sys.stderr,
@@ -603,9 +615,26 @@ def cmd_init(args: argparse.Namespace) -> int:
     for node_id, vector in index_vectors.items():
         index.upsert(node_id, vector)
 
+    if preserved_nodes:
+        connect_min_sim = 0.0 if embedder_name == HashEmbedder().name else 0.3
+        for node in preserved_nodes:
+            inject_node(
+                graph=graph,
+                index=index,
+                node_id=node.id,
+                content=node.content,
+                summary=node.summary,
+                metadata=dict(node.metadata),
+                vector=old_index._vectors.get(node.id) if old_index is not None else None,
+                embed_fn=None if old_index is not None else embedder_fn,
+                connect_top_k=3,
+                connect_min_sim=connect_min_sim,
+            )
+        print(f"Preserved {len(preserved_nodes)} injected nodes from previous state")
+
     graph_path = output_dir / "graph.json"
     text_path = output_dir / "texts.json"
-    state_meta = _state_meta({}, fallback_name=embedder_name, fallback_dim=embedder_dim)
+    state_meta = _state_meta(prior_meta, fallback_name=embedder_name, fallback_dim=embedder_dim)
     _write_graph(graph_path, graph, include_meta=True, meta=state_meta)
     save_state(
         graph=graph,
