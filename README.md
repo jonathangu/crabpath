@@ -3,7 +3,7 @@
 
 > Your retrieval routes become the prompt — assembled by learned routing, not top-k similarity.
 
-**Current release: v12.2.0**
+**Current release: v12.2.1**
 **Website:** https://openclawbrain.ai
 
 **Setup:** [Setup Guide](docs/setup-guide.md)
@@ -87,6 +87,7 @@ See also: [Setup Guide](docs/setup-guide.md) for a complete local configuration 
 ```bash
 # 1. Build a brain from the sample workspace
 openclawbrain init --workspace examples/sample_workspace --output /tmp/brain
+Large texts are automatically rechunked to stay under embedding model limits (12K chars). No content is skipped or truncated.
 
 # 2. Check state health
 openclawbrain doctor --state /tmp/brain/state.json
@@ -158,11 +159,12 @@ Alongside inhibitory edges and periodic merge, maintenance now supports runtime 
 - `suggest_splits()` finds bloated multi-topic nodes (including merged-byline nodes).
 - `split_node()` rewires outgoing and incoming edges into focused child nodes, then removes the parent.
 - Inhibitory edges are always copied to every child, so suppressions are not lost.
-- `openclawbrain maintain` now also includes optional homeostatic controls: decay half-life auto-adjusts to keep reflex-edge ratio in range, and per-node synaptic scaling limits outgoing positive mass.
+- `openclawbrain maintain` now also includes optional homeostatic controls: decay half-life auto-adjusts to keep reflex-edge ratio in range, and synaptic scaling uses a soft per-node weight budget (5.0) with fourth-root scaling.
+- `Tier hysteresis: habitual band 0.15-0.6` prevents threshold thrashing.
 
 ## Self-learning (autonomous agent learning)
 
-Agents can learn from their own observations — both mistakes and successes — without human feedback:
+Agents can learn from their own observations — both mistakes and successes — without human feedback (self-correct available as CLI/API alias).
 
 ```bash
 # Agent detected a failure — penalize the bad path and inject a correction
@@ -214,7 +216,7 @@ with OCBClient('~/.openclawbrain/main/daemon.sock') as client:
     )
 ```
 
-This enables autonomous learning loops: agents observe outcomes, detect failures and successes, and teach themselves — no human in the loop. `self-correct` is available as a CLI/API alias for backward compatibility.
+This enables autonomous learning loops: agents observe outcomes, detect failures and successes, and teach themselves — no human in the loop. `self-correct` is available as CLI/API alias.
 
 ## Adding new knowledge (no rebuild needed)
 
@@ -344,10 +346,15 @@ See `examples/openai_embedder/` for a complete example.
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
 | `replay` | Replay session queries into brain |
 | `health` | Show graph health metrics |
+| `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
 | `journal` | Show event journal |
 | `doctor` | Run diagnostic checks |
 | `info` | Show brain info (nodes, edges, embedder) |
 | `daemon` | Start persistent worker (JSON-RPC over stdio, state loaded once) |
+
+## State persistence
+
+State writes are atomic (`temp` + `fsync` + `rename`) with `.bak` backup. Crash-safe.
 
 ## Persistent Worker (`openclawbrain daemon`)
 

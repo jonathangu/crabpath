@@ -1,3 +1,27 @@
+## v12.2.1 (2026-02-27)
+
+### Bug fixes (from deployment feedback — GH #4, #5, #6)
+- Fixed --llm openai hang on init (timeout + empty list guard)
+- Added embed_batch progress output (prevents false SIGTERM)
+- CLI maintain now passes embed_fn from state metadata
+- Daemon maintain delegates to run_maintenance (all 7 tasks)
+- Added --embedder arg to maintain CLI parser
+- LLM timeout increased to 60s + split content truncated to 8K chars
+- Stale socket cleanup on daemon startup
+- Replay diagnostic output + meta leak prevention
+- install_launchd.sh auto-detects Python path
+
+### New features
+- openclawbrain status command (one-command health overview)
+- Injected nodes (CORRECTION/TEACHING/DIRECTIVE) preserved on rebuild
+- docs/vs-plain-rag.md comparison (honest: BM25 wins cold start)
+- docs/agents_hook.md (when to query/learn/inject/edit)
+- docs/upgrade-guide.md (recommended upgrade sequences)
+- BM25 baseline added to benchmark suite
+- Ablation study (5 conditions x 10 seeds)
+- _rechunk_oversized: large texts split properly, never truncated
+- connect_learnings.py accepts --state flag
+
 ## v12.2.0 (2026-02-27)
 
 ### Learning rule
@@ -50,11 +74,11 @@
 ## v12.0.0 (2026-02-27)
 
 ### Rename and compatibility
-- Rebranded package from `crabpath` to `openclawbrain`.
+- Rebranded package from legacy namespace to `openclawbrain`.
 - `pyproject.toml` metadata updated: `name`, `version`, `description`, keywords, and scripts.
-- Added compatibility entry points in `pyproject.toml` for `openclawbrain`, `ocb`, and `crabpath`.
-- Added `crabpath` shim package that re-exports `openclawbrain` with deprecation warnings.
-- Added default-state behavior for `~/.openclawbrain/` with fallback to `~/.crabpath/` when migrating.
+- Added compatibility entry points in `pyproject.toml` for `openclawbrain`, `ocb`, and OpenClawBrain compatibility alias.
+- Added OpenClawBrain compatibility shim package that re-exports `openclawbrain` with deprecation warnings.
+- Added default-state behavior for `~/.openclawbrain/` with fallback from legacy paths when migrating.
 - Updated CLI state resolution and daemon/progress naming to the new package.
 - Added backward-compatibility tests for shim imports and warning behavior.
 

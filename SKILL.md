@@ -8,7 +8,7 @@ metadata:
       python: ">=3.10"
 ---
 
-# OpenClawBrain v12.2.0
+# OpenClawBrain v12.2.1
 
 Learned retrieval graph for AI agents. Nodes are document chunks, edges are mutable weighted pointers. The graph learns from outcomes using policy-gradient updates (REINFORCE) and self-regulates via homeostatic decay, synaptic scaling, and tier hysteresis.
 
@@ -48,7 +48,7 @@ Default is `apply_outcome_pg` (REINFORCE). At each node, updates redistribute pr
 `apply_outcome` (heuristic) is available as fallback — only updates traversed edges, inflationary.
 
 ### Self-Learning
-Agents learn from their own observed outcomes without human feedback:
+Agents learn from their own observed outcomes without human feedback (`self-correct` available as CLI/API alias):
 
 ```python
 from openclawbrain.socket_client import OCBClient
@@ -81,6 +81,7 @@ with OCBClient('~/.openclawbrain/main/daemon.sock') as client:
 - **Homeostatic decay**: half-life auto-adjusts to maintain 5-15% reflex edge ratio. Bounded 60-300 cycles.
 - **Synaptic scaling**: soft per-node weight budget (5.0) prevents hub domination.
 - **Tier hysteresis**: habitual band 0.15-0.6 prevents threshold thrashing.
+- **Synaptic scaling (maintenance detail)**: soft per-node weight budget (5.0) with fourth-root scaling.
 
 ### Edge Tiers
 | Tier | Weight | Behavior |
@@ -98,6 +99,11 @@ Runs every 30 min via daemon: `health → decay → scale → split → merge �
 - **Split**: runtime node splitting (inverse of merge) for bloated multi-topic nodes
 - **Merge**: consolidate co-firing nodes (bidirectional weight ≥ 0.8)
 - **Prune**: remove dead edges (|w| < 0.01) and orphan nodes
+
+### Maintenance
+
+- `split_node`: splits bloated nodes into focused children with embedding-based edge rewiring
+- `suggest_splits`: detects candidates by content length, hub degree, merge origin, edge variance
 
 ### Text Chunking
 `split_workspace` chunks files by type (.py → functions, .md → headers, .json → keys) then `_rechunk_oversized` ensures no chunk exceeds 12K chars. Large texts are split on blank lines → newlines → hard cut. **No content is ever skipped or truncated.**
@@ -117,7 +123,7 @@ openclawbrain daemon --state ./brain/state.json --embed-model text-embedding-3-s
 | `query` | Traverse graph, return fired nodes + context |
 | `learn` | Apply outcome to fired nodes |
 | `self_learn` | Agent-initiated learning (CORRECTION or TEACHING) |
-| `self_correct` | Alias for self_learn |
+| `self_correct` | Alias for self_learn (self-correct available as CLI/API alias) |
 | `correction` | Human-initiated correction (uses chat_id lookback) |
 | `inject` | Add TEACHING/CORRECTION/DIRECTIVE node |
 | `maintain` | Run maintenance tasks |
@@ -151,6 +157,7 @@ openclawbrain health --state S
 openclawbrain doctor --state S
 openclawbrain info --state S
 openclawbrain maintain --state S [--tasks decay,scale,split,merge,prune,connect]
+openclawbrain status --state S [--json]
 openclawbrain replay --state S --sessions S
 openclawbrain merge --state S [--llm openai]
 openclawbrain connect --state S
@@ -173,7 +180,7 @@ openclawbrain daemon --state S [--embed-model text-embedding-3-small]
 
 ## State Persistence
 
-- Atomic writes: temp → fsync → rename. Keeps `.bak` backup.
+- Atomic writes: temp → fsync → rename. Keeps `.bak` backup. Crash-safe.
 - State format: `state.json` (graph + index + metadata)
 - Embedder identity stored in metadata; dimension mismatches are errors.
 
@@ -192,6 +199,7 @@ python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py \
 
 **Self-learn:** openclawbrain self-learn --state ~/.openclawbrain/<brain>/state.json \
   --content "lesson" --fired-ids <ids> --outcome -1.0 --type CORRECTION
+  # (self-correct available as CLI/API alias)
 
 **Health:** openclawbrain health --state ~/.openclawbrain/<brain>/state.json
 ```
@@ -199,7 +207,7 @@ python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py \
 ## Links
 
 - Paper: https://jonathangu.com/openclawbrain/
-- Blog: https://jonathangu.com/openclawbrain/blog/v12.2.0/
+- Blog: https://jonathangu.com/openclawbrain/blog/v12.2.1/
 - Derivation: https://jonathangu.com/openclawbrain/gu2016/
 - GitHub: https://github.com/jonathangu/openclawbrain
-- PyPI: `pip install openclawbrain==12.2.0`
+- PyPI: `pip install openclawbrain==12.2.1`
