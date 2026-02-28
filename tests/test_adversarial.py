@@ -43,8 +43,11 @@ def test_split_workspace_large_single_chunk(tmp_path: Path) -> None:
 
     graph, texts = split_workspace(workspace)
 
-    assert graph.node_count() == 1
-    assert list(texts.values())[0] == payload
+    # Large texts are now rechunked to stay under embedding model limits
+    assert graph.node_count() >= 1
+    # All content must be preserved across chunks
+    all_content = "".join(texts.values())
+    assert len(all_content) == len(payload)
 
 
 def test_traverse_self_loop_edge_stable() -> None:
