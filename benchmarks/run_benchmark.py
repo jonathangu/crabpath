@@ -243,6 +243,26 @@ def _keyword_overlap(graph: Any, query: str, top_k: int) -> list[str]:
     return [node_id for node_id, _ in scores[:top_k]]
 
 
+def _bm25_retrieve(graph: Any, query: str, top_k: int, _cache: dict = {}) -> list[str]:
+    """BM25 retrieval baseline using rank_bm25."""
+    from rank_bm25 import BM25Okapi
+
+    cache_key = id(graph)
+    if cache_key not in _cache:
+        nodes = list(graph.nodes())
+        corpus = [list(_tokenize(n.content)) for n in nodes]
+        node_ids = [n.id for n in nodes]
+        _cache[cache_key] = (BM25Okapi(corpus), node_ids)
+
+    bm25, node_ids = _cache[cache_key]
+    query_tokens = list(_tokenize(query))
+    if not query_tokens:
+        return []
+    scores = bm25.get_scores(query_tokens)
+    ranked = sorted(zip(node_ids, scores), key=lambda x: x[1], reverse=True)
+    return [nid for nid, _ in ranked[:top_k]]
+
+
 def _hash_overlap(index: VectorIndex, embedder: HashEmbedder, query: str, top_k: int) -> list[str]:
     query_vec = embedder.embed(query)
     return [node_id for node_id, _ in index.search(query_vec, top_k=top_k)]
@@ -350,6 +370,13 @@ def main() -> None:
         top_k=args.traverse_seed_k,
     )
     keyword_seed = lambda query_graph, query_text: default_keyword_seed_fn(graph=query_graph, query_text=query_text)
+
+    scores["bm25"], per_query["bm25"], latency_ms["bm25"] = _run_query_set(
+        name="bm25",
+        queries=queries,
+        graph=deepcopy(base_graph),
+        method=lambda query, query_graph: _bm25_retrieve(graph=query_graph, query=query, top_k=args.seed_top_k),
+    )
 
     scores["keyword_overlap"], per_query["keyword_overlap"], latency_ms["keyword_overlap"] = _run_query_set(
         name="keyword_overlap",
