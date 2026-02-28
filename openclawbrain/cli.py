@@ -43,6 +43,7 @@ from .split import split_workspace
 from .hasher import HashEmbedder
 from .traverse import TraversalConfig, TraversalResult, traverse
 from .sync import DEFAULT_AUTHORITY_MAP, sync_workspace
+from .full_learning import default_checkpoint_path, run_fast_learning, run_harvest, _persist_state
 from ._util import _tokenize
 from .maintain import run_maintenance
 from .store import load_state, save_state, resolve_default_state_path
@@ -177,7 +178,27 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--state")
     r.add_argument("--graph")
     r.add_argument("--sessions", nargs="+", required=True)
+    r.add_argument("--fast-learning", action="store_true")
+    r.add_argument("--full-learning", action="store_true")
+    r.add_argument("--workers", type=int, default=4)
+    r.add_argument("--window-radius", type=int, default=8)
+    r.add_argument("--max-windows", type=int, default=6)
+    r.add_argument("--hard-max-turns", type=int, default=120)
+    r.add_argument("--backup", action=argparse.BooleanOptionalAction, default=True)
+    r.add_argument("--resume", action="store_true")
+    r.add_argument("--checkpoint", default=None)
+    r.add_argument("--ignore-checkpoint", action="store_true")
     r.add_argument("--json", action="store_true")
+
+    hcmd = sub.add_parser("harvest")
+    hcmd.add_argument("--state", required=True)
+    hcmd.add_argument("--events")
+    hcmd.add_argument("--tasks", default="split,merge,prune,connect,scale")
+    hcmd.add_argument("--dry-run", action="store_true")
+    hcmd.add_argument("--max-merges", type=int, default=5)
+    hcmd.add_argument("--prune-below", type=float, default=0.01)
+    hcmd.add_argument("--backup", action=argparse.BooleanOptionalAction, default=True)
+    hcmd.add_argument("--json", action="store_true")
 
     h = sub.add_parser("health")
     h.add_argument("--state")
@@ -1094,11 +1115,36 @@ def cmd_replay(args: argparse.Namespace) -> int:
     """cmd replay."""
     graph, index, meta = _resolve_graph_index(args, allow_default_state=True)
     state_path = _resolve_state_path(args.state, allow_default=True)
+    run_fast = bool(args.fast_learning)
+    run_full = bool(args.full_learning)
+    if (run_fast or run_full) and state_path is None:
+        raise SystemExit("--state is required for fast/full learning replay mode")
+
+    fast_stats: dict[str, object] | None = None
+    if run_fast or run_full:
+        fast_stats = run_fast_learning(
+            state_path=str(state_path),
+            session_paths=args.sessions,
+            workers=max(1, args.workers),
+            window_radius=max(1, args.window_radius),
+            max_windows=max(1, args.max_windows),
+            hard_max_turns=max(1, args.hard_max_turns),
+            checkpoint_path=args.checkpoint or str(default_checkpoint_path(str(state_path))),
+            resume=bool(args.resume),
+            ignore_checkpoint=bool(args.ignore_checkpoint),
+            backup=bool(args.backup),
+        )
+        graph, index, meta = load_state(str(state_path))
+
     last_replayed_ts = meta.get("last_replayed_ts")
     if not isinstance(last_replayed_ts, (int, float)):
         last_replayed_ts = None
 
-    interactions = _load_session_interactions(args.sessions, since_ts=last_replayed_ts)
+    replay_since_ts = last_replayed_ts
+    if args.ignore_checkpoint:
+        replay_since_ts = None
+
+    interactions = _load_session_interactions(args.sessions, since_ts=replay_since_ts)
     print(
         f"Loaded {len(interactions)} interactions from session files",
         file=sys.stderr,
@@ -1107,25 +1153,100 @@ def cmd_replay(args: argparse.Namespace) -> int:
         graph=graph,
         queries=interactions,
         verbose=not args.json,
-        since_ts=last_replayed_ts,
+        since_ts=replay_since_ts,
     )
+
+    harvest_stats: dict[str, object] | None = None
+    if run_full:
+        harvest_stats = run_harvest(
+            state_path=str(state_path),
+            tasks=["split", "merge", "prune", "connect", "scale"],
+            backup=bool(args.backup),
+        )
+        graph, index, meta = load_state(str(state_path))
+
+    if state_path is not None:
+        state_meta = _state_meta(meta)
+        if stats.get("last_replayed_ts") is not None:
+            state_meta["last_replayed_ts"] = stats["last_replayed_ts"]
+        _persist_state(
+            graph=graph,
+            index=index if index is not None else VectorIndex(),
+            meta=state_meta,
+            state_path=str(state_path),
+            backup=bool(args.backup),
+        ) if stats.get("queries_replayed") else None
+    else:
+        _write_graph(args.graph, graph)
+
     log_replay(
         queries_replayed=stats["queries_replayed"],
         edges_reinforced=stats["edges_reinforced"],
         cross_file_created=stats["cross_file_edges_created"],
         journal_path=_resolve_journal_path(args, allow_default_state=True),
     )
-    if state_path is not None:
-        state_meta = _state_meta(meta)
-        if stats.get("last_replayed_ts") is not None:
-            state_meta["last_replayed_ts"] = stats["last_replayed_ts"]
-        save_state(graph=graph, index=index or VectorIndex(), path=state_path, meta=state_meta)
-    else:
-        _write_graph(args.graph, graph)
+
+    output: dict[str, object] = dict(stats)
+    if fast_stats is not None:
+        output["fast_learning"] = fast_stats
+    if harvest_stats is not None:
+        output["harvest"] = harvest_stats
+
+    if args.json:
+        print(json.dumps(output, indent=2))
+        return 0
+
+    message_parts = [
+        f"Replayed {stats['queries_replayed']}/{len(interactions)} queries, {stats['cross_file_edges_created']} cross-file edges created"
+    ]
+    if run_fast:
+        message_parts.append(
+            f"learning events: {fast_stats['events_injected']} injected, {fast_stats['events_appended']} appended"
+            if fast_stats is not None
+            else ""
+        )
+    if run_full:
+        maintenance = harvest_stats["maintenance"] if harvest_stats is not None else {}
+        message_parts.append(
+            f"harvest: tasks={len(maintenance.get('tasks_run', [])) if isinstance(maintenance, dict) else 0}, "
+            f"damped_edges={harvest_stats.get('damped_edges', 0) if harvest_stats is not None else 0}"
+        )
+    print("\n".join(part for part in message_parts if part))
+    return 0
+
+
+def cmd_harvest(args: argparse.Namespace) -> int:
+    """cmd harvest."""
+    state_path = _resolve_state_path(args.state, allow_default=False)
+    if state_path is None:
+        raise SystemExit("--state is required for harvest")
+
+    requested_tasks = [task.strip() for task in args.tasks.split(",") if task.strip()]
+    report = run_harvest(
+        state_path=state_path,
+        events_path=args.events,
+        tasks=requested_tasks or None,
+        dry_run=args.dry_run,
+        max_merges=args.max_merges,
+        prune_below=args.prune_below,
+        backup=bool(args.backup),
+    )
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    maintenance = report["maintenance"]
     print(
-        json.dumps(stats, indent=2)
-        if args.json
-        else f"Replayed {stats['queries_replayed']}/{len(interactions)} queries, {stats['cross_file_edges_created']} cross-file edges created"
+        "\n".join(
+            [
+                "Harvest report:",
+                f"  events_seen: {report['events_seen']}",
+                f"  correction_nodes: {report['correction_nodes']}",
+                f"  damped_edges: {report['damped_edges']}",
+                f"  tasks: {', '.join(maintenance['tasks_run']) if maintenance['tasks_run'] else '(none)'}",
+                f"  edges: {maintenance['edges_before']} -> {maintenance['edges_after']}",
+            ]
+        )
     )
     return 0
 
@@ -1517,6 +1638,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "self-learn": cmd_self_correct,
         "self-correct": cmd_self_correct,
+        "harvest": cmd_harvest,
         "health": cmd_health,
         "journal": cmd_journal,
         "doctor": cmd_doctor,

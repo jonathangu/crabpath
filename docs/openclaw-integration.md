@@ -348,6 +348,25 @@ OpenClawBrain ships an OpenClaw adapter that logs fired IDs per chat.
 
 That’s the ergonomic way to do “same-turn correction” inside OpenClaw.
 
+For full-history rebuilds, use fast/full replay:
+
+```bash
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --sessions /path/to/sessions \
+  --full-learning
+```
+
+This does:
+
+- replay query edges from session history
+- LLM transcript mining into `learning::` nodes (`--fast-learning` behavior)
+- slow-learning maintenance pass (`harvest`) with split/merge/prune/connect/scale
+
+`learning_events.jsonl` is an append-only sidecar under the brain directory used by harvest:
+
+`~/.openclawbrain/main/learning_events.jsonl`
+
 ---
 
 ## Step 5 — Maintenance cron (keep the graph healthy)
@@ -361,6 +380,15 @@ Recommended maintenance command:
 
 ```bash
 openclawbrain maintain --state ~/.openclawbrain/main/state.json --tasks health,decay,prune,merge
+```
+
+The explicit slow-learning path is:
+
+```bash
+openclawbrain harvest \
+  --state ~/.openclawbrain/main/state.json \
+  --events ~/.openclawbrain/main/learning_events.jsonl \
+  --tasks split,merge,prune,connect,scale
 ```
 
 Start conservative:

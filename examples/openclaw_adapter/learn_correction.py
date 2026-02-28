@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 import time
 
-from openclawbrain import HashEmbedder, apply_outcome_pg, inject_correction, load_state, save_state
+from openclawbrain import HashEmbedder, apply_outcome, inject_correction, load_state, save_state
 from openclawbrain.socket_client import OCBClient
 
 
@@ -192,12 +192,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if fired_ids:
         graph, index, meta = load_state(str(state_path))
-        updates = apply_outcome_pg(
+        updates = apply_outcome(
             graph=graph,
             fired_nodes=fired_ids,
             outcome=args.outcome,
-            baseline=0.0,
-            temperature=1.0,
         )
         edges_updated = len(updates)
         save_state(graph=graph, index=index, path=str(state_path), meta=meta)

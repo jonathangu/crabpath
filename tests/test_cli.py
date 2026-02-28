@@ -314,6 +314,98 @@ def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
     assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 5.0
 
 
+def test_cli_replay_with_fast_learning_writes_learning_events_and_injects_nodes(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """test cli replay with fast learning writes learning events and injects nodes."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "do not do that", "ts": 1.0}),
+                json.dumps({"role": "user", "content": "how to deploy", "ts": 2.0}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    from openclawbrain import full_learning as learning_module
+
+    def fake_llm(_: str, __: str) -> str:
+        return json.dumps(
+            {
+                "corrections": [
+                    {
+                        "content": "Never answer with sensitive data.",
+                        "context": "user corrected behavior",
+                        "severity": "high",
+                    }
+                ],
+                "teachings": [],
+                "reinforcements": [],
+            }
+        )
+
+    monkeypatch.setattr(learning_module, "openai_llm_fn", fake_llm)
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--fast-learning",
+            "--ignore-checkpoint",
+            "--json",
+        ]
+    )
+    assert code == 0
+    first = json.loads(capsys.readouterr().out.strip())
+
+    assert "fast_learning" in first
+    assert first["fast_learning"]["events_injected"] >= 1
+    assert first["fast_learning"]["events_appended"] >= 1
+
+    first_state = json.loads(state_path.read_text(encoding="utf-8"))
+    learning_nodes = [node for node in first_state["graph"]["nodes"] if str(node["id"]).startswith("learning::")]
+    assert learning_nodes
+
+    events_path = Path(first["fast_learning"]["learning_events_path"])
+    assert events_path.exists()
+    initial_events = len(events_path.read_text(encoding="utf-8").splitlines())
+    assert first["fast_learning"]["learning_events_path"] == str(state_path.parent / "learning_events.jsonl")
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--fast-learning",
+            "--ignore-checkpoint",
+            "--json",
+        ]
+    )
+    assert code == 0
+    second = json.loads(capsys.readouterr().out.strip())
+    assert second["fast_learning"]["events_appended"] == 0
+    assert second["fast_learning"]["events_injected"] == 0
+    assert len(events_path.read_text(encoding="utf-8").splitlines()) == initial_events
+
+    second_state = json.loads(state_path.read_text(encoding="utf-8"))
+    second_learning_nodes = [
+        node for node in second_state["graph"]["nodes"] if str(node["id"]).startswith("learning::")
+    ]
+    assert len(second_learning_nodes) == len(learning_nodes)
+
+
 def test_query_command_text_output_includes_node_ids(tmp_path, capsys) -> None:
     """test query text output includes node ids."""
     graph_path = tmp_path / "graph.json"
@@ -538,7 +630,18 @@ def test_health_command_text_output_is_readable(tmp_path, capsys) -> None:
 
 def test_cli_help_text_for_commands() -> None:
     """test cli help text for commands."""
-    for command in ["init", "query", "learn", "merge", "health", "connect", "replay", "journal", "sync"]:
+    for command in [
+        "init",
+        "query",
+        "learn",
+        "merge",
+        "health",
+        "connect",
+        "replay",
+        "harvest",
+        "journal",
+        "sync",
+    ]:
         with pytest.raises(SystemExit):
             main([command, "--help"])
 

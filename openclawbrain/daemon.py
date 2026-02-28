@@ -82,6 +82,11 @@ def _node_ids_with_authority(graph: Graph, authority: str) -> set[str]:
     return {node.id for node in graph.nodes() if _node_authority(node) == authority}
 
 
+def _real_graph_updates(updates: dict[str, float]) -> int:
+    """Count updates that target concrete edges and ignore pseudo STOP transitions."""
+    return sum(1 for key in updates if not key.endswith("->__STOP__"))
+
+
 def _health_payload(graph: Graph) -> dict[str, object]:
     """Build health payload with node/edge counts included."""
     health = measure_health(graph)
@@ -359,7 +364,7 @@ def _do_learn(
             graph=graph, fired_nodes=fired_ids, outcome=outcome,
             baseline=0.0, temperature=1.0,
         )
-        edges_updated = len(updates)
+        edges_updated = _real_graph_updates(updates)
         if edges_updated:
             should_write = True
         log_learn(

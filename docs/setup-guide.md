@@ -16,6 +16,36 @@ openclawbrain info --state ./brain/state.json
 
 We recommend OpenAI embeddings with GPT-5-mini routing for production use. Hash embeddings work offline but produce lower-quality retrieval.
 
+## Initial learning: cold-start replay vs sidecar fast-learning
+
+After init, replay your existing sessions once to seed graph edges from real usage:
+
+```bash
+openclawbrain replay --state ./brain/state.json --sessions ./sessions/
+```
+
+Then run transcript-backed fast-learning to extract durable correction/teaching nodes into the same brain directory:
+
+```bash
+openclawbrain replay \
+  --state ./brain/state.json \
+  --sessions ./sessions/ \
+  --fast-learning \
+  --workers 4 \
+  --window-radius 8 \
+  --max-windows 6 \
+  --hard-max-turns 120 \
+  --checkpoint ./brain/replay_checkpoint.json \
+  --json
+```
+
+`fast-learning` stores extracted events in an append-only log:
+- `./brain/learning_events.jsonl`
+
+You can run this repeatedly; dedupe is by `(type, sha256(content), session_pointer)`, so repeated runs are idempotent.
+
+For ongoing operation after startup, use `--ignore-checkpoint` only when you intentionally want to replay older chunks that were already ingested.
+
 ## Step 2: Wire up the fast loop (per-query)
 
 Minimum per-query pattern: **query → log → learn**.  
@@ -48,6 +78,31 @@ Run maintenance manually:
 ```bash
 openclawbrain maintain --state ./brain/state.json --tasks health,decay,prune,merge
 openclawbrain maintain --state ./brain/state.json --dry-run --json
+
+# Slow-learning harvest (now supported):
+openclawbrain harvest \
+  --state ./brain/state.json \
+  --events ./brain/learning_events.jsonl \
+  --tasks split,merge,prune,connect,scale \
+  --json
+```
+
+The harvest path is intentionally sidecar: it consumes OpenClaw replay artifacts and updates graph structure from them, without changing OpenClaw core memory files.
+
+For production automation, run `harvest` after `replay --fast-learning` with a bounded schedule (daily/hourly depending on session volume).
+
+## Performance knobs
+
+- `--workers`: parallelize LLM window extraction (higher = faster, bounded by rate limits)
+- `--window-radius`: context breadth around likely feedback turns
+- `--max-windows`: max feedback windows sampled per file/session
+- `--hard-max-turns`: hard cap total turns considered to keep extraction bounded
+
+Recommended defaults:
+- `--workers 4`
+- `--window-radius 8`
+- `--max-windows 6`
+- `--hard-max-turns 120`
 ```
 
 Schedule maintenance:

@@ -344,7 +344,8 @@ See `examples/openai_embedder/` for a complete example.
 | `compact` | Compact old daily notes into graph nodes |
 | `sync` | Incremental re-embed after file changes |
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
-| `replay` | Replay session queries into brain |
+| `replay` | Replay session queries, optionally with `--fast-learning` or `--full-learning` |
+| `harvest` | Apply slow-learning pass from `learning_events.jsonl` to current graph |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
 | `journal` | Show event journal |
@@ -549,6 +550,30 @@ If you have prior conversation logs, replay them:
 ```bash
 openclawbrain replay --state /tmp/brain/state.json --sessions ./sessions/
 ```
+
+For transcript-backed fast-learning:
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --fast-learning \
+  --resume \
+  --workers 4 \
+  --checkpoint /tmp/brain/replay_checkpoint.json
+```
+
+For the full learning pipeline (replay + fast-learning + harvest):
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --full-learning
+```
+
+The fast-learning and harvest pipeline is sidecar-only to the core files:
+`learning_events.jsonl` is append-only, and `replay` updates `state.json` via the same graph mutation model as existing injection commands.
 
 Skip this if you are just getting started.
 

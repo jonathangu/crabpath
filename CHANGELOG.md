@@ -1,3 +1,17 @@
+## Unreleased
+
+### Full-learning replay and harvest
+
+- Added `openclawbrain replay --fast-learning` for LLM transcript mining + injection from session logs.
+- Added `openclawbrain replay --full-learning` to run replay + fast-learning + slow maintenance.
+- Added resumability options: `--resume`, `--checkpoint`, and `--ignore-checkpoint`.
+- Added learning-context knobs: `--workers`, `--window-radius`, `--max-windows`, `--hard-max-turns`.
+- Added explicit `--backup` control for replay-backed mutation persistence.
+- Added new `openclawbrain harvest` command to consume `learning_events.jsonl` and apply `split/merge/prune/connect/scale`.
+- Added dedupe/idempotent behavior for event log ingestion keyed by `(type, sha256(content), session_pointer)`.
+- Documented sidecar full-learning workflow and updated `docs/setup-guide.md`, `docs/openclaw-integration.md`, `docs/FULL_REBUILD.md`.
+- Added tests for window selection, dedupe/idempotency, and replay + fast-learning injection behavior.
+
 ## v12.2.1 (2026-02-27)
 
 ### Bug fixes (from deployment feedback — GH #4, #5, #6)
