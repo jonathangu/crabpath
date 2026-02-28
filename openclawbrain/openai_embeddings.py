@@ -9,7 +9,8 @@ import openai
 
 # Conservative limit: OpenAI allows 300K tokens per request.
 # ~4 chars per token, use 250K tokens (1M chars) as buffer.
-_MAX_CHARS_PER_CALL = 250_000 * 4
+_MAX_CHARS_PER_CALL = 200_000  # ~50K tokens, well under OpenAI's 300K limit
+_MAX_CHARS_PER_TEXT = 15_000   # ~4000 tokens, safely under model's 8192 token limit
 
 
 class OpenAIEmbedder:
@@ -25,7 +26,7 @@ class OpenAIEmbedder:
 
     def embed(self, text: str) -> list[float]:
         """embed."""
-        payload = self.client.embeddings.create(model="text-embedding-3-small", input=text)
+        payload = self.client.embeddings.create(model="text-embedding-3-small", input=text[:_MAX_CHARS_PER_TEXT])
         return [float(v) for v in payload.data[0].embedding]
 
     def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:
@@ -53,7 +54,7 @@ class OpenAIEmbedder:
         result: dict[str, list[float]],
     ) -> None:
         """Send one chunk to the OpenAI API and merge into result."""
-        contents = [text for _, text in chunk]
+        contents = [text[:_MAX_CHARS_PER_TEXT] for _, text in chunk]
         payload = self.client.embeddings.create(
             model="text-embedding-3-small", input=contents
         )
