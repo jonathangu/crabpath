@@ -1,5 +1,8 @@
 ## Unreleased
 
+### OpenAI LLM client stability (issue #17)
+- `openai_llm.py`: made OpenAI clients thread-local for batch-thread safety, added client-level defaults `timeout=60` and `max_retries=2` when supported, and narrowed the `TypeError` fallback in `openai_llm_fn` to timeout-only compatibility only.
+
 ### Self-healing replay for rotated/missing session files
 - `replay.py`: `extract_queries`, `extract_query_records`, and `extract_interactions` now return empty lists (with a stderr warning) when a session file is missing or a broken symlink, instead of raising `SystemExit`. This lets long full-learning rebuilds survive rotated or deleted session files.
 - `full_learning.py`: `_read_records` and `collect_session_files` apply the same self-healing behavior — missing or broken-symlink paths are skipped with a warning. If *all* paths are invalid, `collect_session_files` still exits with a helpful message.

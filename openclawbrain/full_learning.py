@@ -520,7 +520,7 @@ def _state_embedder_info(
 ) -> tuple[Callable[[list[tuple[str, str]]], dict[str, list[float]]], float]:
     """Resolve embed batch fn and default connect similarity."""
     embedder_name = str(meta.get("embedder_name", ""))
-    if OpenAIEmbedder is not None and embedder_name == OpenAIEmbedder().name:
+    if OpenAIEmbedder is not None and embedder_name == OpenAIEmbedder.name:
         embedder = OpenAIEmbedder()
         return embedder.embed_batch, 0.30
     embedder = HashEmbedder()
@@ -706,7 +706,7 @@ def run_harvest(
         _persist_state(graph=graph, index=index, meta=meta, state_path=state_path, backup=backup)
 
     embedder_name = meta.get("embedder_name")
-    if OpenAIEmbedder is not None and embedder_name == OpenAIEmbedder().name:
+    if OpenAIEmbedder is not None and embedder_name == OpenAIEmbedder.name:
         embed_fn = OpenAIEmbedder().embed
     else:
         embed_fn = HashEmbedder().embed

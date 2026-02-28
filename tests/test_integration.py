@@ -27,7 +27,19 @@ def test_full_cycle_init_query_learn_query(tmp_path, capsys, monkeypatch) -> Non
     output_dir = tmp_path / "graph_output"
     graph_path = output_dir / "graph.json"
 
-    assert main(["init", "--workspace", str(workspace), "--output", str(output_dir)]) == 0
+    assert main(
+        [
+            "init",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(output_dir),
+            "--embedder",
+            "hash",
+            "--llm",
+            "none",
+        ]
+    ) == 0
     payload = json.loads(graph_path.read_text(encoding="utf-8"))
     graph_payload = payload.get("graph", payload)
     assert len(graph_payload["nodes"]) == 2
@@ -157,7 +169,19 @@ def test_large_workspace_pipeline_end_to_end(tmp_path, capsys, monkeypatch) -> N
 
     output_dir = tmp_path / "graph_output"
     graph_path = output_dir / "graph.json"
-    assert main(["init", "--workspace", str(workspace), "--output", str(output_dir)]) == 0
+    assert main(
+        [
+            "init",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(output_dir),
+            "--embedder",
+            "hash",
+            "--llm",
+            "none",
+        ]
+    ) == 0
 
     payload = json.loads(graph_path.read_text(encoding="utf-8"))
     graph_payload = payload.get("graph", payload)
