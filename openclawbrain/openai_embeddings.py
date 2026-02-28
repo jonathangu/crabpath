@@ -26,7 +26,7 @@ class OpenAIEmbedder:
 
     def embed(self, text: str) -> list[float]:
         """embed."""
-        payload = self.client.embeddings.create(model="text-embedding-3-small", input=text[:_MAX_CHARS_PER_TEXT])
+        payload = self.client.embeddings.create(model="text-embedding-3-small", input=text[:_MAX_CHARS_PER_TEXT] if len(text) > _MAX_CHARS_PER_TEXT else text)
         return [float(v) for v in payload.data[0].embedding]
 
     def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:

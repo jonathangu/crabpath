@@ -260,6 +260,51 @@ def _chunk_config_like(content: str) -> list[str]:
     return chunks if has_split else [content]
 
 
+_MAX_CHUNK_CHARS = 12_000  # ~3000 tokens, safely under embedding model limits
+
+
+def _rechunk_oversized(chunks: list[str], max_chars: int = _MAX_CHUNK_CHARS) -> list[str]:
+    """Re-split any chunks that exceed max_chars.
+
+    Strategy: split on blank lines first, then on single newlines, then hard-cut.
+    This ensures every chunk is under the embedding model's context limit.
+    """
+    result: list[str] = []
+    for chunk in chunks:
+        if len(chunk) <= max_chars:
+            result.append(chunk)
+            continue
+
+        # Try splitting on blank lines
+        parts = [p.strip() for p in chunk.split("\n\n") if p.strip()]
+        if len(parts) > 1:
+            # Recursively rechunk the sub-parts
+            result.extend(_rechunk_oversized(parts, max_chars))
+            continue
+
+        # Try splitting on single newlines
+        lines = chunk.splitlines()
+        if len(lines) > 1:
+            current: list[str] = []
+            current_len = 0
+            for line in lines:
+                if current_len + len(line) + 1 > max_chars and current:
+                    result.append("\n".join(current))
+                    current = []
+                    current_len = 0
+                current.append(line)
+                current_len += len(line) + 1
+            if current:
+                result.append("\n".join(current))
+            continue
+
+        # Hard cut as last resort
+        for i in range(0, len(chunk), max_chars):
+            result.append(chunk[i:i + max_chars])
+
+    return result
+
+
 def _sibling_weight(file_id: str, idx: int) -> float:
     """ sibling weight."""
     digest = hashlib.sha256(f"{file_id}:{idx}".encode("utf-8")).hexdigest()[:8]
@@ -484,6 +529,8 @@ def split_workspace(
                 chunks = _chunk_config_like(text)
             else:
                 chunks = _chunk_markdown(text)
+        # Ensure no chunk exceeds embedding model limits
+        chunks = _rechunk_oversized(chunks)
         text_chunks_by_index[idx] = chunks
         _report(source_rel, mode)
 
