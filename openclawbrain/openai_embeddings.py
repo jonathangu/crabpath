@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import openai
 
@@ -32,19 +33,28 @@ class OpenAIEmbedder:
     def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:
         """Embed a batch of (node_id, text) pairs, chunking to stay within API limits."""
         result: dict[str, list[float]] = {}
+        total = len(texts)
+        if total == 0:
+            return result
+
         chunk: list[tuple[str, str]] = []
         chunk_chars = 0
+        processed = 0
 
         for node_id, text in texts:
             text_len = len(text)
             if chunk and chunk_chars + text_len > _MAX_CHARS_PER_CALL:
                 self._flush_chunk(chunk, result)
+                processed += len(chunk)
+                print(f"Embedding progress: {processed}/{total}", file=sys.stderr)
                 chunk, chunk_chars = [], 0
             chunk.append((node_id, text))
             chunk_chars += text_len
 
         if chunk:
             self._flush_chunk(chunk, result)
+            processed += len(chunk)
+            print(f"Embedding progress: {processed}/{total}", file=sys.stderr)
 
         return result
 

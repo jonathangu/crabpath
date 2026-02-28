@@ -11,19 +11,17 @@ from collections import deque
 import signal
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Callable
 
 from .autotune import measure_health
-from .decay import DecayConfig, apply_decay
 from .graph import Graph, Node
 from .hasher import HashEmbedder
 from .index import VectorIndex
 from .journal import log_health, log_learn, log_query
 from .learn import apply_outcome, apply_outcome_pg
-from .maintain import connect_learning_nodes, prune_edges, prune_orphan_nodes
-from .merge import apply_merge, suggest_merges
+from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_node
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
@@ -495,19 +493,16 @@ def _handle_learn(graph: Graph, index: VectorIndex, embed_fn: Callable[[str], li
 
 
 def _handle_maintain(
-    graph: Graph,
-    index: VectorIndex,
+    daemon_state: "_DaemonState",
     params: dict[str, object],
     embed_fn: Callable[[str], list[float]] | None,
     state_path: str,
 ) -> tuple[dict[str, object], bool]:
-    """Handle maintenance request directly against in-memory graph/index."""
-    task_order = ["health", "decay", "prune", "merge", "connect"]
-    default_tasks = ["health", "decay", "merge", "prune"]
+    """Handle maintenance request by delegating to shared maintenance workflow."""
     raw_tasks = params.get("tasks")
 
     if raw_tasks is None:
-        requested = default_tasks
+        requested = None
     elif isinstance(raw_tasks, str):
         requested = [task.strip() for task in raw_tasks.split(",") if task.strip()]
     elif isinstance(raw_tasks, list):
@@ -515,124 +510,28 @@ def _handle_maintain(
     else:
         raise ValueError("tasks must be a list or comma-separated string")
 
-    requested_clean = [task.strip() for task in requested if task.strip()]
-    selected = [task for task in task_order if task in requested_clean]
-    unknown = [task for task in requested_clean if task not in task_order]
-
     dry_run = params.get("dry_run", False)
     if not isinstance(dry_run, bool):
         raise ValueError("dry_run must be a boolean")
 
     max_merges = _parse_int(params.get("max_merges"), "max_merges", default=5)
     prune_below = _parse_float(params.get("prune_below"), "prune_below", required=False, default=0.01)
-
-    work_graph = copy.deepcopy(graph) if dry_run else graph
-    work_index = copy.deepcopy(index) if dry_run else index
-
-    health_before = _health_payload(graph)
-    edges_before = graph.edge_count()
-    notes: list[str] = []
-    merges_proposed = 0
-    merges_applied = 0
-    pruned_edges = 0
-    pruned_nodes = 0
-    decay_applied = False
-
-    if unknown:
-        notes.append(f"Unknown tasks skipped: {', '.join(unknown)}")
-
-    if "health" in selected:
-        log_health(health_before, journal_path=_journal_path(state_path))
-
-    if "decay" in selected:
-        canonical_nodes = _node_ids_with_authority(work_graph, "canonical")
-        constitutional_nodes = _node_ids_with_authority(work_graph, "constitutional")
-
-        def source_half_life(source_id: str) -> float:
-            if source_id in canonical_nodes:
-                return 2.0
-            return 1.0
-
-        apply_decay(
-            work_graph,
-            config=DecayConfig(),
-            skip_source_ids=constitutional_nodes,
-            source_half_life_scale=source_half_life,
-        )
-        decay_applied = not dry_run
-
-    if "prune" in selected:
-        pruned_edges = prune_edges(work_graph, below=prune_below)
-        pruned_nodes = prune_orphan_nodes(work_graph)
-
-    if "merge" in selected:
-        suggestions = suggest_merges(work_graph)
-        filtered: list[tuple[str, str]] = []
-        for source_id, target_id in suggestions:
-            source_node = work_graph.get_node(source_id)
-            target_node = work_graph.get_node(target_id)
-            if _node_authority(source_node) == "constitutional" or _node_authority(target_node) == "constitutional":
-                continue
-            filtered.append((source_id, target_id))
-
-        merges_proposed = len(filtered)
-        for source_id, target_id in filtered[:max_merges]:
-            if work_graph.get_node(source_id) is None or work_graph.get_node(target_id) is None:
-                continue
-            if dry_run:
-                merges_applied += 1
-                continue
-            apply_merge(work_graph, source_id, target_id)
-            merges_applied += 1
-
-    if "connect" in selected:
-        learning_nodes = [node for node in work_graph.nodes() if node.id.startswith("learning::")]
-        if not learning_nodes:
-            notes.append("connect skipped: no learning nodes found")
-        else:
-            try:
-                connect_learning_nodes(work_graph, work_index, embed_fn=embed_fn)
-            except ValueError as exc:
-                notes.append(f"connect skipped: {exc}")
-
-    if dry_run:
-        health_after = _health_payload(work_graph)
-        return (
-            {
-                "health_before": health_before,
-                "health_after": health_after,
-                "merges_applied": merges_applied,
-                "merges_proposed": merges_proposed,
-                "decay_applied": decay_applied,
-                "pruned_edges": pruned_edges,
-                "pruned_nodes": pruned_nodes,
-                "tasks_run": selected,
-                "notes": notes + ["dry_run=True; no state write performed"],
-                "edges_before": edges_before,
-                "edges_after": work_graph.edge_count(),
-            },
-            False,
-        )
-
-    health_after = _health_payload(work_graph)
-    log_health(health_after, journal_path=_journal_path(state_path))
-
-    return (
-        {
-            "health_before": health_before,
-            "health_after": health_after,
-            "merges_applied": merges_applied,
-            "merges_proposed": merges_proposed,
-            "decay_applied": decay_applied,
-            "pruned_edges": pruned_edges,
-            "pruned_nodes": pruned_nodes,
-            "tasks_run": selected,
-            "notes": notes,
-            "edges_before": edges_before,
-            "edges_after": work_graph.edge_count(),
-        },
-        bool(selected) and not dry_run and any(task in selected for task in ("decay", "prune", "merge", "connect")),
+    report = run_maintenance(
+        state_path=state_path,
+        tasks=requested,
+        embed_fn=embed_fn,
+        llm_fn=None,
+        journal_path=_journal_path(state_path),
+        dry_run=dry_run,
+        max_merges=max_merges,
+        prune_below=prune_below,
     )
+    should_write = False
+    if not dry_run and any(task in report.tasks_run for task in ("decay", "scale", "split", "prune", "merge", "connect")):
+        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
+        should_write = True
+
+    return asdict(report), should_write
 
 
 def _handle_health(graph: Graph) -> dict[str, object]:
@@ -762,8 +661,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 elif method == "maintain":
                     payload, should_write = _handle_maintain(
-                        daemon_state.graph,
-                        daemon_state.index,
+                        daemon_state,
                         params,
                         embed_fn,
                         state_path,

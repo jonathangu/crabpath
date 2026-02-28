@@ -1256,10 +1256,13 @@ def cmd_maintain(args: argparse.Namespace) -> int:
     if state_path is None:
         raise SystemExit("--state is required for maintain")
     requested_tasks = [task.strip() for task in args.tasks.split(",") if task.strip()]
+    _, _, meta = _resolve_graph_index(args, allow_default_state=True)
+    embed_fn, _, _, _ = _resolve_embedder(args, meta)
     llm_fn, _ = _resolve_llm(args)
     report = run_maintenance(
         state_path=state_path,
         tasks=requested_tasks,
+        embed_fn=embed_fn,
         llm_fn=llm_fn,
         journal_path=_resolve_journal_path(args, allow_default_state=True),
         dry_run=args.dry_run,
