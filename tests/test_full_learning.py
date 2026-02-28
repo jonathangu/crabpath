@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from openclawbrain.full_learning import SessionTurn, dedupe_learning_events, select_feedback_windows
+from pathlib import Path
+
+from openclawbrain.full_learning import (
+    SessionTurn,
+    collect_session_files,
+    dedupe_learning_events,
+    select_feedback_windows,
+    _read_records,
+)
 
 
 def test_select_feedback_windows_picks_likely_feedback_regions() -> None:
@@ -72,3 +80,37 @@ def test_dedupe_learning_events_is_idempotent() -> None:
     assert skipped == 2
     assert len(appended) == 1
     assert appended[0]["type"] == "TEACHING"
+
+
+def test_read_records_missing_file_returns_empty(tmp_path: Path) -> None:
+    """_read_records returns empty list for a missing file."""
+    missing = tmp_path / "gone.jsonl"
+    assert _read_records(missing) == []
+
+
+def test_read_records_broken_symlink_returns_empty(tmp_path: Path) -> None:
+    """_read_records returns empty list for a broken symlink."""
+    target = tmp_path / "real.jsonl"
+    link = tmp_path / "broken.jsonl"
+    link.symlink_to(target)  # target does not exist → broken symlink
+    assert _read_records(link) == []
+
+
+def test_collect_session_files_skips_missing_paths(tmp_path: Path) -> None:
+    """collect_session_files skips missing files and keeps valid ones."""
+    valid = tmp_path / "good.jsonl"
+    valid.write_text('{"role":"user","content":"hi"}\n', encoding="utf-8")
+    missing = tmp_path / "gone.jsonl"
+    result = collect_session_files([str(valid), str(missing)])
+    assert result == [valid]
+
+
+def test_collect_session_files_broken_symlink_skipped(tmp_path: Path) -> None:
+    """collect_session_files skips broken symlinks gracefully."""
+    valid = tmp_path / "good.jsonl"
+    valid.write_text('{"role":"user","content":"hi"}\n', encoding="utf-8")
+    target = tmp_path / "real.jsonl"
+    link = tmp_path / "broken.jsonl"
+    link.symlink_to(target)
+    result = collect_session_files([str(valid), str(link)])
+    assert result == [valid]

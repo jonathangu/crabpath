@@ -1,5 +1,13 @@
 ## Unreleased
 
+### Self-healing replay for rotated/missing session files
+- `replay.py`: `extract_queries`, `extract_query_records`, and `extract_interactions` now return empty lists (with a stderr warning) when a session file is missing or a broken symlink, instead of raising `SystemExit`. This lets long full-learning rebuilds survive rotated or deleted session files.
+- `full_learning.py`: `_read_records` and `collect_session_files` apply the same self-healing behavior — missing or broken-symlink paths are skipped with a warning. If *all* paths are invalid, `collect_session_files` still exits with a helpful message.
+- Added tests for missing-file and broken-symlink cases in both modules.
+
+### Bug fix: maintain.py `apply_connections` import
+- **CRITICAL**: `maintain.py` was missing `from .connect import apply_connections`, causing a `NameError` crash whenever `connect_learning_nodes` ran during full-learning harvest. Added the import and a regression test.
+
 ### Best brain by default
 - `replay` now defaults to full-learning (fast-learning + harvest). Use `--edges-only` for cheap edge-only replay.
 - `init` now defaults to `--embedder auto --llm auto`, which tries OpenAI and falls back to hash/none gracefully.

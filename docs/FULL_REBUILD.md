@@ -317,6 +317,16 @@ ps aux | grep "openclawbrain init"
 
 LLM splitting can be slow (~30 min for 200 files). Run with `nohup` to survive disconnects.
 
+### Session files rotated or deleted mid-rebuild
+
+Replay and full-learning now **skip** missing or broken-symlink session files with a stderr warning instead of aborting. You will see messages like:
+
+```
+warning: skipping missing session file: /path/to/rotated.jsonl
+```
+
+This is safe — the pipeline continues with the remaining files. If *all* paths are invalid, it exits with a clear error.
+
 ### Replay loads 0 interactions
 
 Session files might be in a different format. Check:

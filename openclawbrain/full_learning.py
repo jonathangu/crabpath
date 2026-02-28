@@ -115,12 +115,23 @@ def _resolve_text(payload: object) -> str | None:
 
 
 def _read_records(path: Path, start_line: int = 0) -> list[tuple[int, dict]]:
-    """Read JSONL records from a session file."""
+    """Read JSONL records from a session file.
+
+    Returns an empty list (with a stderr warning) when the file is missing
+    or is a broken symlink, so that callers can continue processing the
+    remaining session files instead of aborting.
+    """
     if not path.exists():
-        raise SystemExit(f"invalid sessions path: {path}")
+        print(f"warning: skipping missing session file: {path}", file=sys.stderr)
+        return []
 
     records: list[tuple[int, dict]] = []
-    for idx, raw in enumerate(path.expanduser().open("r", encoding="utf-8"), start=1):
+    try:
+        fh = path.expanduser().open("r", encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"warning: skipping unreadable session file: {path} ({exc})", file=sys.stderr)
+        return []
+    for idx, raw in enumerate(fh, start=1):
         if idx <= start_line:
             continue
         raw = raw.strip()
@@ -150,8 +161,15 @@ def _extract_ts(payload: dict) -> float | None:
 
 
 def collect_session_files(session_paths: str | Path | list[str] | list[Path]) -> list[Path]:
-    """Resolve session paths and return JSONL files."""
+    """Resolve session paths and return JSONL files.
+
+    Missing or broken-symlink files are skipped with a stderr warning so
+    that long rebuilds survive rotated/deleted session files.  If *no*
+    files remain after filtering, the function exits with a helpful
+    message.
+    """
     paths: list[Path] = []
+    skipped: list[Path] = []
     if isinstance(session_paths, (str, Path)):
         session_paths = [session_paths]
     for item in session_paths:
@@ -164,7 +182,13 @@ def collect_session_files(session_paths: str | Path | list[str] | list[Path]) ->
         if src.is_file():
             paths.append(src)
             continue
-        raise SystemExit(f"invalid sessions path: {src}")
+        # Missing or broken symlink — warn and skip.
+        print(f"warning: skipping missing session path: {src}", file=sys.stderr)
+        skipped.append(src)
+    if not paths and skipped:
+        raise SystemExit(
+            f"no valid session files found ({len(skipped)} missing/broken path(s) skipped)"
+        )
     return paths
 
 

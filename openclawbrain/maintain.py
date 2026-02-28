@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .connect import apply_connections
 from .decay import DecayConfig, apply_decay
 from .graph import Graph, Node
 from .index import VectorIndex

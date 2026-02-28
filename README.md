@@ -592,6 +592,9 @@ openclawbrain replay \
 `--decay-interval N` controls how many learning steps occur between each decay
 pass (default 10).
 
+Missing or rotated session files are skipped with a warning instead of aborting
+the run, so long rebuilds survive file rotation.
+
 The fast-learning and harvest pipeline is sidecar-only to the core files:
 `learning_events.jsonl` is append-only, and `replay` updates `state.json` via the same graph mutation model as existing injection commands.
 

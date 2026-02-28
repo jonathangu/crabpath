@@ -200,12 +200,19 @@ def extract_interactions(
     """
     path = Path(session_path).expanduser()
     if not path.exists():
-        raise SystemExit(f"missing sessions file: {path}")
+        print(f"warning: skipping missing session file: {path}", file=sys.stderr)
+        return []
 
     interactions: list[dict[str, object]] = []
     last_user_index: int | None = None
 
-    for raw in path.open("r", encoding="utf-8"):
+    try:
+        fh = path.open("r", encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"warning: skipping unreadable session file: {path} ({exc})", file=sys.stderr)
+        return []
+
+    for raw in fh:
         raw = raw.strip()
         if not raw:
             continue
@@ -289,10 +296,16 @@ def extract_queries(session_path: str | Path, since_ts: float | None = None) -> 
     """
     path = Path(session_path).expanduser()
     if not path.exists():
-        raise SystemExit(f"missing sessions file: {path}")
+        print(f"warning: skipping missing session file: {path}", file=sys.stderr)
+        return []
 
     queries: list[str] = []
-    with path.open("r", encoding="utf-8") as handle:
+    try:
+        handle = path.open("r", encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"warning: skipping unreadable session file: {path} ({exc})", file=sys.stderr)
+        return []
+    with handle:
         for raw in handle:
             query, query_ts = _extract_query_record(raw.strip())
             if query is None:
@@ -311,10 +324,16 @@ def extract_query_records(
     """Extract (query, timestamp) pairs from session log."""
     path = Path(session_path).expanduser()
     if not path.exists():
-        raise SystemExit(f"missing sessions file: {path}")
+        print(f"warning: skipping missing session file: {path}", file=sys.stderr)
+        return []
 
     records: list[tuple[str, float | None]] = []
-    with path.open("r", encoding="utf-8") as handle:
+    try:
+        handle = path.open("r", encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"warning: skipping unreadable session file: {path} ({exc})", file=sys.stderr)
+        return []
+    with handle:
         for raw in handle:
             raw = raw.strip()
             if not raw:

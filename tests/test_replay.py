@@ -250,6 +250,34 @@ def test_replay_queries_auto_scores_if_assistant_response_matches() -> None:
     assert boosted._edges["a"]["b"].weight > base._edges["a"]["b"].weight
 
 
+def test_extract_queries_missing_file_returns_empty(tmp_path: Path) -> None:
+    """Missing session file returns empty list instead of crashing."""
+    missing = tmp_path / "does_not_exist.jsonl"
+    assert extract_queries(missing) == []
+
+
+def test_extract_interactions_missing_file_returns_empty(tmp_path: Path) -> None:
+    """Missing session file returns empty list instead of crashing."""
+    missing = tmp_path / "gone.jsonl"
+    assert extract_interactions(missing) == []
+
+
+def test_extract_queries_broken_symlink_returns_empty(tmp_path: Path) -> None:
+    """Broken symlink is skipped gracefully."""
+    target = tmp_path / "real.jsonl"
+    link = tmp_path / "broken.jsonl"
+    link.symlink_to(target)  # target does not exist → broken symlink
+    assert extract_queries(link) == []
+
+
+def test_extract_interactions_broken_symlink_returns_empty(tmp_path: Path) -> None:
+    """Broken symlink is skipped gracefully."""
+    target = tmp_path / "real.jsonl"
+    link = tmp_path / "broken.jsonl"
+    link.symlink_to(target)
+    assert extract_interactions(link) == []
+
+
 def test_decay_during_replay_reduces_unrelated_edge() -> None:
     """Decay during replay weakens edges not reinforced by replayed queries."""
     # Reset the global call counter so decay_interval triggers deterministically.

@@ -5,7 +5,7 @@ import json
 from openclawbrain.decay import DecayConfig
 from openclawbrain.graph import Edge, Graph, Node
 from openclawbrain.index import VectorIndex
-from openclawbrain.maintain import MaintenanceReport, prune_edges, prune_orphan_nodes, run_maintenance
+from openclawbrain.maintain import MaintenanceReport, connect_learning_nodes, prune_edges, prune_orphan_nodes, run_maintenance
 from openclawbrain.cli import main
 from openclawbrain.store import save_state
 
@@ -288,3 +288,45 @@ def test_maintenance_report_tracks_before_and_after_counts(tmp_path) -> None:
     assert "dormant_pct" in report.health_after
     assert report.pruned_edges >= 1
     assert isinstance(report.__dict__, dict)
+
+
+def test_connect_task_does_not_raise_name_error(tmp_path) -> None:
+    """Regression: connect task must not raise NameError for apply_connections."""
+    graph = Graph()
+    graph.add_node(Node("learning::correction::abc", "ANAB is not Adage", metadata={"file": "learning.md"}))
+    graph.add_node(Node("ws_a", "Adage financial data", metadata={"file": "workspace.md"}))
+    graph.add_edge(Edge("ws_a", "learning::correction::abc", 0.1))
+
+    dummy_vec = [1.0, 0.0]
+    index = VectorIndex()
+    index.upsert("learning::correction::abc", dummy_vec)
+    index.upsert("ws_a", dummy_vec)
+
+    state_path = tmp_path / "state.json"
+    save_state(graph=graph, index=index, path=str(state_path), meta={"embedder_name": "hash-v1", "embedder_dim": 2})
+
+    def dummy_embed(text: str) -> list[float]:
+        return [1.0, 0.0]
+
+    report = run_maintenance(
+        state_path=str(state_path),
+        tasks=["connect"],
+        embed_fn=dummy_embed,
+    )
+
+    assert "connect" in report.tasks_run
+
+
+def test_connect_learning_nodes_links_learning_to_workspace() -> None:
+    """connect_learning_nodes creates edges between learning and workspace nodes."""
+    graph = Graph()
+    graph.add_node(Node("learning::teaching::xyz", "always use UTC timestamps", metadata={"file": "learning.md"}))
+    graph.add_node(Node("ws_time", "timezone handling module", metadata={"file": "time.md"}))
+
+    vec = [0.9, 0.1]
+    index = VectorIndex()
+    index.upsert("learning::teaching::xyz", vec)
+    index.upsert("ws_time", vec)
+
+    added = connect_learning_nodes(graph, index, top_k=1, min_sim=0.0)
+    assert added >= 1
