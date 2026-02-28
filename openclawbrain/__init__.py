@@ -69,4 +69,4 @@ __all__ = [
     "replay_queries",
 ]
 
-__version__ = "12.1.1"
+__version__ = "12.2.0"
