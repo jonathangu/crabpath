@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -491,8 +492,11 @@ def replay_queries(
     total_queries = len(normalized_queries)
     latest_ts = None
 
-    for query, query_ts, query_response, _ in normalized_queries:
+    for idx, (query, query_ts, query_response, _) in enumerate(normalized_queries, start=1):
         stats["queries_replayed"] += 1
+
+        if idx > 0 and idx % 100 == 0:
+            print(f"Replayed {idx}/{total_queries} queries...", file=sys.stderr)
 
         seeds = seed_fn(graph, query)
         result = traverse(graph=graph, seeds=seeds, config=cfg)

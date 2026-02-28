@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import fnmatch
 import os
+import sys
 import json
 import re
 from collections.abc import Callable
@@ -477,11 +478,13 @@ def split_workspace(
     def _report(relative_path: str, mode: str) -> None:
         """ report."""
         nonlocal split_count
-        if split_progress is None:
-            return
         with split_lock:
             current = split_count + 1
             split_count = current
+        message = f"Splitting {current}/{total_files}: {relative_path}"
+        if split_progress is None:
+            print(message, file=sys.stderr)
+            return
         split_progress(current, total_files, relative_path, mode)
 
     llm_requests: list[dict] = []
@@ -515,7 +518,11 @@ def split_workspace(
         )
         response_by_id = {str(item["id"]): str(item.get("response", "")) for item in responses}
 
+    llm_total = len(llm_request_map)
+    llm_index = 0
     for rel, (idx, source_rel, text) in llm_request_map.items():
+        llm_index += 1
+        print(f"LLM splitting {llm_index}/{llm_total}: {rel}", file=sys.stderr)
         response = response_by_id.get(rel, "")
         chunks = _extract_sections(response) if response else []
         mode = "llm" if chunks else "heuristic"

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import json
 import os
+from datetime import datetime, timezone
 import sys
 import tempfile
 import shutil
@@ -188,6 +190,10 @@ def _build_parser() -> argparse.ArgumentParser:
     j.add_argument("--stats", action="store_true")
     j.add_argument("--json", action="store_true")
 
+    status_p = sub.add_parser("status")
+    status_p.add_argument("--state", required=True)
+    status_p.add_argument("--json", action="store_true")
+
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--state", required=True)
 
@@ -312,6 +318,84 @@ def _load_query_vector_from_stdin() -> list[float]:
     if not isinstance(payload, list):
         raise SystemExit("query vector stdin payload must be a JSON array")
     return [float(v) for v in payload]
+
+
+def _default_daemon_socket_path(state_path: str) -> str:
+    """Resolve the default daemon socket path for a state file."""
+    agent = Path(state_path).expanduser().parent.name or "main"
+    return str(Path.home() / ".openclawbrain" / agent / "daemon.sock")
+
+
+def _daemon_socket_status(state_path: str) -> tuple[bool, str]:
+    """Check whether the daemon socket is accepting connections."""
+    socket_path = _default_daemon_socket_path(state_path)
+    test_path = Path(socket_path)
+    if not test_path.exists():
+        return False, str(test_path)
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(0.25)
+    try:
+        sock.connect(str(test_path))
+        return True, str(test_path)
+    except OSError:
+        return False, str(test_path)
+    finally:
+        sock.close()
+
+
+def _last_replayed_display(value: object) -> str:
+    """Format last replay timestamp."""
+    if not isinstance(value, (int, float)):
+        return "never"
+    return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+
+
+def _status_payload(state_path: str, meta: dict[str, object], graph: Graph) -> dict[str, object]:
+    """Build status payload details."""
+    health = measure_health(graph)
+    inhibitory_edges = 0
+    for source_edges in graph._edges.values():
+        for edge in source_edges.values():
+            if edge.kind == "inhibitory":
+                inhibitory_edges += 1
+
+    constitutional_nodes = sum(
+        1 for node in graph.nodes() if node.metadata.get("authority") == "constitutional"
+    )
+    canonical_nodes = sum(1 for node in graph.nodes() if node.metadata.get("authority") == "canonical")
+
+    daemon_running, daemon_socket = _daemon_socket_status(state_path)
+
+    decay_half_life = meta.get("decay_half_life")
+    if isinstance(decay_half_life, int):
+        decay_value = decay_half_life
+    elif isinstance(decay_half_life, float):
+        decay_value = round(decay_half_life, 2)
+    else:
+        decay_value = "n/a"
+
+    payload = {
+        "version": __version__,
+        "state": state_path,
+        "nodes": graph.node_count(),
+        "edges": graph.edge_count(),
+        "reflex_pct": health.reflex_pct * 100,
+        "habitual_pct": health.habitual_pct * 100,
+        "dormant_pct": health.dormant_pct * 100,
+        "inhibitory_edges": inhibitory_edges,
+        "constitutional_nodes": constitutional_nodes,
+        "canonical_nodes": canonical_nodes,
+        "decay_half_life": decay_value,
+        "last_replayed": _last_replayed_display(meta.get("last_replayed_ts")),
+        "embedder_name": meta.get("embedder_name", "unknown"),
+        "embedder_dim": meta.get("embedder_dim", "unknown"),
+        "daemon_running": daemon_running,
+        "daemon_socket_path": daemon_socket,
+    }
+    payload["daemon_running"] = daemon_running
+    payload["daemon_socket"] = daemon_socket
+    return payload
 
 
 def _load_session_queries(
@@ -595,16 +679,11 @@ def cmd_init(args: argparse.Namespace) -> int:
             if node.metadata.get("type") in {"CORRECTION", "TEACHING", "DIRECTIVE"}
         ]
 
+    print("Phase 1/4: Splitting workspace...", file=sys.stderr)
     llm_fn, llm_batch_fn = _resolve_llm(args)
     graph, texts = split_workspace(args.workspace, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
-    if args.sessions is not None:
-        interactions = _load_session_interactions(args.sessions, since_ts=None)
-        print(
-            f"Loaded {len(interactions)} interactions from session files",
-            file=sys.stderr,
-        )
-        replay_queries(graph=graph, queries=interactions)
 
+    print("Phase 2/4: Embedding texts...", file=sys.stderr)
     embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, prior_meta)
     print(
         f"Embedding {len(texts)} texts ({embedder_name}, dim={embedder_dim})",
@@ -614,6 +693,16 @@ def cmd_init(args: argparse.Namespace) -> int:
     index = VectorIndex()
     for node_id, vector in index_vectors.items():
         index.upsert(node_id, vector)
+
+    replay_stats: dict[str, object] = {}
+    if args.sessions is not None:
+        print("Phase 3/4: Replaying sessions...", file=sys.stderr)
+        interactions = _load_session_interactions(args.sessions, since_ts=None)
+        print(
+            f"Loaded {len(interactions)} interactions from session files",
+            file=sys.stderr,
+        )
+        replay_stats = replay_queries(graph=graph, queries=interactions)
 
     if preserved_nodes:
         connect_min_sim = 0.0 if embedder_name == HashEmbedder().name else 0.3
@@ -632,9 +721,15 @@ def cmd_init(args: argparse.Namespace) -> int:
             )
         print(f"Preserved {len(preserved_nodes)} injected nodes from previous state")
 
+    print("Phase 4/4: Saving state...", file=sys.stderr)
     graph_path = output_dir / "graph.json"
     text_path = output_dir / "texts.json"
     state_meta = _state_meta(prior_meta, fallback_name=embedder_name, fallback_dim=embedder_dim)
+    if replay_stats.get("last_replayed_ts") is not None:
+        state_meta["last_replayed_ts"] = replay_stats["last_replayed_ts"]
+    else:
+        state_meta.pop("last_replayed_ts", None)
+
     _write_graph(graph_path, graph, include_meta=True, meta=state_meta)
     save_state(
         graph=graph,
@@ -1035,6 +1130,37 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """cmd status."""
+    state_path = _resolve_state_path(args.state, allow_default=False)
+    if state_path is None:
+        raise SystemExit("--state is required")
+
+    graph, _, meta = load_state(state_path)
+    payload = _status_payload(state_path, meta, graph)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(
+        "\n".join(
+            [
+                f"OpenClawBrain v{payload['version']}",
+                f"State: {payload['state']}",
+                f"Nodes: {payload['nodes']} | Edges: {payload['edges']}",
+                f"Reflex: {payload['reflex_pct']:.1f}% | Habitual: {payload['habitual_pct']:.1f}% | Dormant: {payload['dormant_pct']:.1f}%",
+                f"Inhibitory edges: {payload['inhibitory_edges']}",
+                f"Constitutional: {payload['constitutional_nodes']} | Canonical: {payload['canonical_nodes']}",
+                f"Decay half-life: {payload['decay_half_life']} (adaptive)",
+                f"Last replayed: {payload['last_replayed']}",
+                f"Embedder: {payload['embedder_name']} ({payload['embedder_dim']}-dim)",
+                f"Daemon: {'running' if payload['daemon_running'] else 'not running'} {payload['daemon_socket']}",
+            ]
+        )
+    )
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """cmd doctor."""
     state_path = _resolve_state_path(args.state, allow_default=True)
@@ -1388,6 +1514,7 @@ def main(argv: list[str] | None = None) -> int:
         "daemon": cmd_daemon,
         "inject": cmd_inject,
         "replay": cmd_replay,
+        "status": cmd_status,
         "self-learn": cmd_self_correct,
         "self-correct": cmd_self_correct,
         "health": cmd_health,
