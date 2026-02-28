@@ -187,6 +187,8 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--sessions", nargs="+", required=True)
     r.add_argument("--fast-learning", action="store_true")
     r.add_argument("--full-learning", action="store_true")
+    r.add_argument("--decay-during-replay", action="store_true")
+    r.add_argument("--decay-interval", type=int, default=10)
     r.add_argument("--workers", type=int, default=4)
     r.add_argument("--window-radius", type=int, default=8)
     r.add_argument("--max-windows", type=int, default=6)
@@ -1163,18 +1165,22 @@ def cmd_replay(args: argparse.Namespace) -> int:
         f"Loaded {len(interactions)} interactions from session files",
         file=sys.stderr,
     )
+    auto_decay = bool(args.decay_during_replay) or run_full
+    decay_interval = max(1, args.decay_interval)
     stats = replay_queries(
         graph=graph,
         queries=interactions,
         verbose=not args.json,
         since_ts=replay_since_ts,
+        auto_decay=auto_decay,
+        decay_interval=decay_interval,
     )
 
     harvest_stats: dict[str, object] | None = None
     if run_full:
         harvest_stats = run_harvest(
             state_path=str(state_path),
-            tasks=["split", "merge", "prune", "connect", "scale"],
+            tasks=["decay", "scale", "split", "merge", "prune", "connect"],
             backup=bool(args.backup),
         )
         graph, index, meta = load_state(str(state_path))

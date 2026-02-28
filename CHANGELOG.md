@@ -4,13 +4,16 @@
 
 - Added `openclawbrain replay --fast-learning` for LLM transcript mining + injection from session logs.
 - Added `openclawbrain replay --full-learning` to run replay + fast-learning + slow maintenance.
+- `--full-learning` now enables decay during replay by default and runs harvest with decay task (`decay,scale,split,merge,prune,connect`).
+- Added `--decay-during-replay` flag to enable periodic decay during any replay run (not just full-learning).
+- Added `--decay-interval N` flag (default 10) to control how often decay fires during replay.
 - Added resumability options: `--resume`, `--checkpoint`, and `--ignore-checkpoint`.
 - Added learning-context knobs: `--workers`, `--window-radius`, `--max-windows`, `--hard-max-turns`.
 - Added explicit `--backup` control for replay-backed mutation persistence.
 - Added new `openclawbrain harvest` command to consume `learning_events.jsonl` and apply `split/merge/prune/connect/scale`.
 - Added dedupe/idempotent behavior for event log ingestion keyed by `(type, sha256(content), session_pointer)`.
 - Documented sidecar full-learning workflow and updated `docs/setup-guide.md`, `docs/openclaw-integration.md`, `docs/FULL_REBUILD.md`.
-- Added tests for window selection, dedupe/idempotency, and replay + fast-learning injection behavior.
+- Added tests for window selection, dedupe/idempotency, replay + fast-learning injection behavior, and decay-during-replay edge reduction.
 
 ## v12.2.1 (2026-02-27)
 

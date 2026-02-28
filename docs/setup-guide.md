@@ -91,6 +91,18 @@ The harvest path is intentionally sidecar: it consumes OpenClaw replay artifacts
 
 For production automation, run `harvest` after `replay --fast-learning` with a bounded schedule (daily/hourly depending on session volume).
 
+## Decay during replay
+
+`--full-learning` automatically enables decay during the replay pass. Unrelated edges weaken while actively traversed paths are reinforced. The harvest step also includes the `decay` task (`decay,scale,split,merge,prune,connect`).
+
+To enable decay during a plain replay (without full-learning), pass `--decay-during-replay`:
+
+```bash
+openclawbrain replay --state ./brain/state.json --sessions ./sessions/ --decay-during-replay --decay-interval 10
+```
+
+`--decay-interval N` (default 10) controls how many learning steps occur between each decay pass.
+
 ## Performance knobs
 
 - `--workers`: parallelize LLM window extraction (higher = faster, bounded by rate limits)

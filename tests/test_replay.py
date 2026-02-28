@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from openclawbrain.cli import main
 from openclawbrain.graph import Edge, Graph, Node
+from openclawbrain import learn as _learn_mod
 from openclawbrain.replay import extract_interactions, extract_queries, extract_queries_from_dir, replay_queries
 from openclawbrain.traverse import TraversalConfig
 
@@ -247,3 +248,32 @@ def test_replay_queries_auto_scores_if_assistant_response_matches() -> None:
         queries=[{"query": "alpha", "response": "alpha content answered", "tool_calls": []}],
     )
     assert boosted._edges["a"]["b"].weight > base._edges["a"]["b"].weight
+
+
+def test_decay_during_replay_reduces_unrelated_edge() -> None:
+    """Decay during replay weakens edges not reinforced by replayed queries."""
+    # Reset the global call counter so decay_interval triggers deterministically.
+    _learn_mod._apply_outcome_call_count = 0
+
+    graph = Graph()
+    graph.add_node(Node("x", "xray topic", metadata={"file": "x.md"}))
+    graph.add_node(Node("y", "yankee topic", metadata={"file": "x.md"}))
+    graph.add_node(Node("z", "zulu unrelated", metadata={"file": "z.md"}))
+    # x→y is the traversed edge (queries target "xray")
+    graph.add_edge(Edge("x", "y", 0.5))
+    # y→z is unrelated — never reinforced, should decay
+    graph.add_edge(Edge("y", "z", 0.5))
+
+    initial_yz = graph._edges["y"]["z"].weight
+
+    replay_queries(
+        graph=graph,
+        queries=["xray"] * 20,
+        config=TraversalConfig(max_hops=1),
+        auto_decay=True,
+        decay_interval=1,
+    )
+
+    assert graph._edges["y"]["z"].weight < initial_yz, (
+        "unrelated edge y→z should have decayed"
+    )

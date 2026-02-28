@@ -359,9 +359,21 @@ openclawbrain replay \
 
 This does:
 
-- replay query edges from session history
+- replay query edges from session history (with decay enabled by default)
 - LLM transcript mining into `learning::` nodes (`--fast-learning` behavior)
-- slow-learning maintenance pass (`harvest`) with split/merge/prune/connect/scale
+- slow-learning maintenance pass (`harvest`) with decay/scale/split/merge/prune/connect
+
+To enable decay during a plain replay without full-learning, use `--decay-during-replay`:
+
+```bash
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --sessions /path/to/sessions \
+  --decay-during-replay \
+  --decay-interval 10
+```
+
+`--decay-interval N` (default 10) controls how many learning steps between each decay pass.
 
 `learning_events.jsonl` is an append-only sidecar under the brain directory used by harvest:
 

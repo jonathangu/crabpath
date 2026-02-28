@@ -344,7 +344,7 @@ See `examples/openai_embedder/` for a complete example.
 | `compact` | Compact old daily notes into graph nodes |
 | `sync` | Incremental re-embed after file changes |
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
-| `replay` | Replay session queries, optionally with `--fast-learning` or `--full-learning` |
+| `replay` | Replay session queries, optionally with `--fast-learning`, `--full-learning`, `--decay-during-replay` |
 | `harvest` | Apply slow-learning pass from `learning_events.jsonl` to current graph |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
@@ -571,6 +571,23 @@ openclawbrain replay \
   --sessions ./sessions/ \
   --full-learning
 ```
+
+`--full-learning` enables decay during replay by default and runs the harvest
+pass with decay included (`decay,scale,split,merge,prune,connect`), so
+unrelated edges weaken while active paths are reinforced.
+
+To enable decay during a plain replay (without full-learning):
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --decay-during-replay \
+  --decay-interval 10
+```
+
+`--decay-interval N` controls how many learning steps occur between each decay
+pass (default 10).
 
 The fast-learning and harvest pipeline is sidecar-only to the core files:
 `learning_events.jsonl` is append-only, and `replay` updates `state.json` via the same graph mutation model as existing injection commands.

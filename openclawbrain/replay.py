@@ -437,6 +437,8 @@ def replay_queries(
     outcome_fn: Callable[[str], float] | None = None,
     verbose: bool = False,
     since_ts: float | None = None,
+    auto_decay: bool = False,
+    decay_interval: int = 10,
 ) -> dict:
     """Replay historical queries to warm up graph edges.
 
@@ -445,6 +447,9 @@ def replay_queries(
     2. Traverse the graph
     3. Apply outcome weighting (positive, negative, or custom)
     4. Apply Hebbian co-firing for co-selected nodes
+
+    When ``auto_decay`` is True, decay is applied every ``decay_interval``
+    learning steps, causing unrelated edges to weaken over time.
     """
     cfg = config or TraversalConfig()
     seed_fn = keyword_seed_fn or default_keyword_seed_fn
@@ -517,7 +522,14 @@ def replay_queries(
         query_outcome = _auto_score_query_outcome(query_outcome, query_response, result.fired, graph)
 
         fired_nodes = [result.steps[0].from_node, *[step.to_node for step in result.steps]] if result.steps else result.fired
-        apply_outcome(graph=graph, fired_nodes=fired_nodes, outcome=query_outcome, config=LearningConfig())
+        apply_outcome(
+            graph=graph,
+            fired_nodes=fired_nodes,
+            outcome=query_outcome,
+            config=LearningConfig(),
+            auto_decay=auto_decay,
+            decay_interval=decay_interval,
+        )
 
         after_weights = _snapshot_edges(graph)
         after_cross_edges = _cross_file_edges(graph)
