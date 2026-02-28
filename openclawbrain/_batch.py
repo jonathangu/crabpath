@@ -13,7 +13,12 @@ def batch_or_single(
 ) -> list[dict]:
     """Execute LLM requests using a batch callback when available, otherwise parallel single calls."""
     if llm_batch_fn is not None:
-        return llm_batch_fn(requests)
+        # Prefer an explicit batch implementation when provided.
+        # If it supports concurrency, pass max_workers.
+        try:
+            return llm_batch_fn(requests, max_workers=max_workers)  # type: ignore[misc]
+        except TypeError:
+            return llm_batch_fn(requests)
     if llm_fn is None:
         raise ValueError("either llm_fn or llm_batch_fn must be provided")
     if not requests:

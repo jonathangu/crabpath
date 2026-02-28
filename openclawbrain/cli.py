@@ -85,6 +85,9 @@ def _build_parser() -> argparse.ArgumentParser:
     i.add_argument("--sessions")
     i.add_argument("--embedder", choices=["hash", "openai", "auto"], default="auto")
     i.add_argument("--llm", choices=["none", "openai", "auto"], default="auto")
+    # LLM-splitting controls (default: use LLM only for larger/complex files)
+    i.add_argument("--llm-split-min-chars", type=int, default=20000)
+    i.add_argument("--llm-split-mode", choices=["auto", "all", "off"], default="auto")
     i.add_argument("--json", action="store_true")
 
     q = sub.add_parser("query")
@@ -742,7 +745,29 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print("Phase 1/4: Splitting workspace...", file=sys.stderr)
     llm_fn, llm_batch_fn = _resolve_llm(args)
-    graph, texts = split_workspace(args.workspace, llm_fn=llm_fn, llm_batch_fn=llm_batch_fn)
+
+    def _should_use_llm(rel: str, text: str) -> bool:
+        mode = getattr(args, "llm_split_mode", "auto")
+        if mode == "off":
+            return False
+        if mode == "all":
+            return True
+        # auto: only use LLM for larger/complex files
+        min_chars = int(getattr(args, "llm_split_min_chars", 20000) or 20000)
+        if len(text) >= min_chars:
+            return True
+        # Also use LLM for markdown/docs that likely benefit even if smaller
+        lower = rel.lower()
+        if lower.endswith(('.md', '.rst')) and ('docs/' in lower or lower.endswith('agents.md') or lower.endswith('tools.md')):
+            return True
+        return False
+
+    graph, texts = split_workspace(
+        args.workspace,
+        llm_fn=llm_fn,
+        llm_batch_fn=llm_batch_fn,
+        should_use_llm_for_file=_should_use_llm,
+    )
 
     print("Phase 2/4: Embedding texts...", file=sys.stderr)
     embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, prior_meta)
