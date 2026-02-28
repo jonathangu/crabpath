@@ -383,7 +383,9 @@ def run_maintenance(
 
                 chunks: list[str] = []
                 if llm_fn is not None:
-                    response = llm_fn(SPLIT_PROMPT, candidate_node.content)
+                    # Truncate for LLM — 8K chars is enough to identify topic boundaries
+                    content_for_llm = candidate_node.content[:8000] if len(candidate_node.content) > 8000 else candidate_node.content
+                    response = llm_fn(SPLIT_PROMPT, content_for_llm)
                     chunks = _extract_chunks(response)
                 if not chunks:
                     chunks = _paragraph_chunks(candidate_node.content)

@@ -264,8 +264,24 @@ class SocketDaemonServer:
         self._write_pid()
         await self._start_daemon()
 
+        # Stale socket cleanup: test if another daemon is alive
         if self.socket_path.exists():
-            self.socket_path.unlink(missing_ok=True)
+            import socket as _socket
+            test_sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            try:
+                test_sock.connect(str(self.socket_path))
+                test_sock.close()
+                self._logger.error("another daemon is already running on %s", self.socket_path)
+                raise SystemExit(f"daemon already running on {self.socket_path}")
+            except (ConnectionRefusedError, FileNotFoundError, OSError):
+                # Stale socket — clean it up
+                self._logger.info("removing stale socket %s", self.socket_path)
+                self.socket_path.unlink(missing_ok=True)
+            finally:
+                try:
+                    test_sock.close()
+                except OSError:
+                    pass
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._server = await asyncio.start_unix_server(self._handle_client, path=str(self.socket_path))

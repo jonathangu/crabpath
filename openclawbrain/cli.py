@@ -122,6 +122,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-merges", type=int, default=5)
     p.add_argument("--prune-below", type=float, default=0.01)
     p.add_argument("--llm", choices=["none", "openai"], default="none")
+    p.add_argument("--embedder", choices=["hash", "openai"], default=None)
     p.add_argument("--json", action="store_true")
 
     z = sub.add_parser("compact")

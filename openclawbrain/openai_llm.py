@@ -6,7 +6,7 @@ import os
 import sys
 
 
-_OPENAI_TIMEOUT_SECONDS = 30
+_OPENAI_TIMEOUT_SECONDS = 60
 
 _client = None
 
