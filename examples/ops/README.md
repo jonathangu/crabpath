@@ -7,6 +7,7 @@
 - `compact_notes.py`: compact old daily notes into teaching summaries before graph updates
 - `replay_last_days.sh`: full-learning replay over session files modified in the last N days, with safe checkpoint defaults for long runs
 - `cutover_then_background_full_learning.sh`: fast-learning cutover first, then background full-learning replay via `nohup`
+- `rebuild_then_cutover.sh`: rebuild into a new brain directory, verify, then atomic cutover with launchd-aware stop/start
 
 By default, examples use OpenAI callbacks as the production path:
 
@@ -62,4 +63,11 @@ examples/ops/cutover_then_background_full_learning.sh \
   --persist-state-every-seconds 300
 ```
 
-Both scripts run with `set -euo pipefail` and do not print secrets.
+No-drama rebuild then cutover:
+
+```bash
+examples/ops/rebuild_then_cutover.sh main ~/.openclaw/workspace \
+  ~/.openclaw/agents/main/sessions
+```
+
+All shell scripts run with `set -euo pipefail` and do not print secrets.

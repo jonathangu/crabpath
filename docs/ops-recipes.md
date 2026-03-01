@@ -39,6 +39,41 @@ openclawbrain replay \
 
 `examples/ops/cutover_then_background_full_learning.sh` automates this sequence.
 
+## No-drama rebuild + cutover (single-writer safe)
+
+Use this when you need a full rebuild/replay without stopping the currently serving daemon during the rebuild itself.
+
+Why:
+- Rebuild/replay writes `state.json`.
+- If rebuild and daemon both write the same LIVE state, writes can clobber/split state.
+
+What this flow does:
+1. Builds and replays into a brand-new directory: `~/.openclawbrain/<agent>.rebuild.<timestamp>`.
+2. Verifies `state.json` in that new directory.
+3. Stops the agent daemon briefly only at cutover time.
+4. Atomically swaps directories (`LIVE -> .bak`, `NEW -> LIVE`) and restarts.
+
+Run:
+
+```bash
+examples/ops/rebuild_then_cutover.sh <agent> <workspace_dir> <sessions_path...>
+```
+
+Example:
+
+```bash
+examples/ops/rebuild_then_cutover.sh main ~/.openclaw/workspace \
+  ~/.openclaw/agents/main/sessions \
+  ~/.openclaw/agents/main/sessions/session-2026-03-01.jsonl
+```
+
+Notes:
+- `replay --sessions` accepts one or more paths, and each path may be a sessions directory or an individual `.jsonl` file.
+- The helper script uses fast-learning (`--fast-learning --stop-after-fast-learning`) for fast, safe cutover.
+- Full-learning can be run later against LIVE during an off-peak window.
+- Tradeoff: events learned while rebuild is running are not in the NEW snapshot unless you pause learning traffic or run a small delta replay before/after cutover.
+- On systems without `launchctl`, the script skips stop/start and tells you what to do manually.
+
 ## Parallel replay
 
 For large histories, run replay in parallel workers and checkpoint frequently:
