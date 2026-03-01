@@ -25,6 +25,7 @@ from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_node
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
+from .prompt_context import build_prompt_context
 
 
 FIRED_LOG_LIMIT_PER_CHAT = 100
@@ -244,12 +245,19 @@ def _handle_query(
     params: dict[str, object],
     state_path: str,
 ) -> dict[str, object]:
+    """Handle query requests with embed + traversal timings.
+
+    Includes a deterministic `prompt_context` block suitable for prompt caching.
+    """
     """Handle query requests with embed + traversal timings."""
     query_text = params.get("query")
     if not isinstance(query_text, str) or not query_text.strip():
         raise ValueError("query must be a non-empty string")
 
     top_k = _parse_int(params.get("top_k"), "top_k", default=4)
+    max_prompt_chars = params.get("max_prompt_context_chars")
+    if not isinstance(max_prompt_chars, int):
+        max_prompt_chars = 20000
 
     total_start = time.perf_counter()
     resolved_embed = embed_fn or HashEmbedder().embed
@@ -283,9 +291,17 @@ def _handle_query(
         metadata={"chat_id": params.get("chat_id")},
     )
 
+    prompt_context = build_prompt_context(
+        graph=graph,
+        node_ids=[str(node_id) for node_id in result.fired],
+        max_chars=max_prompt_chars,
+        include_node_ids=True,
+    )
+
     return {
         "fired_nodes": result.fired,
         "context": result.context,
+        "prompt_context": prompt_context,
         "seeds": [[node_id, score] for node_id, score in seeds],
         "embed_query_ms": _ms(embed_start, embed_stop),
         "traverse_ms": _ms(traverse_start, traverse_stop),
