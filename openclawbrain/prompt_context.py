@@ -7,6 +7,12 @@ from typing import Any
 
 from .graph import Graph
 
+_AUTHORITY_PRIORITY = {
+    "constitutional": 0,
+    "canonical": 1,
+    "overlay": 2,
+}
+
 
 def _as_int(value: Any) -> int | None:
     """Best-effort conversion to integer line numbers."""
@@ -93,6 +99,25 @@ def _sort_key(graph: Graph, node_id: str) -> tuple[int, str, int, str]:
 
     start_line, _end_line = _line_bounds(node.metadata)
     return (0, path, start_line if start_line is not None else 0, node_id)
+
+
+def _node_authority(graph: Graph, node_id: str) -> str:
+    """Resolve normalized authority from node metadata."""
+    node = graph.get_node(node_id)
+    if node is None or not isinstance(node.metadata, dict):
+        return "overlay"
+    authority = node.metadata.get("authority")
+    if authority in {"constitutional", "canonical", "overlay"}:
+        return authority
+    return "overlay"
+
+
+def _ranked_sort_key(graph: Graph, node_id: str, node_scores: dict[str, float] | None) -> tuple[int, float, tuple[int, str, int, str]]:
+    """Sort key: authority first, then descending score, then source/path/line/id."""
+    authority = _node_authority(graph, node_id)
+    authority_rank = _AUTHORITY_PRIORITY.get(authority, _AUTHORITY_PRIORITY["overlay"])
+    score_rank = -float(node_scores.get(node_id, float("-inf"))) if node_scores is not None else 0.0
+    return (authority_rank, score_rank, _sort_key(graph, node_id))
 
 
 def _format_entry(
@@ -207,6 +232,96 @@ def build_prompt_context_with_stats(
         "prompt_context_dropped_node_ids": dropped_node_ids_display,
         "prompt_context_dropped_node_ids_truncated": len(dropped_node_ids) > len(dropped_node_ids_display),
         "prompt_context_dropped_count": len(dropped_node_ids),
+    }
+    return final_rendered, stats
+
+
+def build_prompt_context_ranked_with_stats(
+    graph: Graph,
+    node_ids: list[str],
+    *,
+    node_scores: dict[str, float] | None = None,
+    max_chars: int | None = 20000,
+    include_node_ids: bool = True,
+    dropped_node_ids_limit: int = 50,
+) -> tuple[str, dict[str, Any]]:
+    """Build prompt context with authority/score-aware deterministic ordering."""
+    header = "[BRAIN_CONTEXT v1]"
+    footer = "[/BRAIN_CONTEXT]"
+
+    unique_ids = sorted(set(node_ids), key=lambda item: _ranked_sort_key(graph, item, node_scores))
+    formatted_entries: list[tuple[str, str]] = []
+    for node_id in unique_ids:
+        entry = _format_entry(graph, node_id, include_node_ids=include_node_ids)
+        if entry is not None:
+            formatted_entries.append((node_id, entry))
+
+    entries = [entry for _node_id, entry in formatted_entries]
+    ordered_node_ids = [node_id for node_id, _entry in formatted_entries]
+
+    if entries:
+        body = "\n\n".join(entries)
+        rendered = f"{header}\n{body}\n{footer}"
+    else:
+        rendered = f"{header}\n{footer}"
+
+    included_node_ids: list[str] = []
+    dropped_node_ids: list[str] = []
+    trimmed = False
+
+    if max_chars is None:
+        final_rendered = rendered
+        included_node_ids = ordered_node_ids
+    elif max_chars <= 0:
+        final_rendered = ""
+        trimmed = bool(rendered)
+        dropped_node_ids = ordered_node_ids
+    elif len(rendered) <= max_chars:
+        final_rendered = rendered
+        included_node_ids = ordered_node_ids
+    else:
+        trimmed = True
+        minimum = len(header) + 1 + len(footer)
+        if max_chars <= minimum:
+            final_rendered = rendered[:max_chars]
+            dropped_node_ids = ordered_node_ids
+        else:
+            body_budget = max_chars - minimum
+            trimmed_body = ""
+            for node_id, entry in formatted_entries:
+                candidate = entry if not trimmed_body else f"{trimmed_body}\n\n{entry}"
+                if len(candidate) <= body_budget:
+                    trimmed_body = candidate
+                    included_node_ids.append(node_id)
+                    continue
+                if not trimmed_body and body_budget > 0:
+                    # If the first entry is truncated, it still counts as included.
+                    trimmed_body = entry[:body_budget]
+                    included_node_ids.append(node_id)
+                break
+
+            if trimmed_body:
+                final_rendered = f"{header}\n{trimmed_body}\n{footer}"
+            else:
+                final_rendered = f"{header}\n{footer}"[:max_chars]
+
+            dropped_node_ids = ordered_node_ids[len(included_node_ids) :]
+
+    dropped_node_ids_cap = max(0, int(dropped_node_ids_limit))
+    dropped_node_ids_display = dropped_node_ids[:dropped_node_ids_cap]
+    dropped_authority_counts: dict[str, int] = {}
+    for dropped_node_id in dropped_node_ids:
+        authority = _node_authority(graph, dropped_node_id)
+        dropped_authority_counts[authority] = dropped_authority_counts.get(authority, 0) + 1
+    stats = {
+        "prompt_context_len": len(final_rendered),
+        "prompt_context_max_chars": max_chars,
+        "prompt_context_trimmed": trimmed,
+        "prompt_context_included_node_ids": included_node_ids,
+        "prompt_context_dropped_node_ids": dropped_node_ids_display,
+        "prompt_context_dropped_node_ids_truncated": len(dropped_node_ids) > len(dropped_node_ids_display),
+        "prompt_context_dropped_count": len(dropped_node_ids),
+        "prompt_context_dropped_authority_counts": dropped_authority_counts,
     }
     return final_rendered, stats
 

@@ -427,6 +427,19 @@ def test_traversal_tier_classification_is_stable() -> None:
     assert tiers == ["reflex", "habitual"]
 
 
+def test_traversal_result_exposes_fired_scores() -> None:
+    """Traversal result includes per-node scores for downstream ranking."""
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_node(Node("b", "B"))
+    graph.add_edge(Edge("a", "b", 0.9))
+
+    result = traverse(graph, [("a", 1.0)], config=TraversalConfig(max_hops=1, beam_width=1))
+    assert result.fired == ["a", "b"]
+    assert result.fired_scores["a"] == 1.0
+    assert result.fired_scores["b"] > 0.0
+
+
 def test_tier_summary_in_result() -> None:
     """test tier summary in result."""
     graph = Graph()

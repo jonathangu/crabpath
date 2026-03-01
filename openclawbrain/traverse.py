@@ -63,6 +63,7 @@ class TraversalResult:
     steps: list[TraversalStep]
     context: str
     tier_summary: dict[str, str] = field(default_factory=dict)
+    fired_scores: dict[str, float] = field(default_factory=dict)
 
 
 def _tier(weight: float, config: TraversalConfig) -> str:
@@ -218,10 +219,10 @@ def traverse(
         )
     if cfg.max_fired_nodes is not None and len(fired) >= cfg.max_fired_nodes:
         context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
-        return TraversalResult(fired=fired, steps=steps, context=context)
+        return TraversalResult(fired=fired, steps=steps, context=context, fired_scores=fired_scores)
     if cfg.max_context_chars is not None and cumulative_chars >= cfg.max_context_chars:
         context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
-        return TraversalResult(fired=fired, steps=steps, context=context)
+        return TraversalResult(fired=fired, steps=steps, context=context, fired_scores=fired_scores)
 
     for _ in range(cfg.max_hops):
         if not frontier:
@@ -321,4 +322,10 @@ def traverse(
             break
 
     context = _build_context(graph=graph, fired_scores=fired_scores, fired=fired, max_chars=cfg.max_context_chars)
-    return TraversalResult(fired=fired, steps=steps, context=context, tier_summary=_tier_summary(cfg))
+    return TraversalResult(
+        fired=fired,
+        steps=steps,
+        context=context,
+        tier_summary=_tier_summary(cfg),
+        fired_scores=fired_scores,
+    )

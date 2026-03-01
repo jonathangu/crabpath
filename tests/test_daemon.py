@@ -8,6 +8,7 @@ from pathlib import Path
 import importlib.util
 
 from openclawbrain import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
+from openclawbrain.traverse import TraversalResult
 from openclawbrain import daemon as daemon_module
 from openclawbrain.journal import read_journal
 from openclawbrain.store import load_state
@@ -139,6 +140,7 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
         assert "alpha" in result["prompt_context"]
         assert result["prompt_context_len"] == len(result["prompt_context"])
         assert result["prompt_context_max_chars"] == 30000
+        assert result["max_fired_nodes"] == 30
         assert isinstance(result["prompt_context_trimmed"], bool)
         assert isinstance(result["prompt_context_included_node_ids"], list)
         assert isinstance(result["prompt_context_dropped_node_ids"], list)
@@ -156,7 +158,64 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
     metadata = query_entries[-1]["metadata"]
     assert metadata["prompt_context_len"] == len(result["prompt_context"])
     assert metadata["prompt_context_max_chars"] == 30000
+    assert metadata["max_fired_nodes"] == 30
     assert isinstance(metadata["prompt_context_trimmed"], bool)
+
+
+def test_daemon_query_ranked_prompt_context_uses_authority_and_scores(monkeypatch, tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("overlay", "overlay text", metadata={"authority": "overlay", "file": "docs/a.md", "start_line": 1}))
+    graph.add_node(
+        Node(
+            "canonical",
+            "canonical text",
+            metadata={"authority": "canonical", "file": "docs/z.md", "start_line": 100},
+        )
+    )
+    graph.add_node(
+        Node(
+            "constitutional",
+            "constitutional text",
+            metadata={"authority": "constitutional", "file": "docs/z.md", "start_line": 200},
+        )
+    )
+
+    index = VectorIndex()
+    index.upsert("overlay", [1.0, 0.0])
+    index.upsert("canonical", [0.9, 0.1])
+    index.upsert("constitutional", [0.8, 0.2])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+
+    def _fake_traverse(*_args, **_kwargs):
+        return TraversalResult(
+            fired=["overlay", "canonical", "constitutional"],
+            steps=[],
+            context="",
+            fired_scores={"overlay": 0.95, "canonical": 0.7, "constitutional": 0.1},
+        )
+
+    monkeypatch.setattr(daemon_module, "traverse", _fake_traverse)
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={
+            "query": "anything",
+            "top_k": 3,
+            "max_prompt_context_chars": 170,
+            "max_fired_nodes": 7,
+            "chat_id": "chat-ranked",
+        },
+        state_path=str(tmp_path / "state.json"),
+    )
+
+    assert response["max_fired_nodes"] == 7
+    # Authority dominates score: constitutional before canonical before overlay.
+    assert response["prompt_context_included_node_ids"] == ["constitutional", "canonical"]
+    assert response["prompt_context_dropped_node_ids"] == ["overlay"]
+    assert response["prompt_context_dropped_authority_counts"] == {"overlay": 1}
 
 
 def test_daemon_unknown_method_returns_error(tmp_path: Path) -> None:

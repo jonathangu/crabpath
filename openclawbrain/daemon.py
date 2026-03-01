@@ -27,7 +27,7 @@ from .inject import _apply_inhibitory_edges, inject_node
 from .state_lock import state_write_lock
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
-from .prompt_context import build_prompt_context_with_stats
+from .prompt_context import build_prompt_context_ranked_with_stats
 
 
 FIRED_LOG_LIMIT_PER_CHAT = 100
@@ -269,6 +269,8 @@ def _handle_query(
     if not isinstance(max_context_chars, int):
         max_context_chars = max_prompt_chars
 
+    max_fired_nodes = _parse_int(params.get("max_fired_nodes"), "max_fired_nodes", default=30)
+
     total_start = time.perf_counter()
     resolved_embed = embed_fn or HashEmbedder().embed
 
@@ -287,15 +289,16 @@ def _handle_query(
     result = traverse(
         graph=graph,
         seeds=seeds,
-        config=TraversalConfig(max_hops=15, max_context_chars=max_context_chars),
+        config=TraversalConfig(max_hops=15, max_context_chars=max_context_chars, max_fired_nodes=max_fired_nodes),
         query_text=query_text,
     )
     traverse_stop = time.perf_counter()
     total_stop = time.perf_counter()
 
-    prompt_context, prompt_context_stats = build_prompt_context_with_stats(
+    prompt_context, prompt_context_stats = build_prompt_context_ranked_with_stats(
         graph=graph,
         node_ids=[str(node_id) for node_id in result.fired],
+        node_scores={str(node_id): float(score) for node_id, score in result.fired_scores.items()},
         max_chars=max_prompt_chars,
         include_node_ids=True,
     )
@@ -304,11 +307,12 @@ def _handle_query(
         fired_ids=result.fired,
         node_count=graph.node_count(),
         journal_path=_journal_path(state_path),
-        metadata={"chat_id": params.get("chat_id"), **prompt_context_stats},
+        metadata={"chat_id": params.get("chat_id"), "max_fired_nodes": max_fired_nodes, **prompt_context_stats},
     )
 
     return {
         "fired_nodes": result.fired,
+        "max_fired_nodes": max_fired_nodes,
         "context": result.context,
         "prompt_context": prompt_context,
         **prompt_context_stats,

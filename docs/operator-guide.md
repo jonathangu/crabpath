@@ -128,3 +128,14 @@ Recommended production path: use `examples/ops/rebuild_then_cutover.sh` so rebui
 | Replay restarts from old work | checkpoint not used, wrong path, or intentionally ignored | run with `--resume --checkpoint ~/.openclawbrain/main/replay_checkpoint.json`; inspect with `openclawbrain replay --state ~/.openclawbrain/main/state.json --show-checkpoint --resume` |
 | `LLM required for fast-learning` | no OpenAI client/key configured for fast-learning mining | set `OPENAI_API_KEY` or run `--edges-only` replay path |
 | CLI says invalid sessions path | wrong sessions directory/file path | `ls -la ~/.openclaw/agents/main/sessions` and pass existing dir/files to `--sessions` |
+
+## 9) Prompt-context trim eval (offline)
+Use the lightweight harness to measure trim rate and dropped-authority distribution at common caps (`20k`/`30k`) directly from `state.json`:
+
+```bash
+python examples/eval/prompt_context_eval.py \
+  --state ~/.openclawbrain/main/state.json \
+  --queries-file /path/to/queries.txt
+```
+
+If no `--queries-file` is provided, a small built-in sample query set is used.
