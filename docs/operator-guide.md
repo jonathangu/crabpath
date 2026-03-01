@@ -261,6 +261,15 @@ python3 -m openclawbrain.ops.harvest_secret_pointers \
   --out ~/.openclaw/workspace/docs/secret-pointers.md
 ```
 
+By default, harvest also inventories local credential files from `~/.openclaw/credentials` (if present) and records only filename/path/mode pointers. It never reads or prints file contents. Override or disable as needed:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --credentials-dir ~/.openclaw/credentials \
+  --no-include-credentials
+```
+
 Optional JSON output for automation:
 
 ```bash

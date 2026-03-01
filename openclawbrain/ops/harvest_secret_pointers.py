@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -100,6 +101,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--openclaw-config",
         help="Path to openclaw.json (default: ~/.openclaw/openclaw.json if it exists)",
     )
+    parser.add_argument(
+        "--credentials-dir",
+        help="Path to OpenClaw credentials dir (default: ~/.openclaw/credentials if it exists)",
+    )
+    parser.add_argument(
+        "--include-credentials",
+        dest="include_credentials",
+        action="store_true",
+        help="Include local OpenClaw credential file pointers (default: on)",
+    )
+    parser.add_argument(
+        "--no-include-credentials",
+        dest="include_credentials",
+        action="store_false",
+        help="Disable local OpenClaw credential file pointer harvest",
+    )
+    parser.set_defaults(include_credentials=True)
     parser.add_argument("--json", action="store_true", help="Print JSON instead of writing markdown")
     return parser.parse_args(argv)
 
@@ -218,6 +236,61 @@ def _collect_tokenfile_rows(openclaw_config: Path | None) -> list[PointerRow]:
     return rows
 
 
+def _default_credentials_dir() -> Path | None:
+    candidate = Path.home() / ".openclaw" / "credentials"
+    return candidate if candidate.exists() else None
+
+
+def _resolve_credentials_dir(raw_path: str | None) -> Path | None:
+    if raw_path:
+        return Path(raw_path).expanduser()
+    return _default_credentials_dir()
+
+
+def _credential_file_matches(path: Path) -> bool:
+    lowered_name = path.name.lower()
+    if path.suffix.lower() in {".json", ".token"}:
+        return True
+    return "secret" in lowered_name or "oauth" in lowered_name
+
+
+def _infer_credential_used_for(filename: str) -> str:
+    lowered = filename.lower()
+    if lowered == "cloudflare.json" or "cloudflare" in lowered:
+        return "Cloudflare API"
+    if lowered == "google_oauth_client_secret.json" or "google_oauth" in lowered:
+        return "Google OAuth"
+    if "telegram" in lowered:
+        return "Telegram"
+    return "credential file"
+
+
+def _collect_credentials_rows(credentials_dir: Path | None) -> list[PointerRow]:
+    if credentials_dir is None or not credentials_dir.exists() or not credentials_dir.is_dir():
+        return []
+
+    rows: list[PointerRow] = []
+    for file_path in sorted(credentials_dir.rglob("*")):
+        if not file_path.is_file() or not _credential_file_matches(file_path):
+            continue
+        try:
+            mode = stat.S_IMODE(file_path.stat().st_mode)
+        except OSError:
+            mode = None
+        verify = f"file exists; mode={mode:04o}" if mode is not None else "file exists; mode=(unknown)"
+        rows.append(
+            PointerRow(
+                service="OpenClaw credentials",
+                key_name=file_path.name,
+                present=file_path.exists(),
+                pointer=str(file_path.expanduser().resolve(strict=False)),
+                used_for=_infer_credential_used_for(file_path.name),
+                verify=verify,
+            )
+        )
+    return rows
+
+
 def _resolve_env_pointer(
     key_name: str,
     env_presence: dict[str, list[tuple[str, bool]]],
@@ -237,6 +310,7 @@ def _resolve_env_pointer(
 def _build_rows(
     env_presence: dict[str, list[tuple[str, bool]]],
     token_rows: list[PointerRow],
+    credential_rows: list[PointerRow],
 ) -> list[PointerRow]:
     rows: list[PointerRow] = []
     for cap in CAPABILITIES:
@@ -265,6 +339,7 @@ def _build_rows(
                 )
             )
     rows.extend(token_rows)
+    rows.extend(credential_rows)
     return rows
 
 
@@ -313,15 +388,19 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Path(args.workspace).expanduser()
     out_path = Path(args.out).expanduser() if args.out else workspace / "docs" / "secret-pointers.md"
     openclaw_config = _resolve_openclaw_config(args.openclaw_config)
+    credentials_dir = _resolve_credentials_dir(args.credentials_dir)
 
     env_presence = _collect_env_key_presence(workspace, args.extra_env_file)
     token_rows = _collect_tokenfile_rows(openclaw_config)
-    rows = _build_rows(env_presence, token_rows)
+    credential_rows = _collect_credentials_rows(credentials_dir) if args.include_credentials else []
+    rows = _build_rows(env_presence, token_rows, credential_rows)
 
     if args.json:
         payload = {
             "workspace": str(workspace),
             "openclaw_config": str(openclaw_config) if openclaw_config else None,
+            "credentials_dir": str(credentials_dir) if credentials_dir else None,
+            "include_credentials": args.include_credentials,
             "rows": [asdict(row) for row in rows],
             "capabilities": [asdict(cap) for cap in CAPABILITIES],
         }

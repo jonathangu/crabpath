@@ -45,3 +45,31 @@ def test_audit_secret_leaks_reports_path_and_line_without_echoing_token(tmp_path
     assert code == 1
     assert f"{leak_file}:1" in out
     assert token not in out
+
+
+def test_harvest_secret_pointers_includes_credentials_paths_without_values(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    docs_dir = workspace / "docs"
+    docs_dir.mkdir(parents=True)
+    creds_dir = tmp_path / "credentials"
+    creds_dir.mkdir()
+    cred_file = creds_dir / "google_oauth_client_secret.json"
+    cred_file.write_text('{"client_secret":"do-not-show"}', encoding="utf-8")
+    out_path = docs_dir / "secret-pointers.md"
+
+    code = harvest_secret_pointers.main(
+        [
+            "--workspace",
+            str(workspace),
+            "--credentials-dir",
+            str(creds_dir),
+            "--out",
+            str(out_path),
+        ]
+    )
+    assert code == 0
+
+    report = out_path.read_text(encoding="utf-8")
+    assert "OpenClaw credentials" in report
+    assert str(cred_file.resolve()) in report
+    assert "do-not-show" not in report

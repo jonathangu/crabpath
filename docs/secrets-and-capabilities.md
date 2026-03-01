@@ -102,6 +102,15 @@ Harvest capability pointers (no value output):
 python3 -m openclawbrain.ops.harvest_secret_pointers --workspace ~/.openclaw/workspace
 ```
 
+Credential-file pointer harvest is enabled by default. If `~/.openclaw/credentials` exists, matching files are added as pointer-only rows (path + mode), without reading file contents. Override or disable with:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --credentials-dir ~/.openclaw/credentials \
+  --no-include-credentials
+```
+
 Audit potential leaks (path + line only):
 
 ```bash
