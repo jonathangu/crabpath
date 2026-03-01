@@ -2,6 +2,8 @@
 
 Practical operator runbooks for cutovers and large replays.
 
+Canonical day-0/day-2 runbook: **[docs/operator-guide.md](operator-guide.md)**
+
 **OpenClaw path note:** OpenClaw agent session logs typically live at `~/.openclaw/agents/<agent>/sessions` (e.g., `~/.openclaw/agents/main/sessions`). You can pass that directory directly via `--sessions <dir>`.
 
 ## Cutover fast
@@ -13,7 +15,7 @@ Use this when you need improved retrieval quickly and can defer full replay/harv
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
-  --sessions /path/to/sessions \
+  --sessions ~/.openclaw/agents/main/sessions \
   --fast-learning \
   --stop-after-fast-learning \
   --resume \
@@ -33,7 +35,7 @@ python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
-  --sessions /path/to/sessions \
+  --sessions ~/.openclaw/agents/main/sessions \
   --full-learning \
   --resume \
   --checkpoint ~/.openclawbrain/main/replay_checkpoint.json
@@ -83,7 +85,7 @@ For large histories, run replay in parallel workers and checkpoint frequently:
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
-  --sessions /path/to/sessions \
+  --sessions ~/.openclaw/agents/main/sessions \
   --full-learning \
   --replay-workers 4 \
   --workers 4 \
@@ -124,7 +126,7 @@ OpenClaw session logs often store uploads as `[media attached: ...]` stubs. Thos
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
-  --sessions /path/to/sessions \
+  --sessions ~/.openclaw/agents/main/sessions \
   --include-tool-results \
   --tool-result-allowlist image,openai-whisper,openai-whisper-api,openai-whisper-local,summarize \
   --tool-result-max-chars 20000

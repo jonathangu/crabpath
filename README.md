@@ -12,6 +12,7 @@
 
 OpenClawBrain is designed to be the memory layer for **OpenClaw agents**.
 
+- Canonical operator runbook: **[docs/operator-guide.md](docs/operator-guide.md)**
 - Guide: **[docs/openclaw-integration.md](docs/openclaw-integration.md)**
 
 Quickstart (OpenClaw users):
