@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclawbrain.AGENT_ID</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>openclawbrain</string>
+    <string>serve</string>
+    <string>--state</string>
+    <string>STATE_PATH</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>LOG_PATH</string>
+  <key>StandardErrorPath</key>
+  <string>LOG_PATH</string>
+
+  <!-- Optional: only add EnvironmentVariables when your setup requires it.
+       Avoid storing secrets inline when possible. If you do, chmod 600 this plist. -->
+  <!--
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENAI_API_KEY</key>
+    <string>REPLACE_ME</string>
+  </dict>
+  -->
+</dict>
+</plist>

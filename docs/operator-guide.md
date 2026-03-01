@@ -3,6 +3,10 @@
 ## 1) What OpenClawBrain is
 OpenClawBrain is the long-term memory layer for OpenClaw agents: it builds a learned graph from your workspace (`~/.openclaw/workspace`) plus session feedback (`~/.openclaw/agents/<agent>/sessions`), then serves fast query/learn operations from a persistent daemon state file (`~/.openclawbrain/<agent>/state.json`).
 
+## New agent recipe
+Use the canonical bootstrap SOP when creating a brand-new OpenClaw profile-style setup (new workspace + dedicated brain + launchd + routing):
+- [docs/new-agent-sop.md](new-agent-sop.md)
+
 ## 2) Turn brain ON
 Canonical run command:
 
