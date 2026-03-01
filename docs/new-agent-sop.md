@@ -164,6 +164,20 @@ Correction command:
 python3 -m openclawbrain.openclaw_adapter.learn_correction --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --outcome -1.0 --lookback 1 --content '<correction text>'
 ```
 
+## Always-on self-learning policy (recommended)
+
+Copy/paste into workspace `SOUL.md`:
+
+```md
+## Always-on self-learning (default)
+
+- Treat clear user corrections as immediate memory updates: run `learn_correction` in the same turn with `--chat-id '<chat_id>' --lookback 1`.
+- Treat durable user teachings (rules/facts) as memory updates: inject `TEACHING` (or update canonical files and `sync`).
+- If correction vs teaching is unclear, ask one clarifying question before writing memory.
+- Never log secrets (tokens, passwords, private keys, sensitive personal data).
+- Keep prompts tight: use `query_brain --format prompt` for retrieval; use `learn_by_chat_id` and `learn_correction` keyed by `chat_id`; do not add `fired_nodes` to prompts.
+```
+
 ## G) Verification checklist
 
 - `openclawbrain status --state ~/.openclawbrain/<agentId>/state.json` shows running socket.

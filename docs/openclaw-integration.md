@@ -202,6 +202,20 @@ openclawbrain compact --state ~/.openclawbrain/AGENT/state.json --memory-dir /pa
 
 That block is intentionally boring: it’s the contract OpenClaw already supports.
 
+### Always-on self-learning (default)
+
+Use this as the default operator policy; no special user phrasing like "log this" should be required.
+
+- If the user clearly corrects the agent, run `learn_correction` in the same turn with `--chat-id '<chat_id>' --lookback 1`.
+- If the user teaches a durable rule/fact, inject it as `TEACHING` (or update canonical workspace files, then `sync`).
+- If intent is ambiguous (correction vs preference vs new teaching), ask one clarifying question before writing memory.
+- Never log secrets, tokens, passwords, private keys, or other sensitive values.
+
+This remains compatible with tight prompts:
+- Keep retrieval on `query_brain --format prompt` so prompt payload contains only `[BRAIN_CONTEXT]`.
+- Learning uses `learn_by_chat_id` and corrections use `learn_correction`, both keyed by `chat_id`.
+- Do not pass `fired_nodes` in prompt/tool payloads; the brain tracks them internally by `chat_id`.
+
 ### Prompt-context duplication control (recommended)
 
 OpenClaw already loads bootstrap files (`AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, `active-tasks.md`) into the base prompt. If you also include them again from brain retrieval, token usage grows quickly with little value.

@@ -169,6 +169,15 @@ For OpenClaw integration, keep prompts token-tight and avoid re-sending files Op
 
 This preserves deterministic `prompt_context` while cutting duplicate tokens, matching the project’s “context efficiency/compression” operating model.
 
+### Recipe: always-on same-turn self-learning
+For the canonical policy text, use:
+- `docs/openclaw-integration.md` → `Always-on self-learning (default)`
+- `docs/new-agent-sop.md` → `Always-on self-learning policy (recommended)` (SOUL.md snippet)
+
+Why this matters:
+- Same-turn `learn_correction` injects the correction immediately and penalizes the just-fired route for that `chat_id`, which prevents repeated retrieval mistakes in follow-up turns.
+- `learn_by_chat_id` keeps outcome learning aligned with tight prompts (`--format prompt`) without exposing `fired_nodes` in prompt payloads.
+
 ## 12) Bootstrap files + memory notes are always indexed (v12.2.5+)
 Even if your OpenClaw workspace `.gitignore` excludes local operator files (common), OpenClawBrain will still index:
 - `SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`, `IDENTITY.md`, `HEARTBEAT.md`

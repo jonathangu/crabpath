@@ -1,5 +1,7 @@
 # OpenClawBrain Memory Graph (auto-installed)
 
+Always-on self-learning is the default: apply clear corrections in the same turn and persist durable teachings without waiting for "log this" phrasing.
+
 **Query** (before answering questions about prior work, context, decisions, corrections, lessons):
 ```bash
 python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --format prompt --exclude-bootstrap --max-prompt-context-chars 12000
@@ -14,7 +16,7 @@ Always pass `--chat-id` so fired nodes are logged for later corrections.
 ```bash
 python3 -m openclawbrain.openclaw_adapter.learn_correction \
   --state ~/.openclawbrain/AGENT/state.json \
-  --chat-id '<chat_id>' --outcome -1.0 \
+  --chat-id '<chat_id>' --outcome -1.0 --lookback 1 \
   --content "The correction text here"
 ```
 This penalizes the last query's fired nodes AND injects a CORRECTION node with inhibitory edges.
