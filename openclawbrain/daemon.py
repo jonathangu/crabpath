@@ -11,7 +11,7 @@ from collections import deque
 import signal
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Callable
 from contextlib import nullcontext
@@ -23,7 +23,7 @@ from .index import VectorIndex
 from .journal import log_health, log_learn, log_query
 from .learn import apply_outcome, apply_outcome_pg
 from .maintain import run_maintenance
-from .inject import _apply_inhibitory_edges, inject_node
+from .inject import _apply_inhibitory_edges, inject_correction, inject_node
 from .state_lock import state_write_lock
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
@@ -34,6 +34,8 @@ FIRED_LOG_LIMIT_PER_CHAT = 100
 FIRED_LOG_LIMIT_TOTAL = 1000
 
 FIRED_LOG_FILE = "fired_log.jsonl"
+INJECTED_FEEDBACK_LOG_FILE = "injected_feedback.jsonl"
+INJECTED_FEEDBACK_TAIL_SIZE = 10_000
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -64,6 +66,11 @@ def _journal_path(state_path: str) -> str:
 def _fired_log_path(state_path: str) -> str:
     """Resolve fired_log.jsonl path for the loaded state directory."""
     return str(Path(state_path).expanduser().parent / FIRED_LOG_FILE)
+
+
+def _injected_feedback_log_path(state_path: str) -> str:
+    """Resolve injected_feedback.jsonl path for deduped feedback events."""
+    return str(Path(state_path).expanduser().parent / INJECTED_FEEDBACK_LOG_FILE)
 
 
 def _ms(start: float, end: float) -> float:
@@ -179,6 +186,42 @@ def _append_fired_log(state_path: str, entry: dict[str, object]) -> None:
         handle.write(json.dumps(entry) + "\n")
 
 
+def _append_injected_feedback_log(state_path: str, entry: dict[str, object]) -> None:
+    path = Path(_injected_feedback_log_path(state_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry) + "\n")
+
+
+def _tail_jsonl(path: Path, *, max_entries: int) -> list[dict[str, object]]:
+    """Read last N JSONL objects without loading entire file into memory."""
+    if max_entries <= 0 or not path.exists():
+        return []
+
+    rows: deque[dict[str, object]] = deque(maxlen=max_entries)
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                rows.append(parsed)
+    return list(rows)
+
+
+def _load_injected_feedback_dedup_keys(state_path: str, *, max_entries: int) -> set[str]:
+    keys: set[str] = set()
+    for row in _tail_jsonl(Path(_injected_feedback_log_path(state_path)), max_entries=max_entries):
+        dedup_key = row.get("dedup_key")
+        if isinstance(dedup_key, str) and dedup_key:
+            keys.add(dedup_key)
+    return keys
+
+
 def _append_fired_history(
     daemon_state: "_DaemonState",
     chat_id: str,
@@ -247,6 +290,13 @@ def _recent_fired_nodes(daemon_state: "_DaemonState", chat_id: str, lookback: in
 def _correction_node_id(content: str) -> str:
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     return f"correction::{digest[:12]}"
+
+
+def _feedback_node_id(kind: str, content: str) -> str:
+    if kind == "CORRECTION":
+        return _correction_node_id(content)
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return f"{kind.lower()}::{digest[:12]}"
 
 
 def _handle_query(
@@ -589,6 +639,142 @@ def _handle_self_learn(
     )
 
 
+def _handle_capture_feedback(
+    daemon_state: "_DaemonState",
+    graph: Graph,
+    index: VectorIndex,
+    meta: dict[str, object],
+    embed_fn: Callable[[str], list[float]] | None,
+    state_path: str,
+    params: dict[str, object],
+) -> tuple[dict[str, object], bool]:
+    """Capture real-time correction/teaching/directive with optional learning + dedup."""
+    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+
+    kind = params.get("kind")
+    if kind not in {"CORRECTION", "TEACHING", "DIRECTIVE"}:
+        raise ValueError("kind must be one of: CORRECTION, TEACHING, DIRECTIVE")
+
+    raw_content = params.get("content")
+    if not isinstance(raw_content, str) or not raw_content.strip():
+        raise ValueError("content is required")
+    content = raw_content.strip()
+
+    dedup_key_used: str | None = None
+    dedup_key = params.get("dedup_key")
+    message_id = params.get("message_id")
+    if dedup_key is not None:
+        if not isinstance(dedup_key, str):
+            raise ValueError("dedup_key must be a string")
+        dedup_key_used = dedup_key.strip()
+        if not dedup_key_used:
+            raise ValueError("dedup_key must be a non-empty string")
+    elif message_id is not None:
+        if not isinstance(message_id, str):
+            raise ValueError("message_id must be a string")
+        dedup_key_used = message_id.strip()
+        if not dedup_key_used:
+            raise ValueError("message_id must be a non-empty string")
+
+    fired_ids = _recent_fired_nodes(daemon_state, chat_id, lookback)
+
+    if dedup_key_used is not None and dedup_key_used in daemon_state.feedback_dedup_keys:
+        deduped_payload: dict[str, object] = {
+            "deduped": True,
+            "edges_updated": 0,
+            "fired_ids_used": fired_ids,
+        }
+        deduped_payload["dedup_key_used"] = dedup_key_used
+        return deduped_payload, False
+
+    outcome_used: float | None = None
+    if params.get("outcome") is not None:
+        outcome_used = _parse_float(params.get("outcome"), "outcome", required=True)
+    elif kind == "CORRECTION":
+        outcome_used = -1.0
+
+    node_id = _feedback_node_id(kind, content)
+    injected_node_id: str | None = None
+    should_write = False
+
+    if graph.get_node(node_id) is None:
+        resolved_embed = embed_fn or HashEmbedder().embed
+        node_metadata = {
+            "type": kind,
+            "source": "capture_feedback",
+            "chat_id": chat_id,
+        }
+        if kind == "CORRECTION":
+            inject_correction(
+                graph=graph,
+                index=index,
+                node_id=node_id,
+                content=content,
+                metadata=node_metadata,
+                embed_fn=resolved_embed,
+            )
+        else:
+            resolved_meta = str(meta.get("embedder_name", "hash-v1"))
+            connect_min_sim = 0.0 if resolved_meta == "hash-v1" else 0.3
+            inject_node(
+                graph=graph,
+                index=index,
+                node_id=node_id,
+                content=content,
+                metadata=node_metadata,
+                embed_fn=resolved_embed,
+                connect_min_sim=connect_min_sim,
+            )
+        injected_node_id = node_id
+        should_write = True
+
+    edges_updated = 0
+    if outcome_used is not None and fired_ids:
+        updates = apply_outcome_pg(
+            graph=graph,
+            fired_nodes=fired_ids,
+            outcome=outcome_used,
+            baseline=0.0,
+            temperature=1.0,
+        )
+        edges_updated = _real_graph_updates(updates)
+        if edges_updated:
+            should_write = True
+        log_learn(
+            fired_ids=fired_ids,
+            outcome=outcome_used,
+            journal_path=_journal_path(state_path),
+            metadata={"chat_id": chat_id, "source": "capture_feedback", "kind": kind},
+        )
+
+    if dedup_key_used is not None:
+        _append_injected_feedback_log(
+            state_path=state_path,
+            entry={
+                "dedup_key": dedup_key_used,
+                "chat_id": chat_id,
+                "kind": kind,
+                "node_id": node_id,
+                "ts": time.time(),
+            },
+        )
+        daemon_state.feedback_dedup_keys.add(dedup_key_used)
+
+    payload: dict[str, object] = {
+        "deduped": False,
+        "edges_updated": edges_updated,
+        "fired_ids_used": fired_ids,
+    }
+    if dedup_key_used is not None:
+        payload["dedup_key_used"] = dedup_key_used
+    if injected_node_id is not None:
+        payload["injected_node_id"] = injected_node_id
+    if outcome_used is not None:
+        payload["outcome_used"] = outcome_used
+    return payload, should_write
+
+
 def _handle_learn(graph: Graph, index: VectorIndex, embed_fn: Callable[[str], list[float]] | None,
                    state_path: str, params: dict[str, object]) -> tuple[dict[str, object], bool]:
     """Bare learning — just outcome on fired nodes, no injection."""
@@ -670,6 +856,7 @@ class _DaemonState:
     index: VectorIndex
     meta: dict[str, object]
     fired_log: dict[str, deque[dict[str, object]]]
+    feedback_dedup_keys: set[str] = field(default_factory=set)
     write_count: int = 0
 
 
@@ -680,7 +867,16 @@ def main(argv: list[str] | None = None) -> int:
     lock_cm = state_write_lock(state_path, force=args.force, command_hint="openclawbrain daemon")
     with lock_cm if state_path else nullcontext():
         graph, index, meta = load_state(state_path)
-        daemon_state = _DaemonState(graph=graph, index=index, meta=meta, fired_log={})
+        daemon_state = _DaemonState(
+            graph=graph,
+            index=index,
+            meta=meta,
+            fired_log={},
+            feedback_dedup_keys=_load_injected_feedback_dedup_keys(
+                state_path=state_path,
+                max_entries=INJECTED_FEEDBACK_TAIL_SIZE,
+            ),
+        )
         embed_fn = _make_embed_fn(args.embed_model)
         auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
 
@@ -813,6 +1009,16 @@ def main(argv: list[str] | None = None) -> int:
                             daemon_state=daemon_state,
                             graph=daemon_state.graph,
                             index=daemon_state.index,
+                            embed_fn=embed_fn,
+                            state_path=state_path,
+                            params=params,
+                        )
+                    elif method == "capture_feedback":
+                        payload, should_write = _handle_capture_feedback(
+                            daemon_state=daemon_state,
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            meta=daemon_state.meta,
                             embed_fn=embed_fn,
                             state_path=state_path,
                             params=params,

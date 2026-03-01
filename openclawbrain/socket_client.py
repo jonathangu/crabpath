@@ -73,6 +73,31 @@ class OCBClient:
     def learn_by_chat_id(self, chat_id: str, outcome: float, lookback: int = 1) -> dict[str, Any]:
         return self.request("learn_by_chat_id", {"chat_id": chat_id, "outcome": outcome, "lookback": lookback})
 
+    def capture_feedback(
+        self,
+        *,
+        chat_id: str,
+        kind: str,
+        content: str,
+        outcome: float | None = None,
+        lookback: int = 1,
+        dedup_key: str | None = None,
+        message_id: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "chat_id": chat_id,
+            "kind": kind,
+            "content": content,
+            "lookback": lookback,
+        }
+        if outcome is not None:
+            params["outcome"] = outcome
+        if dedup_key is not None:
+            params["dedup_key"] = dedup_key
+        if message_id is not None:
+            params["message_id"] = message_id
+        return self.request("capture_feedback", params)
+
     def correction(
         self,
         chat_id: str,

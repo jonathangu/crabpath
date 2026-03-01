@@ -8,7 +8,7 @@ Use the canonical bootstrap SOP when creating a brand-new OpenClaw profile-style
 - [docs/new-agent-sop.md](new-agent-sop.md)
 Use packaged adapter CLIs for agent hooks (no `~/openclawbrain` clone required):
 - `python3 -m openclawbrain.openclaw_adapter.query_brain ...`
-- `python3 -m openclawbrain.openclaw_adapter.learn_correction ...`
+- `python3 -m openclawbrain.openclaw_adapter.capture_feedback ...`
 
 ## 2) Turn brain ON
 Canonical run command:
@@ -162,7 +162,7 @@ Useful telemetry fields (daemon `query` response + journal metadata):
 For OpenClaw integration, keep prompts token-tight and avoid re-sending files OpenClaw already loads:
 
 - Use `python3 -m openclawbrain.openclaw_adapter.query_brain ... --format prompt`.
-- Learn after each response with `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ... --chat-id ... --outcome ...`.
+- Learn/inject in one canonical call with `python3 -m openclawbrain.openclaw_adapter.capture_feedback --state ... --chat-id ... --kind ... --content ... [--outcome ...] [--dedup-key ...]`.
 - Keep `--exclude-bootstrap` enabled (adapter default) so `AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, and `active-tasks.md` are not duplicated in `prompt_context`.
 - Start with `--max-prompt-context-chars 8000` to `12000`; increase only when retrieval quality requires it.
 - Use `--exclude-recent-memory <today> <yesterday>` only when those daily notes are already loaded elsewhere in the same turn.
@@ -175,8 +175,8 @@ For the canonical policy text, use:
 - `docs/new-agent-sop.md` → `Always-on self-learning policy (recommended)` (SOUL.md snippet)
 
 Why this matters:
-- Same-turn `learn_correction` injects the correction immediately and penalizes the just-fired route for that `chat_id`, which prevents repeated retrieval mistakes in follow-up turns.
-- `learn_by_chat_id` keeps outcome learning aligned with tight prompts (`--format prompt`) without exposing `fired_nodes` in prompt payloads.
+- Same-turn `capture_feedback` injects correction/teaching/directive immediately and can reinforce/penalize the just-fired route for that `chat_id`.
+- `--dedup-key` (or `--message-id`) makes harvest/replay retries idempotent so feedback is not double-injected.
 
 ## 12) Bootstrap files + memory notes are always indexed (v12.2.5+)
 Even if your OpenClaw workspace `.gitignore` excludes local operator files (common), OpenClawBrain will still index:

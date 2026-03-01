@@ -8,18 +8,23 @@ python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/sta
 ```
 Always pass `--chat-id` so fired nodes are logged for later corrections.
 
-**Learn** (after each response, no fired node IDs needed):
+**Capture feedback** (canonical always-on path):
+```bash
+python3 -m openclawbrain.openclaw_adapter.capture_feedback \
+  --state ~/.openclawbrain/AGENT/state.json \
+  --chat-id '<chat_id>' \
+  --kind CORRECTION \
+  --content "The correction text here" \
+  --lookback 1 \
+  --message-id '<stable-message-id>' \
+  --json
+```
+This injects immediately and defaults correction outcome to `-1.0`; use `--outcome` for explicit reinforce/penalize behavior.
+Use `--dedup-key` (or `--message-id`) to avoid duplicate injections from retries/replays.
+
+**Learn** (legacy outcome-only path, still supported):
 - Good: `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/AGENT/state.json --chat-id '<chat_id>' --outcome 1.0 --lookback 1 --json`
 - Bad: `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/AGENT/state.json --chat-id '<chat_id>' --outcome -1.0 --lookback 1 --json`
-
-**Inject correction** (when corrected — same turn, don't wait for harvester):
-```bash
-python3 -m openclawbrain.openclaw_adapter.learn_correction \
-  --state ~/.openclawbrain/AGENT/state.json \
-  --chat-id '<chat_id>' --outcome -1.0 --lookback 1 \
-  --content "The correction text here"
-```
-This penalizes the last query's fired nodes AND injects a CORRECTION node with inhibitory edges.
 
 **Inject new knowledge** (when you learn something not in any workspace file):
 ```bash

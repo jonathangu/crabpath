@@ -26,6 +26,7 @@ Script specifics:
   - `--connect-learnings` / `--no-connect-learnings`: enable or disable the learning/learning->workspace connection and correction inhibition step (defaults to enabled when `--learning-db` is passed)
   - `--batch-size <int>`: override OpenAI embedding batch size (default `100`)
 - `query_brain.py`: query a brain with OpenAI embeddings.
+- `capture_feedback.py`: canonical real-time correction/teaching/directive capture with dedup support (`--dedup-key` / `--message-id`).
 - `learn_correction.py`: apply corrections to the last `lookback` queries using `--chat-id`-scoped fired nodes.
 - `agents_hook.md`: AGENTS.md integration block.
 
@@ -33,12 +34,13 @@ Script specifics:
 
 Use `query_brain.py --format prompt` to print a deterministic `[BRAIN_CONTEXT v1]...[/BRAIN_CONTEXT]` appendix block built from fired node content. Append that block late in your final OpenAI prompt to improve prompt caching stability.
 
-## Real-time corrections
+## Real-time feedback (canonical)
 
-The live correction flow adds two pieces:
+The live feedback flow adds two pieces:
 
 - `query_brain.py --chat-id` persists fired nodes in `<state_dir>/fired_log.jsonl`.
-- `learn_correction.py --chat-id ...` loads those fired IDs and applies `openclawbrain.learn` against the recent hits; optional `--content` injects a `CORRECTION` node.
+- `capture_feedback.py --chat-id ... --kind ... --content ...` injects immediately and optionally applies `--outcome` to recent fired IDs.
+- Use `--dedup-key` (or `--message-id`) to avoid duplicate injection on retries/replay.
 
 The batch rebuild/replay path (`init_agent_brain.py` and `connect_learnings.py`) remains a safety net: it still re-hydrates active corrections and applies correction inhibition even when the real-time hook misses a signal.
 

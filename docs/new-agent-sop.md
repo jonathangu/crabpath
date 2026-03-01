@@ -158,10 +158,10 @@ Learn command (no fired node IDs in prompt payload):
 python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --outcome 1.0 --lookback 1 --json
 ```
 
-Correction command:
+Canonical feedback command:
 
 ```bash
-python3 -m openclawbrain.openclaw_adapter.learn_correction --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --outcome -1.0 --lookback 1 --content '<correction text>'
+python3 -m openclawbrain.openclaw_adapter.capture_feedback --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --kind CORRECTION --content '<correction text>' --lookback 1 --message-id '<stable-message-id>' --json
 ```
 
 ## Always-on self-learning policy (recommended)
@@ -171,11 +171,12 @@ Copy/paste into workspace `SOUL.md`:
 ```md
 ## Always-on self-learning (default)
 
-- Treat clear user corrections as immediate memory updates: run `learn_correction` in the same turn with `--chat-id '<chat_id>' --lookback 1`.
-- Treat durable user teachings (rules/facts) as memory updates: inject `TEACHING` (or update canonical files and `sync`).
+- Treat clear user corrections as immediate memory updates: run `capture_feedback --kind CORRECTION` in the same turn with `--chat-id '<chat_id>' --lookback 1`.
+- Treat durable user teachings (rules/facts) as memory updates: run `capture_feedback --kind TEACHING` (or update canonical files and `sync`).
 - If correction vs teaching is unclear, ask one clarifying question before writing memory.
 - Never log secrets (tokens, passwords, private keys, sensitive personal data).
-- Keep prompts tight: use `query_brain --format prompt` for retrieval; use `learn_by_chat_id` and `learn_correction` keyed by `chat_id`; do not add `fired_nodes` to prompts.
+- Use `--dedup-key` (or `--message-id`) whenever available so replay/harvester retries do not double-inject.
+- Keep prompts tight: use `query_brain --format prompt` for retrieval; use `capture_feedback`/`learn_by_chat_id` keyed by `chat_id`; do not add `fired_nodes` to prompts.
 ```
 
 ## G) Verification checklist

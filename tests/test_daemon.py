@@ -456,6 +456,7 @@ def test_daemon_fired_log_ring_buffer_tracks_per_chat_id() -> None:
         index=index,
         meta={"embedder_name": "hash-v1", "embedder_dim": hash_embedder.dim},
         fired_log={},
+        feedback_dedup_keys=set(),
     )
 
     for count in range(105):
@@ -478,6 +479,145 @@ def test_daemon_fired_log_ring_buffer_tracks_per_chat_id() -> None:
             timestamp=float(count + 200),
         )
     assert daemon_module._fired_history_size(daemon_state) == 1000
+
+
+def test_daemon_capture_feedback_injects_and_learns(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    graph_before, _index_before, _meta_before = load_state(str(state_path))
+    before_weight = graph_before._edges["a"]["b"].weight
+
+    proc = _start_daemon(state_path)
+    try:
+        query_response = _call(
+            proc,
+            "query",
+            {"query": "alpha", "top_k": 2, "chat_id": "chat-feedback"},
+            req_id="query-feedback-1",
+        )["result"]
+        assert query_response["fired_nodes"]
+
+        feedback = _call(
+            proc,
+            "capture_feedback",
+            {
+                "chat_id": "chat-feedback",
+                "kind": "CORRECTION",
+                "content": "Do not use alpha for this task.",
+                "lookback": 1,
+            },
+            req_id="capture-feedback-1",
+        )["result"]
+        assert feedback["deduped"] is False
+        assert feedback["fired_ids_used"] == query_response["fired_nodes"]
+        assert feedback["edges_updated"] >= 1
+        assert feedback["outcome_used"] == -1.0
+        assert str(feedback["injected_node_id"]).startswith("correction::")
+    finally:
+        _shutdown_daemon(proc)
+
+    graph_after, _index_after, _meta_after = load_state(str(state_path))
+    node_id = str(feedback["injected_node_id"])
+    node = graph_after.get_node(node_id)
+    assert node is not None
+    assert node.metadata.get("type") == "CORRECTION"
+    assert node.metadata.get("source") == "capture_feedback"
+    assert graph_after._edges["a"]["b"].weight != before_weight
+
+
+def test_daemon_capture_feedback_dedups_by_key_and_message_id_alias(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    proc = _start_daemon(state_path)
+    try:
+        _call(
+            proc,
+            "query",
+            {"query": "alpha", "top_k": 2, "chat_id": "chat-dedup"},
+            req_id="query-dedup-1",
+        )
+        first = _call(
+            proc,
+            "capture_feedback",
+            {
+                "chat_id": "chat-dedup",
+                "kind": "TEACHING",
+                "content": "Prefer explicit assertions in tests.",
+                "outcome": 1.0,
+                "lookback": 1,
+                "dedup_key": "event-123",
+            },
+            req_id="capture-feedback-first",
+        )["result"]
+        assert first["deduped"] is False
+        assert first["dedup_key_used"] == "event-123"
+        assert str(first["injected_node_id"]).startswith("teaching::")
+
+        second = _call(
+            proc,
+            "capture_feedback",
+            {
+                "chat_id": "chat-dedup",
+                "kind": "TEACHING",
+                "content": "Prefer explicit assertions in tests.",
+                "outcome": 1.0,
+                "lookback": 1,
+                "dedup_key": "event-123",
+            },
+            req_id="capture-feedback-second",
+        )["result"]
+        assert second["deduped"] is True
+        assert second["dedup_key_used"] == "event-123"
+        assert second["edges_updated"] == 0
+        assert "injected_node_id" not in second
+
+        third = _call(
+            proc,
+            "capture_feedback",
+            {
+                "chat_id": "chat-dedup",
+                "kind": "TEACHING",
+                "content": "Prefer explicit assertions in tests.",
+                "lookback": 1,
+                "message_id": "event-123",
+            },
+            req_id="capture-feedback-third",
+        )["result"]
+        assert third["deduped"] is True
+        assert third["dedup_key_used"] == "event-123"
+    finally:
+        _shutdown_daemon(proc)
+
+    proc = _start_daemon(state_path)
+    try:
+        after_restart = _call(
+            proc,
+            "capture_feedback",
+            {
+                "chat_id": "chat-dedup",
+                "kind": "TEACHING",
+                "content": "Prefer explicit assertions in tests.",
+                "dedup_key": "event-123",
+            },
+            req_id="capture-feedback-restart",
+        )["result"]
+        assert after_restart["deduped"] is True
+        assert after_restart["dedup_key_used"] == "event-123"
+    finally:
+        _shutdown_daemon(proc)
+
+    graph_after, _index_after, _meta_after = load_state(str(state_path))
+    teaching_nodes = [
+        node.id
+        for node in graph_after.nodes()
+        if node.metadata.get("source") == "capture_feedback" and node.metadata.get("type") == "TEACHING"
+    ]
+    assert len(teaching_nodes) == 1
+
+    dedup_log = tmp_path / "injected_feedback.jsonl"
+    rows = [line for line in dedup_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 1
 
 
 def test_query_brain_uses_state_embedder_for_embeddings(monkeypatch) -> None:
