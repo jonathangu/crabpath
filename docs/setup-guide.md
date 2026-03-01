@@ -55,6 +55,16 @@ You can run this repeatedly; dedupe is by `(type, sha256(content), session_point
 
 For ongoing operation after startup, use `--ignore-checkpoint` only when you intentionally want to replay older chunks that were already ingested.
 
+Replay progress defaults:
+- Fast-learning prints progress as it processes extraction windows.
+- Replay emits a heartbeat every 30 seconds by default.
+- Use `--quiet` to suppress banners/progress for automation.
+
+Single-writer lock:
+- Writer commands lock `state.json` via `state.json.lock` to prevent clobbered writes.
+- If a lock is active, prefer rebuilding into a new state and cut over (`examples/ops/rebuild_then_cutover.sh`).
+- Expert override exists (`--force` or `OPENCLAWBRAIN_STATE_LOCK_FORCE=1`) and should only be used when no conflicting writer is active.
+
 Checkpoint visibility:
 
 ```bash
@@ -251,6 +261,12 @@ Run the production service as a Unix socket wrapper around the NDJSON daemon:
 
 ```bash
 openclawbrain serve --state ~/.openclawbrain/main/state.json
+```
+
+Advanced/alternate module form (same service behavior):
+
+```bash
+python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
 ```
 
 The socket server creates and manages:

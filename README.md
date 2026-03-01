@@ -8,6 +8,14 @@
 
 **Setup:** [Setup Guide](docs/setup-guide.md)
 
+## Docs
+
+- Operator guide: [docs/operator-guide.md](docs/operator-guide.md)
+- OpenClaw integration: [docs/openclaw-integration.md](docs/openclaw-integration.md)
+- Setup guide: [docs/setup-guide.md](docs/setup-guide.md)
+- GitHub repo: https://github.com/jonathangu/openclawbrain
+- ClawHub skill: https://clawhub.ai/skills/openclawbrain
+
 ## OpenClaw Integration (start here if you run OpenClaw)
 
 OpenClawBrain is designed to be the memory layer for **OpenClaw agents**.
@@ -698,5 +706,6 @@ Three brains run in production on a Mac Mini M4 Pro:
 
 - PyPI: `pip install openclawbrain`
 - GitHub: [jonathangu/openclawbrain](https://github.com/jonathangu/openclawbrain)
-- ClawHub: `clawhub install openclawbrain`
+- ClawHub skill: https://clawhub.ai/skills/openclawbrain
+- ClawHub CLI: `clawhub install openclawbrain`
 - Benchmarks: `python3 benchmarks/run_benchmark.py` (deterministic per commit; timings vary by machine)

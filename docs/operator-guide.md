@@ -4,13 +4,13 @@
 OpenClawBrain is the long-term memory layer for OpenClaw agents: it builds a learned graph from your workspace (`~/.openclaw/workspace`) plus session feedback (`~/.openclaw/agents/<agent>/sessions`), then serves fast query/learn operations from a persistent daemon state file (`~/.openclawbrain/<agent>/state.json`).
 
 ## 2) Turn brain ON
-Canonical run command (this repo has no `openclawbrain serve` subcommand):
+Canonical run command:
 
 ```bash
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
-What `socket_server` does:
+What `serve` does:
 - Starts the long-lived `openclawbrain daemon` worker.
 - Exposes a Unix socket at `~/.openclawbrain/main/daemon.sock` (for agent `main`).
 - Keeps the daemon hot in memory and restarts it if needed.
@@ -60,11 +60,28 @@ Single-writer rule still applies: either run full-learning on a NEW state before
 ## 5) Checkpoints & resume
 Default checkpoint path is next to state: `~/.openclawbrain/main/replay_checkpoint.json`.
 
-Inspect:
+Inspect checkpoint state (recommended):
 
 ```bash
-cat ~/.openclawbrain/main/replay_checkpoint.json
-# or:
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --show-checkpoint \
+  --resume
+```
+
+Machine-readable checkpoint status:
+
+```bash
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --show-checkpoint \
+  --resume \
+  --json
+```
+
+Direct file inspection is still useful for debugging:
+
+```bash
 jq . ~/.openclawbrain/main/replay_checkpoint.json
 ```
 
@@ -77,7 +94,9 @@ Flag meanings:
 - `--stop-after-fast-learning`: end after fast-learning phase (for quick cutover).
 
 ## 6) Progress: expected output by phase
-- Fast-learning only: ends with `Completed fast-learning; stopped before replay/harvest.`
+- Fast-learning prints progress and completes with `Completed fast-learning; stopped before replay/harvest.` when `--stop-after-fast-learning` is set.
+- Replay emits a progress heartbeat every 30 seconds by default; add `--progress-every N` for per-item cadence.
+- Use `--quiet` to suppress replay banners/progress when scripting.
 - Replay phase: stderr shows `Loaded <N> interactions from session files`; with `--progress-every`, shows `[replay] <done>/<total> (<pct>%)`.
 - Replay completion: `Replayed <n>/<total> queries, <m> cross-file edges created`
 - Full-learning completion (`--full-learning`): final line includes harvest summary, e.g. `harvest: tasks=<k>, damped_edges=<x>`.
@@ -91,15 +110,21 @@ Writers include:
 - maintenance/harvest operations that persist state
 
 If violated, writes can clobber each other (lost updates, split/corrupted operational state, stale checkpoints).  
-Use rebuild-then-cutover for safe parallel operations.
+OpenClawBrain enforces this with `state.json.lock` next to your state file.
+
+If a lock is active and you still need to proceed, override only when you are certain there is no conflicting writer:
+- `--force`
+- `OPENCLAWBRAIN_STATE_LOCK_FORCE=1`
+
+Recommended production path: use `examples/ops/rebuild_then_cutover.sh` so rebuild/replay happens on a fresh state and cutover is atomic.
 
 ## 8) Troubleshooting
 
 | Symptom | Likely cause | Commands |
 |---|---|---|
-| `status` says `Daemon: not running` | socket server not started, crashed, or wrong state path | `python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json` then `openclawbrain status --state ~/.openclawbrain/main/state.json` |
-| `daemon.sock` missing | server never started or wrong agent/state directory | `ls -la ~/.openclawbrain/main` and restart socket server with the same `--state` |
-| Replay refuses/unsafe on LIVE | active daemon socket detected; single-writer guard | stop daemon first, or run `examples/ops/rebuild_then_cutover.sh main ~/.openclaw/workspace ~/.openclaw/agents/main/sessions` |
-| Replay restarts from old work | checkpoint not used, wrong path, or intentionally ignored | run with `--resume --checkpoint ~/.openclawbrain/main/replay_checkpoint.json`; inspect file with `jq . ~/.openclawbrain/main/replay_checkpoint.json` |
+| `status` says `Daemon: not running` | service not started, crashed, or wrong state path | `openclawbrain serve --state ~/.openclawbrain/main/state.json` then `openclawbrain status --state ~/.openclawbrain/main/state.json` |
+| `daemon.sock` missing | service never started or wrong agent/state directory | `ls -la ~/.openclawbrain/main` and restart `openclawbrain serve` with the same `--state` |
+| Replay fails with lock/single-writer message | another process holds `state.json.lock` | stop the other writer, use `examples/ops/rebuild_then_cutover.sh ...`, or expert override with `--force` / `OPENCLAWBRAIN_STATE_LOCK_FORCE=1` |
+| Replay restarts from old work | checkpoint not used, wrong path, or intentionally ignored | run with `--resume --checkpoint ~/.openclawbrain/main/replay_checkpoint.json`; inspect with `openclawbrain replay --state ~/.openclawbrain/main/state.json --show-checkpoint --resume` |
 | `LLM required for fast-learning` | no OpenAI client/key configured for fast-learning mining | set `OPENAI_API_KEY` or run `--edges-only` replay path |
 | CLI says invalid sessions path | wrong sessions directory/file path | `ls -la ~/.openclaw/agents/main/sessions` and pass existing dir/files to `--sessions` |

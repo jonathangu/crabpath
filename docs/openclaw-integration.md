@@ -2,6 +2,7 @@
 
 OpenClawBrain is built to be the long-term memory layer for **OpenClaw agents**.
 Canonical docs and examples: https://openclawbrain.ai
+Primary operator runbook: [docs/operator-guide.md](operator-guide.md)
 Operator recipes (cutover, parallel replay, prompt caching, media memory): [docs/ops-recipes.md](ops-recipes.md)
 
 If you’re already running OpenClaw, this guide shows the fastest path to:
@@ -354,6 +355,11 @@ openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
   --sessions /path/to/sessions
 ```
+
+Single-writer reminder:
+- Rebuild/replay and daemon learning are both writers.
+- If lock checks fail on LIVE state, prefer rebuild-then-cutover from [docs/operator-guide.md](operator-guide.md).
+- Expert override: `--force` or `OPENCLAWBRAIN_STATE_LOCK_FORCE=1` (only when no conflicting writer is active).
 
 Media note for OpenClaw logs:
 
