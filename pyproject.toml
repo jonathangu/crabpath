@@ -1,6 +1,6 @@
 [project]
 name = "openclawbrain"
-version = "12.2.1"
+version = "12.2.3"
 description = "Memory graph for AI agents that learns what to retrieve — and what to suppress."
 requires-python = ">=3.10"
 dependencies = ["openai>=1.0"]

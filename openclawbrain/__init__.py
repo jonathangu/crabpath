@@ -18,7 +18,7 @@ from .split import generate_summaries, split_workspace
 from .sync import DEFAULT_AUTHORITY_MAP, SyncReport, sync_workspace
 from .store import ManagedState, load_state, save_state
 from .traverse import TraversalResult, TraversalConfig, traverse
-from .prompt_context import build_prompt_context
+from .prompt_context import build_prompt_context, build_prompt_context_ranked_with_stats, build_prompt_context_with_stats
 
 __all__ = [
     "Node",
@@ -40,6 +40,8 @@ __all__ = [
     "prune_orphan_nodes",
     "traverse",
     "build_prompt_context",
+    "build_prompt_context_with_stats",
+    "build_prompt_context_ranked_with_stats",
     "ManagedState",
     "split_workspace",
     "generate_summaries",
@@ -71,4 +73,4 @@ __all__ = [
     "replay_queries",
 ]
 
-__version__ = "12.2.2"
+__version__ = "12.2.3"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -601,6 +602,7 @@ def replay_queries(
             "edges_reinforced": 0,
             "cross_file_edges_created": 0,
             "last_replayed_ts": None,
+            "last_replayed_ts_source": None,
         }
 
     stats = {
@@ -608,6 +610,7 @@ def replay_queries(
         "edges_reinforced": 0,
         "cross_file_edges_created": 0,
         "last_replayed_ts": None,
+        "last_replayed_ts_source": None,
     }
     total_queries = len(normalized_queries)
     latest_ts = None
@@ -664,7 +667,13 @@ def replay_queries(
         if query_ts is not None:
             latest_ts = query_ts if latest_ts is None else max(latest_ts, query_ts)
 
-    stats["last_replayed_ts"] = latest_ts
+    if stats["queries_replayed"] > 0 and latest_ts is None:
+        stats["last_replayed_ts"] = time.time()
+        stats["last_replayed_ts_source"] = "wall_clock"
+    else:
+        stats["last_replayed_ts"] = latest_ts
+        if latest_ts is not None:
+            stats["last_replayed_ts_source"] = "query_ts"
     return stats
 
 
@@ -710,6 +719,7 @@ def replay_queries_parallel(
             "edges_reinforced": 0,
             "cross_file_edges_created": 0,
             "last_replayed_ts": None,
+            "last_replayed_ts_source": None,
             "merge_batches": 0,
             "replay_workers": worker_count,
         }
@@ -762,6 +772,7 @@ def replay_queries_parallel(
         "edges_reinforced": 0,
         "cross_file_edges_created": 0,
         "last_replayed_ts": None,
+        "last_replayed_ts_source": None,
         "merge_batches": 0,
         "replay_workers": worker_count,
     }
@@ -822,6 +833,7 @@ def replay_queries_parallel(
                         "batch_size": len(batch),
                         "merge_batches": stats["merge_batches"],
                         "last_replayed_ts": latest_ts,
+                        "last_replayed_ts_source": "query_ts" if latest_ts is not None else None,
                     }
                 )
             if verbose:
@@ -830,7 +842,13 @@ def replay_queries_parallel(
                     file=sys.stderr,
                 )
 
-    stats["last_replayed_ts"] = latest_ts
+    if stats["queries_replayed"] > 0 and latest_ts is None:
+        stats["last_replayed_ts"] = time.time()
+        stats["last_replayed_ts_source"] = "wall_clock"
+    else:
+        stats["last_replayed_ts"] = latest_ts
+        if latest_ts is not None:
+            stats["last_replayed_ts_source"] = "query_ts"
     return stats
 
 

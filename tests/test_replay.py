@@ -243,6 +243,19 @@ def test_replay_strengthens_edges() -> None:
     assert graph._edges["a"]["b"].weight > 0.5
 
 
+def test_replay_queries_uses_wall_clock_timestamp_when_query_ts_missing() -> None:
+    """Replay fallback uses wall-clock timestamp when no per-query ts is available."""
+    graph = Graph()
+    graph.add_node(Node("a", "alpha chunk", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "beta chunk", metadata={"file": "a.md"}))
+    graph.add_edge(Edge("a", "b", 0.5))
+    stats = replay_queries(graph=graph, queries=["alpha"], config=TraversalConfig(max_hops=1))
+
+    assert stats["queries_replayed"] == 1
+    assert isinstance(stats["last_replayed_ts"], float)
+    assert stats["last_replayed_ts_source"] == "wall_clock"
+
+
 def test_replay_creates_cross_file_edges() -> None:
     """test replay creates cross file edges."""
     graph = Graph()

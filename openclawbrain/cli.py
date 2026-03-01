@@ -912,8 +912,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     state_meta = _state_meta(prior_meta, fallback_name=embedder_name, fallback_dim=embedder_dim)
     if replay_stats.get("last_replayed_ts") is not None:
         state_meta["last_replayed_ts"] = replay_stats["last_replayed_ts"]
+        source = replay_stats.get("last_replayed_ts_source")
+        if isinstance(source, str):
+            state_meta["last_replayed_ts_source"] = source
+        else:
+            state_meta.pop("last_replayed_ts_source", None)
     else:
         state_meta.pop("last_replayed_ts", None)
+        state_meta.pop("last_replayed_ts_source", None)
 
     _write_graph(graph_path, graph, include_meta=True, meta=state_meta)
     save_state(
@@ -1552,11 +1558,13 @@ def cmd_replay(args: argparse.Namespace) -> int:
     last_checkpoint_at = time.monotonic()
     last_persist_at = time.monotonic()
     replay_latest_ts: float | None = None
+    replay_latest_ts_source: str | None = None
     stats = {
         "queries_replayed": 0,
         "edges_reinforced": 0,
         "cross_file_edges_created": 0,
         "last_replayed_ts": None,
+        "last_replayed_ts_source": None,
     }
 
     def _update_offsets_from_batch(batch: list[dict[str, object]]) -> None:
@@ -1600,6 +1608,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
         state_meta = _state_meta(meta)
         if replay_latest_ts is not None:
             state_meta["last_replayed_ts"] = replay_latest_ts
+            if replay_latest_ts_source is not None:
+                state_meta["last_replayed_ts_source"] = replay_latest_ts_source
         _persist_state(
             graph=graph,
             index=index if index is not None else VectorIndex(),
@@ -1648,13 +1658,18 @@ def cmd_replay(args: argparse.Namespace) -> int:
         merge_every = checkpoint_every_windows if checkpoint_every_windows > 0 else 50
 
         def _on_merge(event: dict[str, object]) -> None:
-            nonlocal processed_interactions, merge_batches, state_dirty, replay_latest_ts
+            nonlocal processed_interactions, merge_batches, state_dirty, replay_latest_ts, replay_latest_ts_source
             merged_queries = int(event.get("merged_queries", processed_interactions))
             merge_batches = int(event.get("merge_batches", merge_batches))
             processed_interactions = merged_queries
             last_ts = event.get("last_replayed_ts")
             if isinstance(last_ts, (int, float)):
-                replay_latest_ts = float(last_ts)
+                candidate_ts = float(last_ts)
+                if replay_latest_ts is None or candidate_ts >= replay_latest_ts:
+                    replay_latest_ts = candidate_ts
+                    source = event.get("last_replayed_ts_source")
+                    if isinstance(source, str):
+                        replay_latest_ts_source = source
             state_dirty = True
             _checkpoint_if_due()
             _persist_if_due()
@@ -1675,9 +1690,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
         stats["edges_reinforced"] = int(parallel_stats.get("edges_reinforced", 0))
         stats["cross_file_edges_created"] = int(parallel_stats.get("cross_file_edges_created", 0))
         stats["last_replayed_ts"] = parallel_stats.get("last_replayed_ts")
+        stats["last_replayed_ts_source"] = parallel_stats.get("last_replayed_ts_source")
         merge_batches = int(parallel_stats.get("merge_batches", merge_batches))
         if isinstance(stats["last_replayed_ts"], (int, float)):
             replay_latest_ts = float(stats["last_replayed_ts"])
+            if isinstance(stats["last_replayed_ts_source"], str):
+                replay_latest_ts_source = stats["last_replayed_ts_source"]
         processed_interactions = int(stats["queries_replayed"])
         state_dirty = bool(processed_interactions)
         replay_offsets_done.update({key: int(value) for key, value in replay_offsets.items()})
@@ -1702,8 +1720,14 @@ def cmd_replay(args: argparse.Namespace) -> int:
             stats["cross_file_edges_created"] += int(replay_batch.get("cross_file_edges_created", 0))
             batch_last_ts = replay_batch.get("last_replayed_ts")
             if isinstance(batch_last_ts, (int, float)):
-                replay_latest_ts = float(batch_last_ts) if replay_latest_ts is None else max(replay_latest_ts, float(batch_last_ts))
+                candidate_ts = float(batch_last_ts)
+                if replay_latest_ts is None or candidate_ts >= replay_latest_ts:
+                    replay_latest_ts = candidate_ts
+                    batch_last_ts_source = replay_batch.get("last_replayed_ts_source")
+                    if isinstance(batch_last_ts_source, str):
+                        replay_latest_ts_source = batch_last_ts_source
             stats["last_replayed_ts"] = replay_latest_ts
+            stats["last_replayed_ts_source"] = replay_latest_ts_source
             state_dirty = state_dirty or bool(replay_batch.get("queries_replayed", 0))
             _checkpoint_if_due()
             _persist_if_due()
@@ -1727,6 +1751,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
         state_meta = _state_meta(meta)
         if stats.get("last_replayed_ts") is not None:
             state_meta["last_replayed_ts"] = stats["last_replayed_ts"]
+            source = stats.get("last_replayed_ts_source")
+            if isinstance(source, str):
+                state_meta["last_replayed_ts_source"] = source
         _persist_state(
             graph=graph,
             index=index if index is not None else VectorIndex(),

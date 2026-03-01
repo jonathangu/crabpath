@@ -1,5 +1,18 @@
 ## Unreleased
 
+## v12.2.3 (2026-03-01)
+
+### Prompt-context and replay polish
+- Added prompt-context telemetry in query outputs for operator visibility (`prompt_context_len`, max chars, trim/drop stats, included/dropped ids).
+- Increased default `max_prompt_context_chars` to `30000`.
+- Set daemon query default `max_fired_nodes` to `30`.
+- Added ranked prompt-context ordering by authority first, then score, then deterministic source order.
+- Added `examples/eval/prompt_context_eval.py` harness for offline trim/drop evaluation.
+- Replay timestamp persistence now falls back to wall-clock time when replay succeeds but interaction timestamps are missing:
+  - `last_replayed_ts` is set from `time.time()`
+  - `last_replayed_ts_source` is set to `wall_clock`
+  - CLI persists both fields in state meta when available
+
 ### Single-writer state lock (issue #25)
 - Added `openclawbrain/state_lock.py`: advisory file lock (`fcntl.flock`) to enforce single-writer safety for `state.json`.
 - Writer commands (`replay`, `maintain`, `compact`, `sync`) and `socket_server`/`daemon` acquire the lock before writing.

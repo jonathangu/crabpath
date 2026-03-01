@@ -314,6 +314,33 @@ def test_cli_state_replay_uses_last_replayed_ts(tmp_path, capsys) -> None:
     assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 5.0
 
 
+def test_cli_state_replay_uses_wall_clock_ts_when_session_ts_missing(tmp_path, capsys) -> None:
+    """Replay persists wall-clock fallback timestamp and source when query ts is absent."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        json.dumps({"role": "user", "content": "alpha"}),
+        encoding="utf-8",
+    )
+
+    code = main(["replay", "--state", str(state_path), "--sessions", str(sessions), "--edges-only", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["queries_replayed"] == 1
+    assert isinstance(payload["last_replayed_ts"], float)
+    assert payload["last_replayed_ts_source"] == "wall_clock"
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert isinstance(state["meta"]["last_replayed_ts"], float)
+    assert state["meta"]["last_replayed_ts_source"] == "wall_clock"
+
+    code = main(["status", "--state", str(state_path), "--json"])
+    assert code == 0
+    status_payload = json.loads(capsys.readouterr().out.strip())
+    assert status_payload["last_replayed"] != "never"
+
+
 def test_cli_replay_discovers_reset_session_files(tmp_path, capsys) -> None:
     """test replay discovers and processes reset session files."""
     state_path = tmp_path / "state.json"
