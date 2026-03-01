@@ -7,7 +7,7 @@ Operator recipes (cutover, parallel replay, prompt caching, media memory): [docs
 If you’re already running OpenClaw, this guide shows the fastest path to:
 
 - Build a brain (`state.json`) from your OpenClaw workspace
-- Run the **persistent daemon service** (`openclawbrain.socket_server`) so queries are fast
+- Run the **persistent daemon service** (`openclawbrain serve`) so queries stay fast
 - Wire your OpenClaw agent’s **AGENTS.md** to query → respond → learn
 - Operate it like a runbook: launchd/systemd, maintenance cron, troubleshooting
 
@@ -85,7 +85,7 @@ Without the socket service, every query path tends to do:
 - run query
 - exit
 
-With `openclawbrain.socket_server`, you pay the load cost once and queries become:
+With `openclawbrain serve`, you pay the load cost once and queries become:
 
 - NDJSON request → response
 
@@ -203,7 +203,7 @@ That block is intentionally boring: it’s the contract OpenClaw already support
 ### Option A: run it manually (smoke test)
 
 ```bash
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
 The daemon speaks NDJSON over `stdin`/`stdout`.
@@ -225,7 +225,7 @@ echo '{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4
 ```
 
 - `inject` and `correction` are now available and are the preferred path for same-turn updates.
-- The daemon is still NDJSON over stdio internally, with production transport now provided by `openclawbrain.socket_server`.
+- The daemon is still NDJSON over stdio internally, with production transport now provided by `openclawbrain serve`.
 
 ### Option B: launchd (macOS)
 
@@ -242,13 +242,10 @@ Create `~/Library/LaunchAgents/com.openclawbrain.daemon.plist`:
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>
-    <string>python3</string>
-    <string>-m</string>
-    <string>openclawbrain.socket_server</string>
+    <string>openclawbrain</string>
+    <string>serve</string>
     <string>--state</string>
     <string>/Users/YOU/.openclawbrain/main/state.json</string>
-    <string>--auto-save-interval</string>
-    <string>10</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -299,7 +296,7 @@ Type=simple
 User=YOUR_USER
 WorkingDirectory=/home/YOUR_USER
 Environment=OPENAI_API_KEY=YOUR_KEY_HERE
-ExecStart=/usr/bin/env python3 -m openclawbrain.socket_server --state /home/YOUR_USER/.openclawbrain/main/state.json --auto-save-interval 10
+ExecStart=/usr/bin/env openclawbrain serve --state /home/YOUR_USER/.openclawbrain/main/state.json
 Restart=always
 RestartSec=1
 
@@ -480,12 +477,12 @@ Common causes:
 
 Fixes:
 
-- Use the socket server command (`python3 -m openclawbrain.socket_server`) when available.
+- Use the canonical brain-on command (`openclawbrain serve --state ...`).
 - Use OpenAI embeddings for production routing/scoring behavior; only use hash embeddings for offline/testing fallback.
 
 ### “Daemon starts but OpenClaw can’t talk to it”
 
-The daemon worker is an NDJSON stdio process, wrapped for production by `socket_server`.
+The daemon worker is an NDJSON stdio process, wrapped for production by `openclawbrain serve` (implemented in `socket_server`).
 If your integration layer cannot reach the socket, fall back to disk-path operation.
 
 Two practical options:
@@ -517,7 +514,7 @@ Two practical options:
                                          ▼
                          ┌──────────────────────────────────┐
                          │        OpenClawBrain daemon       │
-                         │ openclawbrain.socket_server --state│
+                         │ openclawbrain serve --state ...    │
                          │  (NDJSON over stdin/stdout)       │
                          └───────────────┬───────────────────┘
                                          │

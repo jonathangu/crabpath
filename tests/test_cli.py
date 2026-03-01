@@ -664,11 +664,55 @@ def test_cli_help_text_for_commands() -> None:
         "harvest",
         "journal",
         "sync",
+        "serve",
     ]:
         with pytest.raises(SystemExit):
             main([command, "--help"])
 
 
+def test_serve_command_prints_banner_and_calls_socket_server(monkeypatch, capsys) -> None:
+    """serve should print a startup banner and delegate to socket_server.main."""
+    called: list[list[str]] = []
+
+    def fake_default_socket_path(state_path: str) -> str:
+        return f"/tmp/{Path(state_path).parent.name}/daemon.sock"
+
+    def fake_socket_server_main(argv: list[str] | None = None) -> int:
+        called.append(list(argv or []))
+        return 0
+
+    from openclawbrain import socket_server
+
+    monkeypatch.setattr(socket_server, "_default_socket_path", fake_default_socket_path)
+    monkeypatch.setattr(socket_server, "main", fake_socket_server_main)
+
+    code = main(["serve", "--state", "~/agent/state.json"])
+    assert code == 0
+    assert called == [["--state", str(Path("~/agent/state.json").expanduser())]]
+
+    err = capsys.readouterr().err
+    assert "OpenClawBrain socket service (foreground)" in err
+    assert "socket path: /tmp/agent/daemon.sock" in err
+    assert f"state path: {Path('~/agent/state.json').expanduser()}" in err
+    assert "query status: openclawbrain status --state" in err
+    assert "stop: Ctrl-C" in err
+
+
+def test_serve_command_passes_explicit_socket_path(monkeypatch) -> None:
+    """serve should pass --socket-path through to the socket server."""
+    called: list[list[str]] = []
+
+    def fake_socket_server_main(argv: list[str] | None = None) -> int:
+        called.append(list(argv or []))
+        return 0
+
+    from openclawbrain import socket_server
+
+    monkeypatch.setattr(socket_server, "main", fake_socket_server_main)
+
+    code = main(["serve", "--state", "/tmp/state.json", "--socket-path", "/tmp/d.sock"])
+    assert code == 0
+    assert called == [["--state", "/tmp/state.json", "--socket-path", "/tmp/d.sock"]]
 def test_inject_command_defaults_connect_min_sim_for_hash_embedder(tmp_path, capsys) -> None:
     """test inject uses a zero min similarity threshold by default for hash embeds."""
     state_path = tmp_path / "state.json"

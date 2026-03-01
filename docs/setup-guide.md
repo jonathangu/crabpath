@@ -237,13 +237,13 @@ Reference: `examples/ops/callbacks.py`
 Run the production service as a Unix socket wrapper around the NDJSON daemon:
 
 ```bash
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
 The socket server creates and manages:
 
 - `~/.openclawbrain/<agent>/daemon.sock` (for example: `~/.openclawbrain/main/daemon.sock`)  
-  (created automatically by `socket_server`)
+  (created automatically by `openclawbrain serve`)
 
 Test it with:
 
@@ -265,9 +265,8 @@ Create `~/Library/LaunchAgents/com.openclawbrain.daemon.plist`:
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>
-    <string>python3</string>
-    <string>-m</string>
-    <string>openclawbrain.socket_server</string>
+    <string>openclawbrain</string>
+    <string>serve</string>
     <string>--state</string>
     <string>/Users/YOU/.openclawbrain/main/state.json</string>
   </array>
@@ -303,7 +302,7 @@ After=network-online.target
 Type=simple
 User=YOUR_USER
 WorkingDirectory=/home/YOUR_USER
-ExecStart=/usr/bin/python3 -m openclawbrain.socket_server --state /home/YOUR_USER/.openclawbrain/main/state.json
+ExecStart=/usr/bin/env openclawbrain serve --state /home/YOUR_USER/.openclawbrain/main/state.json
 Restart=always
 RestartSec=1
 
