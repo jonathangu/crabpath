@@ -176,3 +176,51 @@ OpenClawBrain supports `correction(chat_id, lookback=N)` (it remembers recent fi
 3) call `correction(...)`
 
 If you don't have that OpenClaw integration yet, you can still apply corrections manually via `openclawbrain self-learn` (offline) or daemon `correction` calls.
+
+## 14) Operator audit: detect path leaks & config drift
+Run this first (safe: does not print env var values or full file contents):
+
+```bash
+if [ -x examples/ops/audit_openclawbrain.sh ]; then
+  examples/ops/audit_openclawbrain.sh
+else
+  files=(
+    "$HOME/Library/LaunchAgents/com.openclawbrain.main.plist"
+    "$HOME/Library/LaunchAgents/com.openclawbrain.pelican.plist"
+    "$HOME/Library/LaunchAgents/com.openclawbrain.bountiful.plist"
+    "$HOME/.openclaw/cron/jobs.json"
+    "$HOME/.openclaw/config.yaml"
+  )
+  existing=()
+  for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
+  if [ "${#existing[@]}" -eq 0 ]; then
+    echo "PASS no key files present to scan"
+  elif command -v rg >/dev/null 2>&1; then
+    rg -l -e '/Users/[^[:space:]"]+/worktrees|/private/var/folders' "${existing[@]}" \
+      && echo "FAIL transient path leak pattern detected" \
+      || echo "PASS no transient path leak pattern found"
+  else
+    grep -E -l '/Users/[^[:space:]"]+/worktrees|/private/var/folders' "${existing[@]}" \
+      && echo "FAIL transient path leak pattern detected" \
+      || echo "PASS no transient path leak pattern found"
+  fi
+fi
+```
+
+Full audit script:
+
+```bash
+examples/ops/audit_openclawbrain.sh
+echo "exit_code=$?"  # number of FAIL checks; WARNs do not fail
+```
+
+What it checks:
+- transient path leak patterns in LaunchAgents, cron jobs, and OpenClaw config
+- launchd drift hints (missing plist files, missing env key names, missing workspace-root hints)
+- per-brain sanity for `~/.openclawbrain/{main,pelican,bountiful}`: `state.json`, `daemon.sock`, and a backup directory summary (count + total size)
+
+How to respond when it flags:
+- `FAIL transient path leak pattern detected`: replace transient paths with stable operator-managed roots, then reload launchd/cron as needed
+- `FAIL missing state.json`: restore from known-good backup or rebuild state, then restart daemon
+- `WARN daemon.sock missing`: start or restart `openclawbrain serve` for that brain and re-check status
+- `WARN missing env/workspace hints`: align LaunchAgent plists with your standard template, then `launchctl unload/load` and rerun the audit
