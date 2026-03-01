@@ -7,6 +7,7 @@ from openclawbrain.full_learning import (
     collect_session_files,
     dedupe_learning_events,
     select_feedback_windows,
+    _collect_turns,
     _read_records,
 )
 
@@ -114,3 +115,32 @@ def test_collect_session_files_broken_symlink_skipped(tmp_path: Path) -> None:
     link.symlink_to(target)
     result = collect_session_files([str(valid), str(link)])
     assert result == [valid]
+
+
+def test_collect_turns_includes_allowlisted_tool_result_for_media_stub(tmp_path: Path) -> None:
+    """_collect_turns includes toolResult text as deterministic tool turns."""
+    session = tmp_path / "session.jsonl"
+    session.write_text(
+        "\n".join(
+            [
+                '{"role":"user","content":"[media attached: screenshot (image/png)]"}',
+                '{"role":"assistant","content":"Let me inspect that image."}',
+                '{"role":"toolResult","toolName":"image","content":"OCR: rollout plan says restart api first."}',
+                '{"role":"assistant","content":"I see the rollout plan text now."}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    grouped, offsets = _collect_turns(
+        [session],
+        include_tool_results=True,
+        tool_result_allowlist={"image"},
+        tool_result_max_chars=20000,
+    )
+
+    assert len(grouped) == 1
+    _, turns = grouped[0]
+    assert [turn.role for turn in turns] == ["user", "assistant", "tool", "assistant"]
+    assert turns[2].content == "[toolResult:image] OCR: rollout plan says restart api first."
+    assert offsets[str(session)] == 4

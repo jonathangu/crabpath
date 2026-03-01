@@ -34,6 +34,8 @@ from .journal import (
 from .learn import apply_outcome_pg
 from .merge import apply_merge, suggest_merges
 from .replay import (
+    DEFAULT_TOOL_RESULT_ALLOWLIST,
+    DEFAULT_TOOL_RESULT_MAX_CHARS,
     extract_interactions,
     extract_query_records,
     extract_query_records_from_dir,
@@ -206,6 +208,13 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--resume", action="store_true")
     r.add_argument("--checkpoint", default=None)
     r.add_argument("--ignore-checkpoint", action="store_true")
+    r.add_argument("--include-tool-results", action=argparse.BooleanOptionalAction, default=True)
+    r.add_argument(
+        "--tool-result-allowlist",
+        default=",".join(sorted(DEFAULT_TOOL_RESULT_ALLOWLIST)),
+        help="Comma-separated tool names whose toolResult text may be attached for media stubs.",
+    )
+    r.add_argument("--tool-result-max-chars", type=int, default=DEFAULT_TOOL_RESULT_MAX_CHARS)
     r.add_argument("--progress-every", type=int, default=0)
     r.add_argument("--checkpoint-every-seconds", type=int, default=60)
     r.add_argument("--checkpoint-every", type=int, default=0, help="Checkpoint every K replay windows/merge batches")
@@ -493,7 +502,14 @@ def _load_session_query_records(session_paths: str | Iterable[str], since_ts: fl
     return records
 
 
-def _load_session_interactions(session_paths: str | Iterable[str], since_ts: float | None = None) -> list[dict[str, object]]:
+def _load_session_interactions(
+    session_paths: str | Iterable[str],
+    since_ts: float | None = None,
+    *,
+    include_tool_results: bool = True,
+    tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
+    tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
+) -> list[dict[str, object]]:
     """ load session interactions."""
     if isinstance(session_paths, str):
         session_paths = [session_paths]
@@ -513,8 +529,24 @@ def _load_session_interactions(session_paths: str | Iterable[str], since_ts: flo
 
     interactions: list[dict[str, object]] = []
     for session_file in session_files:
-        interactions.extend(extract_interactions(session_file, since_ts=since_ts))
+        interactions.extend(
+            extract_interactions(
+                session_file,
+                since_ts=since_ts,
+                include_tool_results=include_tool_results,
+                tool_result_allowlist=tool_result_allowlist,
+                tool_result_max_chars=tool_result_max_chars,
+            )
+        )
     return interactions
+
+
+def _parse_tool_result_allowlist(raw: str | None) -> set[str]:
+    """Parse comma-separated allowlist text into normalized lower-case names."""
+    if raw is None:
+        return set(DEFAULT_TOOL_RESULT_ALLOWLIST)
+    names = {part.strip().lower() for part in raw.split(",")}
+    return {name for name in names if name}
 
 
 def _state_meta(meta: dict[str, object] | None, fallback_name: str | None = None, fallback_dim: int | None = None) -> dict[str, object]:
@@ -1191,6 +1223,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
     """cmd replay."""
     graph, index, meta = _resolve_graph_index(args, allow_default_state=True)
     state_path = _resolve_state_path(args.state, allow_default=True)
+    tool_result_allowlist = _parse_tool_result_allowlist(args.tool_result_allowlist)
+    tool_result_max_chars = max(0, int(args.tool_result_max_chars))
+    include_tool_results = bool(args.include_tool_results)
     run_fast = bool(args.fast_learning)
     run_full = bool(args.full_learning)
     edges_only = bool(args.edges_only)
@@ -1232,6 +1267,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
             resume=bool(args.resume),
             ignore_checkpoint=bool(args.ignore_checkpoint),
             backup=bool(args.backup),
+            include_tool_results=include_tool_results,
+            tool_result_allowlist=tool_result_allowlist,
+            tool_result_max_chars=tool_result_max_chars,
             checkpoint_every=checkpoint_every_windows,
             checkpoint_every_seconds=checkpoint_every_seconds,
         )
@@ -1263,6 +1301,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
     interactions, replay_offsets = load_interactions_for_replay(
         args.sessions,
         since_lines=replay_since_lines if args.resume and not args.ignore_checkpoint else {},
+        include_tool_results=include_tool_results,
+        tool_result_allowlist=tool_result_allowlist,
+        tool_result_max_chars=tool_result_max_chars,
     )
     print(
         f"Loaded {len(interactions)} interactions from session files",

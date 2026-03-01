@@ -357,6 +357,22 @@ openclawbrain replay \
   --sessions /path/to/sessions
 ```
 
+Media note for OpenClaw logs:
+
+- User-uploaded image/audio is often stored as a stub like `[media attached: ...]`.
+- The meaningful OCR/transcript text usually appears later as `toolResult`.
+- OpenClawBrain replay can attach allowlisted `toolResult` text back onto the
+  media-stub user query and also expose it to fast-learning extraction windows.
+
+```bash
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --sessions /path/to/sessions \
+  --include-tool-results \
+  --tool-result-allowlist image,openai-whisper,openai-whisper-api,openai-whisper-local,summarize \
+  --tool-result-max-chars 20000
+```
+
 This does:
 
 - replay query edges from session history (with decay enabled by default)

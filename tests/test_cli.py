@@ -780,6 +780,77 @@ def test_cli_replay_edges_only_skips_learning(tmp_path, capsys) -> None:
     assert result["queries_replayed"] == 1
 
 
+def test_cli_replay_tool_result_flags_forwarded_json_and_text(tmp_path, capsys, monkeypatch) -> None:
+    """replay toolResult controls are forwarded to the replay loader."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text('{"role":"user","content":"alpha","ts":1.0}\n', encoding="utf-8")
+
+    import openclawbrain.cli as cli_module
+
+    seen: list[dict[str, object]] = []
+
+    def fake_load_interactions_for_replay(session_paths, since_lines=None, **kwargs):
+        seen.append(dict(kwargs))
+        interactions = [
+            {
+                "query": "alpha",
+                "response": None,
+                "tool_calls": [],
+                "ts": 1.0,
+                "source": str(sessions),
+                "line_no": 1,
+            }
+        ]
+        return interactions, {str(sessions): 1}
+
+    monkeypatch.setattr(cli_module, "load_interactions_for_replay", fake_load_interactions_for_replay)
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--no-include-tool-results",
+            "--tool-result-allowlist",
+            "image,summarize",
+            "--tool-result-max-chars",
+            "123",
+            "--json",
+        ]
+    )
+    assert code == 0
+    # JSON output should parse.
+    json.loads(capsys.readouterr().out.strip())
+    assert seen[-1]["include_tool_results"] is False
+    assert seen[-1]["tool_result_allowlist"] == {"image", "summarize"}
+    assert seen[-1]["tool_result_max_chars"] == 123
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--include-tool-results",
+            "--tool-result-allowlist",
+            "openai-whisper",
+            "--tool-result-max-chars",
+            "456",
+        ]
+    )
+    assert code == 0
+    assert seen[-1]["include_tool_results"] is True
+    assert seen[-1]["tool_result_allowlist"] == {"openai-whisper"}
+    assert seen[-1]["tool_result_max_chars"] == 456
+
+
 def test_cli_replay_progress_events_jsonl(tmp_path, capsys) -> None:
     """replay emits JSONL progress events when --json and --progress-every are set."""
     state_path = tmp_path / "state.json"
