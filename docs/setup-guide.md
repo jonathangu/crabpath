@@ -24,7 +24,7 @@ After init, replay your existing sessions to seed graph edges and extract learni
 openclawbrain replay --state ./brain/state.json --sessions ./sessions/
 ```
 
-This extracts durable correction/teaching nodes and runs maintenance in one command.
+This extracts durable correction/teaching nodes and runs maintenance in one command (`--full-learning`, alias: `--full-pipeline`).
 
 For cheap edge-only replay (no LLM, no harvest):
 
@@ -46,6 +46,7 @@ openclawbrain replay \
   --checkpoint ./brain/replay_checkpoint.json \
   --json
 ```
+`--extract-learning-events` is an alias for `--fast-learning`.
 
 `fast-learning` stores extracted events in an append-only log:
 - `./brain/learning_events.jsonl`
@@ -125,7 +126,7 @@ openclawbrain replay --state ./brain/state.json --sessions ./sessions/ --edges-o
 
 ## Performance knobs
 
-- `--workers`: parallelize LLM window extraction (higher = faster, bounded by rate limits)
+- `--workers`: LLM workers for fast-learning window extraction (higher = faster, bounded by rate limits)
 - `--window-radius`: context breadth around likely feedback turns
 - `--max-windows`: max feedback windows sampled per file/session
 - `--hard-max-turns`: hard cap total turns considered to keep extraction bounded

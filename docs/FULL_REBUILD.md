@@ -107,6 +107,7 @@ openclawbrain replay \
   --full-learning \
   --json
 ```
+`--full-pipeline` is an alias for `--full-learning` (and `--extract-learning-events` aliases `--fast-learning` when you only want extraction/injection).
 
 **What it does:**
 

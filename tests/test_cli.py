@@ -1071,6 +1071,65 @@ def test_cli_replay_startup_banner_printed_for_text_mode(tmp_path, capsys) -> No
     assert "phases: replay" in err
 
 
+def test_cli_replay_quiet_suppresses_banners_and_progress(tmp_path, capsys) -> None:
+    """quiet replay suppresses status banners and progress lines on stderr."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+                json.dumps({"role": "user", "content": "beta", "ts": 2.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 2.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--progress-every",
+            "1",
+            "--quiet",
+        ]
+    )
+    assert code == 0
+    err = capsys.readouterr().err
+    assert "Loaded " not in err
+    assert "[replay]" not in err
+
+
+def test_cli_replay_alias_extract_learning_events(tmp_path, capsys, monkeypatch) -> None:
+    """--extract-learning-events is accepted as alias for --fast-learning."""
+    from openclawbrain.cli import _build_parser
+    parser = _build_parser()
+    args = parser.parse_args([
+        "replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s",
+        "--extract-learning-events", "--stop-after-fast-learning",
+    ])
+    assert args.fast_learning is True
+
+
+def test_cli_replay_alias_full_pipeline(tmp_path, capsys, monkeypatch) -> None:
+    """--full-pipeline is accepted as alias for --full-learning."""
+    from openclawbrain.cli import _build_parser
+    parser = _build_parser()
+    args = parser.parse_args([
+        "replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s",
+        "--full-pipeline",
+    ])
+    assert args.full_learning is True
+
+
+
 def test_cli_replay_writes_checkpoint_and_resume_uses_it(tmp_path, capsys) -> None:
     """replay writes checkpoint and resume only replays new lines."""
     state_path = tmp_path / "state.json"

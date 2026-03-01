@@ -345,7 +345,7 @@ See `examples/openai_embedder/` for a complete example.
 | `compact` | Compact old daily notes into graph nodes |
 | `sync` | Incremental re-embed after file changes |
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
-| `replay` | Replay session queries (defaults to full-learning; use `--edges-only` for cheap replay, `--fast-learning` for LLM mining only) |
+| `replay` | Replay session queries (defaults to full-learning; use `--edges-only` for cheap replay, `--fast-learning`/`--extract-learning-events` for LLM mining only, or `--full-learning`/`--full-pipeline` for the full pass) |
 | `harvest` | Apply slow-learning pass from `learning_events.jsonl` to current graph |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
@@ -580,7 +580,7 @@ openclawbrain replay \
 - `--tool-result-allowlist` (comma-separated tool names)
 - `--tool-result-max-chars` (max allowlisted tool text appended per user query)
 
-This is equivalent to passing `--full-learning` explicitly. Decay is enabled
+This is equivalent to passing `--full-learning` (alias: `--full-pipeline`) explicitly. Decay is enabled
 during replay by default and the harvest pass runs
 (`decay,scale,split,merge,prune,connect`), so unrelated edges weaken while
 active paths are reinforced.
@@ -605,6 +605,7 @@ openclawbrain replay \
   --workers 4 \
   --checkpoint /tmp/brain/replay_checkpoint.json
 ```
+`--extract-learning-events` is an alias for `--fast-learning`.
 
 For cutover-friendly startup (inject quickly, then start daemon immediately):
 
@@ -616,6 +617,7 @@ openclawbrain replay \
   --stop-after-fast-learning \
   --checkpoint /tmp/brain/replay_checkpoint.json
 ```
+`--workers` controls fast-learning LLM extraction concurrency (this stage is often the slowest, because it is LLM-bound).
 
 For durable long replays with periodic progress/checkpoint/state persistence:
 
@@ -631,6 +633,7 @@ openclawbrain replay \
   --persist-state-every-seconds 30 \
   --progress-every 250
 ```
+By default, replay also emits progress heartbeats every 30 seconds; use `--quiet` to suppress banners/progress.
 
 When `--json` is set, progress is emitted as JSONL events:
 `{"type":"progress","phase":"replay",...}`.
@@ -645,6 +648,7 @@ openclawbrain replay \
   --replay-workers 4 \
   --checkpoint-every 1
 ```
+`--replay-workers` controls edge replay workers. Values greater than `1` trade strict sequential replay behavior for a deterministic shard/merge approximation.
 
 Parallel replay v0 is an approximation: workers process deterministic shards and
 compute replay deltas without mutating shared state; the reducer applies those

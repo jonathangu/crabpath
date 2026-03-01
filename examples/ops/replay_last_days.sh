@@ -20,8 +20,8 @@ Options:
   --state PATH
   --sessions-dir PATH
   --days N
-  --replay-workers N
-  --workers N
+  --replay-workers N    # edge replay workers
+  --workers N           # fast-learning LLM workers
   --progress-every N
   --checkpoint-every-seconds N
   --checkpoint-every N
@@ -95,7 +95,7 @@ else
   cmd+=("${session_files[@]}")
 fi
 cmd+=(
-  --full-learning
+  --full-learning  # alias: --full-pipeline
   --resume
   --checkpoint "$CHECKPOINT"
   --replay-workers "$REPLAY_WORKERS"

@@ -8,6 +8,7 @@
 - `replay_last_days.sh`: full-learning replay over session files modified in the last N days, with safe checkpoint defaults for long runs
 - `cutover_then_background_full_learning.sh`: fast-learning cutover first, then background full-learning replay via `nohup`
 - `rebuild_then_cutover.sh`: rebuild into a new brain directory, verify, then atomic cutover with launchd-aware stop/start
+- Replay aliases: `--extract-learning-events` = `--fast-learning`, `--full-pipeline` = `--full-learning`
 
 By default, examples use OpenAI callbacks as the production path:
 
