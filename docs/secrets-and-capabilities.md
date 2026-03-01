@@ -143,3 +143,31 @@ Audit potential leaks (path + line only):
 ```bash
 python3 -m openclawbrain.ops.audit_secret_leaks --workspace ~/.openclaw/workspace --strict
 ```
+
+## Host-Level Registry + `sync_registry`
+
+For multi-workspace operators, keep one host-level registry and symlink each workspace `docs/` file to it:
+
+- Registry root: `~/.openclaw/credentials/registry`
+- Canonical files:
+  - `secret-pointers.md`
+  - `capabilities.md`
+
+Run:
+
+```bash
+python3 -m openclawbrain.ops.sync_registry
+```
+
+What it does:
+
+- Regenerates host-level `secret-pointers.md` using `harvest_secret_pointers` (pointer-only output).
+- Regenerates host-level `capabilities.md` from env key names/presence plus known key-to-service mappings.
+- Creates or refreshes workspace symlinks:
+  - `<workspace>/docs/secret-pointers.md -> ~/.openclaw/credentials/registry/secret-pointers.md`
+  - `<workspace>/docs/capabilities.md -> ~/.openclaw/credentials/registry/capabilities.md`
+
+Security constraints remain unchanged:
+
+- Never print/store secret values.
+- Track only key names, pointers, and boolean presence checks.

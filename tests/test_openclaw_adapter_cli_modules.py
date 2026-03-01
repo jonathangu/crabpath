@@ -20,8 +20,10 @@ def test_packaged_ops_modules_importable() -> None:
     launchd_mod = importlib.import_module("openclawbrain.ops.write_launchd_plist")
     harvest_mod = importlib.import_module("openclawbrain.ops.harvest_secret_pointers")
     audit_mod = importlib.import_module("openclawbrain.ops.audit_secret_leaks")
+    sync_mod = importlib.import_module("openclawbrain.ops.sync_registry")
 
     assert callable(patch_mod.main)
     assert callable(launchd_mod.main)
     assert callable(harvest_mod.main)
     assert callable(audit_mod.main)
+    assert callable(sync_mod.main)

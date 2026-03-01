@@ -306,3 +306,15 @@ python3 -m openclawbrain.ops.audit_secret_leaks \
   --state ~/.openclawbrain/main/state.json \
   --strict
 ```
+
+Host-level global registry (recommended for multi-workspace operators):
+
+```bash
+python3 -m openclawbrain.ops.sync_registry
+```
+
+Why this avoids drift:
+
+- `sync_registry` writes one canonical registry under `~/.openclaw/credentials/registry`.
+- Each workspace `docs/secret-pointers.md` and `docs/capabilities.md` becomes a symlink to that canonical file.
+- Any refresh updates all workspaces at once because they all reference the same target.

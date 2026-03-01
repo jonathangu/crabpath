@@ -163,6 +163,14 @@ python3 -m openclawbrain.ops.harvest_secret_pointers \
   --workspace "$workspaceDir"
 ```
 
+Recommended for host-wide multi-agent setups:
+
+```bash
+python3 -m openclawbrain.ops.sync_registry
+```
+
+This keeps one host-level registry in `~/.openclaw/credentials/registry` and wires each workspace docs file as a symlink, so capability/secret-pointer docs stay in sync across agents.
+
 Optional strict leak audit:
 
 ```bash
