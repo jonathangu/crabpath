@@ -18,7 +18,6 @@ openclawbrain replay \
   --sessions ~/.openclaw/agents/main/sessions \
   --fast-learning \
   --stop-after-fast-learning \
-  --progress-every 25 \
   --resume \
   --checkpoint ~/.openclawbrain/main/replay_checkpoint.json
 ```
@@ -30,10 +29,21 @@ Example progress output during fast-learning:
 [fast_learning] 250/1800 (13.9%) elapsed=41.7s rate=6.00/s eta=258.3s
 ```
 
+Default replay heartbeat is every 30 seconds; use `--quiet` to suppress banners/progress in scripted runs.
+
+Checkpoint status after fast-learning:
+
+```bash
+openclawbrain replay \
+  --state ~/.openclawbrain/main/state.json \
+  --show-checkpoint \
+  --resume
+```
+
 2. Start the daemon so serving traffic uses the latest state:
 
 ```bash
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
 3. Run full replay/harvest later (off-peak):
