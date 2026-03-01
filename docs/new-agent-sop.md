@@ -150,6 +150,10 @@ Secrets policy:
 
 - Never store secret values in workspace memory files, prompts, or brain state.
 - Store only pointers: env key names and local `tokenFile` paths.
+- Recommended local pattern on Mac mini:
+  - Keep secret values in `~/.openclaw/credentials/env/<project>.env` (`chmod 600`).
+  - Keep repo/workspace `.env` as a symlink to that centralized file.
+  - Keep token files in `~/.openclaw/credentials/*.token` (`chmod 600`).
 - Verify only with boolean presence checks.
 
 Run capability/secret-pointer harvest after setup:

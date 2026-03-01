@@ -261,6 +261,16 @@ python3 -m openclawbrain.ops.harvest_secret_pointers \
   --out ~/.openclaw/workspace/docs/secret-pointers.md
 ```
 
+To include centralized env files (for example `~/.openclaw/credentials/env/*.env`), repeat `--extra-env-file`:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --extra-env-file ~/.openclaw/credentials/env/backyard-ripe.env \
+  --extra-env-file ~/.openclaw/credentials/env/quant-research.env \
+  --out ~/.openclaw/workspace/docs/secret-pointers.md
+```
+
 By default, harvest also inventories local credential files from `~/.openclaw/credentials` (if present) and records only filename/path/mode pointers. It never reads or prints file contents. Override or disable as needed:
 
 ```bash
@@ -268,6 +278,16 @@ python3 -m openclawbrain.ops.harvest_secret_pointers \
   --workspace ~/.openclaw/workspace \
   --credentials-dir ~/.openclaw/credentials \
   --no-include-credentials
+```
+
+FULL accounting example (workspace + centralized env files + default credentials inventory):
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --extra-env-file ~/.openclaw/credentials/env/backyard-ripe.env \
+  --extra-env-file ~/.openclaw/credentials/env/quant-research.env \
+  --out ~/.openclaw/workspace/docs/secret-pointers.md
 ```
 
 Optional JSON output for automation:

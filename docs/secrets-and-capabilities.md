@@ -9,6 +9,33 @@ This is the canonical policy for secrets in OpenClaw/OpenClawBrain workspaces.
 - Pointers are allowed: env var names, `tokenFile` paths, and local file locations.
 - Verification must be boolean only (present/missing), never value disclosure.
 
+## Recommended local secret storage (Mac mini)
+
+- Store secret values in `~/.openclaw/credentials/env/<project>.env` and set `chmod 600`.
+- Keep each repo/workspace `.env` as a symlink to that centralized file so existing app/runtime loading still works.
+- Keep token files in `~/.openclaw/credentials/*.token` and set `chmod 600`.
+- Never write secret values into brain/workspace notes, prompts, or state.
+
+Safe migration (no value printing):
+
+```bash
+mkdir -p ~/.openclaw/credentials/env ~/.openclaw/credentials
+
+repo_dir=~/path/to/repo
+project_env=~/.openclaw/credentials/env/<project>.env
+
+# Backup and move an existing local .env into centralized storage.
+if [ -f "$repo_dir/.env" ] && [ ! -L "$repo_dir/.env" ]; then
+  cp "$repo_dir/.env" "$repo_dir/.env.backup.$(date +%Y%m%d%H%M%S)"
+  mv "$repo_dir/.env" "$project_env"
+fi
+
+chmod 600 "$project_env"
+[ -L "$repo_dir/.env" ] && rm "$repo_dir/.env"
+ln -s "$project_env" "$repo_dir/.env"
+chmod 600 ~/.openclaw/credentials/*.token 2>/dev/null || true
+```
+
 ## Minimal Schema
 
 Each registry entry should track:
