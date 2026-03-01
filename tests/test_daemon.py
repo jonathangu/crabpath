@@ -138,7 +138,7 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
         assert "- node:" in result["prompt_context"]
         assert "alpha" in result["prompt_context"]
         assert result["prompt_context_len"] == len(result["prompt_context"])
-        assert result["prompt_context_max_chars"] == 20000
+        assert result["prompt_context_max_chars"] == 30000
         assert isinstance(result["prompt_context_trimmed"], bool)
         assert isinstance(result["prompt_context_included_node_ids"], list)
         assert isinstance(result["prompt_context_dropped_node_ids"], list)
@@ -155,7 +155,7 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
     assert query_entries
     metadata = query_entries[-1]["metadata"]
     assert metadata["prompt_context_len"] == len(result["prompt_context"])
-    assert metadata["prompt_context_max_chars"] == 20000
+    assert metadata["prompt_context_max_chars"] == 30000
     assert isinstance(metadata["prompt_context_trimmed"], bool)
 
 

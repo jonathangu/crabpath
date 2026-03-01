@@ -261,7 +261,7 @@ def _handle_query(
     # Prompt caching appendix (deterministic) size.
     max_prompt_chars = params.get("max_prompt_context_chars")
     if not isinstance(max_prompt_chars, int):
-        max_prompt_chars = 20000
+        max_prompt_chars = 30000
 
     # Returned `context` size (human-readable, non-deterministic ordering). If not set, default
     # to the prompt appendix size so operators can bound output in one knob.
