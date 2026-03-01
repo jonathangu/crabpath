@@ -1422,7 +1422,18 @@ def cmd_replay(args: argparse.Namespace) -> int:
         total = int(payload.get("total", 0))
         pct = (100.0 * completed / total) if total > 0 else 100.0
         phase = payload.get("phase", "replay")
-        print(f"[{phase}] {completed}/{total} ({pct:.1f}%)", file=sys.stderr)
+        elapsed_seconds = payload.get("elapsed_seconds")
+        rate = payload.get("rate")
+        eta_seconds = payload.get("eta_seconds")
+        extras: list[str] = []
+        if isinstance(elapsed_seconds, (int, float)):
+            extras.append(f"elapsed={float(elapsed_seconds):.1f}s")
+        if isinstance(rate, (int, float)):
+            extras.append(f"rate={float(rate):.2f}/s")
+        if isinstance(eta_seconds, (int, float)):
+            extras.append(f"eta={float(eta_seconds):.1f}s")
+        extra_text = f" {' '.join(extras)}" if extras else ""
+        print(f"[{phase}] {completed}/{total} ({pct:.1f}%){extra_text}", file=sys.stderr)
 
     fast_stats: dict[str, object] | None = None
     if run_fast or run_full:
@@ -1442,6 +1453,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
             tool_result_max_chars=tool_result_max_chars,
             checkpoint_every=checkpoint_every_windows,
             checkpoint_every_seconds=checkpoint_every_seconds,
+            on_progress=_emit_progress if progress_every > 0 else None,
+            progress_every_windows=progress_every,
+            progress_every_seconds=10 if progress_every > 0 else 0,
         )
         graph, index, meta = load_state(str(state_path))
         if args.stop_after_fast_learning:

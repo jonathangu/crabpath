@@ -930,6 +930,53 @@ def test_cli_replay_progress_events_jsonl(tmp_path, capsys) -> None:
     assert '{"type": "progress", "phase": "replay"' in out
 
 
+def test_cli_replay_fast_learning_progress_events_jsonl(tmp_path, capsys, monkeypatch) -> None:
+    """replay emits fast-learning JSONL progress events when enabled."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "that is wrong", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    from openclawbrain import full_learning as learning_module
+
+    def fake_llm(_: str, __: str) -> str:
+        return json.dumps(
+            {
+                "corrections": [{"content": "Use the runbook.", "context": "ctx", "severity": "high"}],
+                "teachings": [],
+                "reinforcements": [],
+            }
+        )
+
+    monkeypatch.setattr(learning_module, "openai_llm_fn", fake_llm)
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--fast-learning",
+            "--stop-after-fast-learning",
+            "--progress-every",
+            "1",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert '{"type": "progress", "phase": "fast_learning"' in out
+
+
 def test_cli_replay_show_checkpoint_json_uses_new_schema_fixture(tmp_path, capsys) -> None:
     """replay --show-checkpoint emits stable JSON status for new schema checkpoints."""
     state_path = tmp_path / "state.json"

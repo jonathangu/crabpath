@@ -6,6 +6,7 @@ from openclawbrain.full_learning import (
     SessionTurn,
     collect_session_files,
     dedupe_learning_events,
+    run_fast_learning,
     select_feedback_windows,
     _collect_turns,
     _read_records,
@@ -144,3 +145,51 @@ def test_collect_turns_includes_allowlisted_tool_result_for_media_stub(tmp_path:
     assert [turn.role for turn in turns] == ["user", "assistant", "tool", "assistant"]
     assert turns[2].content == "[toolResult:image] OCR: rollout plan says restart api first."
     assert offsets[str(session)] == 4
+
+
+def test_run_fast_learning_invokes_progress_callback(tmp_path: Path) -> None:
+    """run_fast_learning emits progress payloads during fast-learning."""
+    state_path = tmp_path / "state.json"
+    state_path.write_text(
+        '{"graph":{"nodes":[],"edges":[]},"index":{},"meta":{"embedder_name":"hash-v1","embedder_dim":1024}}',
+        encoding="utf-8",
+    )
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                '{"role":"user","content":"that guidance is wrong","ts":1.0}',
+                '{"role":"assistant","content":"acknowledged","ts":1.1}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    events: list[dict[str, object]] = []
+
+    def fake_llm(_: str, __: str) -> str:
+        return (
+            '{"corrections":[{"content":"Do X instead.","context":"ctx","severity":"high"}],'
+            '"teachings":[],"reinforcements":[]}'
+        )
+
+    run_fast_learning(
+        state_path=str(state_path),
+        session_paths=[sessions],
+        workers=1,
+        max_windows=1,
+        llm_fn=fake_llm,
+        checkpoint_every=0,
+        checkpoint_every_seconds=0,
+        on_progress=events.append,
+        progress_every_windows=1,
+        progress_every_seconds=0,
+        backup=False,
+    )
+
+    assert events
+    assert events[-1]["type"] == "progress"
+    assert events[-1]["phase"] == "fast_learning"
+    assert events[-1]["completed"] == events[-1]["total"]
+    assert isinstance(events[-1]["elapsed_seconds"], float)
+    assert isinstance(events[-1]["rate"], float)

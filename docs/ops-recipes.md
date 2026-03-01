@@ -18,8 +18,15 @@ openclawbrain replay \
   --sessions ~/.openclaw/agents/main/sessions \
   --fast-learning \
   --stop-after-fast-learning \
+  --progress-every 25 \
   --resume \
   --checkpoint ~/.openclawbrain/main/replay_checkpoint.json
+```
+
+Example progress output during fast-learning:
+
+```text
+[fast_learning] 250/1800 (13.9%) elapsed=41.7s rate=6.00/s eta=258.3s
 ```
 
 2. Start the daemon so serving traffic uses the latest state:

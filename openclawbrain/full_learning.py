@@ -708,6 +708,9 @@ def run_fast_learning(
     tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
     checkpoint_every: int = 0,
     checkpoint_every_seconds: int = 60,
+    on_progress: Callable[[dict[str, object]], None] | None = None,
+    progress_every_windows: int = 0,
+    progress_every_seconds: int = 0,
 ) -> dict[str, Any]:
     """Run LLM-backed transcript mining and inject new learning nodes."""
     if workers < 1:
@@ -750,9 +753,15 @@ def run_fast_learning(
 
     all_events: list[dict] = []
     completed_windows = 0
+    total_windows = len(windows)
+    fast_started_at = time.monotonic()
     checkpoint_every_windows = max(0, checkpoint_every)
     checkpoint_interval_seconds = max(0, checkpoint_every_seconds)
     last_checkpoint_at = time.monotonic()
+    progress_interval_windows = max(0, int(progress_every_windows))
+    progress_interval_seconds = max(0, int(progress_every_seconds))
+    last_progress_at = fast_started_at
+    last_progress_completed = -1
 
     def _maybe_checkpoint_fast() -> None:
         nonlocal last_checkpoint_at
@@ -773,11 +782,41 @@ def run_fast_learning(
             extra={
                 "status": "running",
                 "windows_processed": completed_windows,
-                "windows_total": len(windows),
+                "windows_total": total_windows,
                 "updated_at": time.time(),
             },
         )
         last_checkpoint_at = time.monotonic()
+
+    def _emit_progress_if_due(*, force: bool = False) -> None:
+        nonlocal last_progress_at, last_progress_completed
+        if on_progress is None:
+            return
+        if force and completed_windows == last_progress_completed:
+            return
+        now = time.monotonic()
+        due_by_count = progress_interval_windows > 0 and completed_windows % progress_interval_windows == 0
+        due_by_time = progress_interval_seconds > 0 and (now - last_progress_at) >= progress_interval_seconds
+        if not force and not (due_by_count or due_by_time):
+            return
+        elapsed_seconds = max(0.0, now - fast_started_at)
+        rate = (completed_windows / elapsed_seconds) if elapsed_seconds > 0 else 0.0
+        remaining = max(0, total_windows - completed_windows)
+        eta_seconds = (remaining / rate) if rate > 0 else None
+        on_progress(
+            {
+                "type": "progress",
+                "phase": "fast_learning",
+                "completed": completed_windows,
+                "total": total_windows,
+                "elapsed_seconds": elapsed_seconds,
+                "rate": rate,
+                "eta_seconds": eta_seconds,
+                "updated_at": time.time(),
+            }
+        )
+        last_progress_at = now
+        last_progress_completed = completed_windows
 
     if windows:
         request_ctx = [(source, idx + 1, len(windows), segment) for idx, (source, segment, _) in enumerate(windows)]
@@ -785,6 +824,7 @@ def run_fast_learning(
             for source, idx, total, segment in request_ctx:
                 all_events.extend(_window_to_payload(session=source, window=segment, window_idx=idx, total_windows=total, llm_fn=llm_fn))
                 completed_windows += 1
+                _emit_progress_if_due()
                 _maybe_checkpoint_fast()
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
@@ -802,7 +842,9 @@ def run_fast_learning(
                 for future in concurrent.futures.as_completed(futures):
                     all_events.extend(future.result())
                     completed_windows += 1
+                    _emit_progress_if_due()
                     _maybe_checkpoint_fast()
+    _emit_progress_if_due(force=True)
 
     if not include_reinforcements:
         all_events = [event for event in all_events if event.get("type") != "REINFORCEMENT"]
@@ -864,13 +906,13 @@ def run_fast_learning(
             extra={
                 "status": "complete",
                 "windows_processed": completed_windows,
-                "windows_total": len(windows),
+                "windows_total": total_windows,
                 "updated_at": time.time(),
             },
         )
 
     return {
-        "windows": len(windows),
+        "windows": total_windows,
         "events_extracted": len(all_events),
         "events_appended": len(deduped),
         "events_skipped": skipped,

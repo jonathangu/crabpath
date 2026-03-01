@@ -14,6 +14,13 @@
 - Added checkpoint fixture-based tests for legacy/new schemas, replay/fast-learning legacy fallback warnings, and startup/checkpoint status output.
 - Updated operator docs (`docs/ops-recipes.md`, `docs/setup-guide.md`) with `--show-checkpoint` and explicit resume semantics.
 
+### Fast-learning progress visibility (issues #24, #25)
+- `run_fast_learning()` now supports an optional `on_progress` callback with payloads shaped like:
+  - `{"type":"progress","phase":"fast_learning","completed","total","elapsed_seconds","rate","eta_seconds","updated_at"}`
+- `openclawbrain replay` now forwards fast-learning progress through the existing CLI progress emitter, including JSON progress lines (`type=progress`) and text-mode elapsed/rate/ETA details.
+- Added tests for CLI JSON progress emission during fast-learning.
+- Updated `docs/ops-recipes.md` with a fast-learning progress output example.
+
 ### Replay ops hardening + simple parallel replay v0 (issue #19)
 - `openclawbrain replay` adds:
   - `--progress-every N` (periodic progress, JSONL events when `--json` is enabled)
