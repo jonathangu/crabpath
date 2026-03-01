@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -74,9 +75,65 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_workspaces(raw_workspaces: list[str]) -> list[Path]:
+def _workspaces_from_openclaw_config(openclaw_config: Path) -> list[Path]:
+    """Best-effort workspace discovery from ~/.openclaw/openclaw.json."""
+    if not openclaw_config.exists():
+        return []
+    try:
+        payload = json.loads(openclaw_config.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    agents = payload.get("agents") if isinstance(payload, dict) else None
+    agent_list = agents.get("list") if isinstance(agents, dict) else None
+    if not isinstance(agent_list, list):
+        return []
+
+    out: list[Path] = []
+    for entry in agent_list:
+        if not isinstance(entry, dict):
+            continue
+        ws = entry.get("workspace")
+        if isinstance(ws, str) and ws.strip():
+            out.append(Path(ws).expanduser())
+    return out
+
+
+def _workspaces_from_glob() -> list[Path]:
+    """Fallback discovery: scan ~/.openclaw for workspace* directories."""
+    base = Path.home() / ".openclaw"
+    if not base.exists():
+        return []
+    candidates: list[Path] = []
+    for path in sorted(base.glob("workspace*")):
+        if path.is_dir():
+            candidates.append(path)
+    return candidates
+
+
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _resolve_workspaces(raw_workspaces: list[str], openclaw_config: Path) -> list[Path]:
     if raw_workspaces:
         return [Path(p).expanduser() for p in raw_workspaces]
+
+    discovered: list[Path] = []
+    discovered.extend(_workspaces_from_openclaw_config(openclaw_config))
+    if not discovered:
+        discovered.extend(_workspaces_from_glob())
+    if discovered:
+        return _dedupe_paths(discovered)
+
     return [Path(p).expanduser() for p in DEFAULT_WORKSPACES]
 
 
@@ -269,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     env_dir = Path(args.env_dir).expanduser() if args.env_dir else credentials_dir / "env"
     registry_dir = Path(args.registry_dir).expanduser() if args.registry_dir else credentials_dir / "registry"
     openclaw_config = Path(args.openclaw_config).expanduser()
-    workspaces = _resolve_workspaces(args.workspace)
+    workspaces = _resolve_workspaces(args.workspace, openclaw_config)
     anchor_workspace = _choose_anchor_workspace(workspaces)
     env_files = _iter_env_files(env_dir)
     env_hits = _resolve_env_hits(env_files)
