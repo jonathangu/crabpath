@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from openclawbrain import HashEmbedder, TraversalConfig, load_state, traverse
+from openclawbrain import HashEmbedder, TraversalConfig, build_prompt_context, load_state, traverse
 from openclawbrain.socket_client import OCBClient
 
 
@@ -124,8 +124,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--chat-id", help="Conversation id to persist fired nodes")
     parser.add_argument("--socket", help="Unix socket path for daemon mode")
     parser.add_argument("--top", type=int, default=4, help="Top-k vector matches")
+    parser.add_argument(
+        "--format",
+        choices=["text", "json", "prompt"],
+        default="text",
+        help="Output format (json includes both context and prompt_context)",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON output")
     args = parser.parse_args(argv)
+    output_format = "json" if args.json else args.format
 
     query_text = " ".join(args.query).strip()
     state_path = Path(args.state_path)
@@ -140,18 +147,27 @@ def main(argv: list[str] | None = None) -> None:
         try:
             result = _load_query_via_socket(resolved_socket, query_text, args.chat_id, args.top)
             if result is not None:
-                if args.json:
+                fired_nodes = [str(node_id) for node_id in result.get("fired_nodes", [])]
+                prompt_context = ""
+                if output_format in {"json", "prompt"} and state_path.exists():
+                    graph, _index, _meta = load_state(str(state_path))
+                    prompt_context = build_prompt_context(graph=graph, node_ids=fired_nodes)
+                if output_format == "json":
                     output = {
                         "state": str(state_path),
                         "query": query_text,
                         "seeds": result.get("seeds", []),
-                        "fired_nodes": result.get("fired_nodes", []),
+                        "fired_nodes": fired_nodes,
                         "context": result.get("context"),
+                        "prompt_context": prompt_context,
                     }
                     print(json.dumps(output, indent=2))
                     return
+                if output_format == "prompt":
+                    print(prompt_context)
+                    return
                 print("Fired nodes:")
-                for node_id in result.get("fired_nodes", []):
+                for node_id in fired_nodes:
                     print(f"- {node_id}")
                 print("Context:")
                 print(result.get("context") or "(no context)")
@@ -176,6 +192,7 @@ def main(argv: list[str] | None = None) -> None:
 
     seeds = index.search(query_vector, top_k=args.top)
     result = traverse(graph=graph, seeds=seeds, query_text=query_text, config=TraversalConfig(max_context_chars=20000))
+    prompt_context = build_prompt_context(graph=graph, node_ids=result.fired)
 
     if args.chat_id:
         log_entry = {
@@ -192,10 +209,14 @@ def main(argv: list[str] | None = None) -> None:
         "seeds": seeds,
         "fired_nodes": result.fired,
         "context": result.context,
+        "prompt_context": prompt_context,
     }
 
-    if args.json:
+    if output_format == "json":
         print(json.dumps(output, indent=2))
+        return
+    if output_format == "prompt":
+        print(prompt_context)
         return
 
     print("Fired nodes:")

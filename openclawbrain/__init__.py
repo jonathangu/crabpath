@@ -18,6 +18,7 @@ from .split import generate_summaries, split_workspace
 from .sync import DEFAULT_AUTHORITY_MAP, SyncReport, sync_workspace
 from .store import ManagedState, load_state, save_state
 from .traverse import TraversalResult, TraversalConfig, traverse
+from .prompt_context import build_prompt_context
 
 __all__ = [
     "Node",
@@ -38,6 +39,7 @@ __all__ = [
     "prune_edges",
     "prune_orphan_nodes",
     "traverse",
+    "build_prompt_context",
     "ManagedState",
     "split_workspace",
     "generate_summaries",

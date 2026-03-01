@@ -29,6 +29,10 @@ Script specifics:
 - `learn_correction.py`: apply corrections to the last `lookback` queries using `--chat-id`-scoped fired nodes.
 - `agents_hook.md`: AGENTS.md integration block.
 
+## Prompt caching tip
+
+Use `query_brain.py --format prompt` to print a deterministic `[BRAIN_CONTEXT v1]...[/BRAIN_CONTEXT]` appendix block built from fired node content. Append that block late in your final OpenAI prompt to improve prompt caching stability.
+
 ## Real-time corrections
 
 The live correction flow adds two pieces:
