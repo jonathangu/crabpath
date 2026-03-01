@@ -508,6 +508,53 @@ Two practical options:
 
 ---
 
+## Native OpenClaw Tool (opencormorant fork)
+
+If you run the **opencormorant** fork of OpenClaw (`github.com/jonathangu/opencormorant`), there is a built-in `openclawbrain` tool that agents can call directly — no shell exec needed.
+
+### What it provides
+The tool connects to the daemon Unix socket (`~/.openclawbrain/<agent>/daemon.sock`) and exposes four actions:
+
+| Action | Description |
+|---|---|
+| `query` | Retrieve context + fired node IDs for a user message |
+| `correction` | Apply negative reinforcement to the last query's fired path + inject correction node |
+| `self_learn` | Autonomous learning (corrections or reinforcement) |
+| `info` | Brain health/status |
+
+### How to use it (agent perspective)
+The tool is registered automatically. Agents can call it like any other tool:
+
+```
+openclawbrain(action="query", query="how do we deploy", chat_id="telegram:123")
+```
+
+For corrections:
+```
+openclawbrain(action="correction", chat_id="telegram:123", content="Actually we use blue-green deploys, not rolling")
+```
+
+### Requirements
+- OpenClawBrain daemon must be running (`openclawbrain serve --state ...`)
+- The `daemon.sock` file must be accessible from the OpenClaw process
+
+### Media understanding synergy
+OpenClaw's built-in `tools.media` pipeline (audio transcription, image description) runs *before* the agent responds. When enabled, audio/image content is extracted to text and stored in session logs, so OpenClawBrain replay/full-learning can learn from media messages naturally.
+
+To enable in your OpenClaw config:
+```json
+{
+  "tools": {
+    "media": {
+      "audio": { "enabled": true },
+      "image": { "enabled": true }
+    }
+  }
+}
+```
+
+---
+
 ## Appendix: ASCII architecture diagram
 
 ```text
