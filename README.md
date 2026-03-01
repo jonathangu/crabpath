@@ -20,7 +20,7 @@ Quickstart (OpenClaw users):
 ```bash
 pip install openclawbrain
 openclawbrain init --workspace ~/.openclaw/workspace --output ~/.openclawbrain/main
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
 Production Deployment (socket):
@@ -28,7 +28,7 @@ Production Deployment (socket):
 Use LaunchAgent/systemd to keep the socket server running:
 
 ```bash
-python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
+openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
 macOS (`~/Library/LaunchAgents/com.openclawbrain.daemon.plist`):
@@ -36,9 +36,9 @@ macOS (`~/Library/LaunchAgents/com.openclawbrain.daemon.plist`):
 ```xml
 <key>ProgramArguments</key>
 <array>
-  <string>/usr/bin/python3</string>
-  <string>-m</string>
-  <string>openclawbrain.socket_server</string>
+  <string>/usr/bin/env</string>
+  <string>openclawbrain</string>
+  <string>serve</string>
   <string>--state</string>
   <string>/Users/YOU/.openclawbrain/main/state.json</string>
 </array>
@@ -48,7 +48,7 @@ Linux (`/etc/systemd/system/openclawbrain-daemon.service`):
 
 ```ini
 [Service]
-ExecStart=/usr/bin/python3 -m openclawbrain.socket_server --state /home/YOUR_USER/.openclawbrain/main/state.json
+ExecStart=/usr/bin/env openclawbrain serve --state /home/YOUR_USER/.openclawbrain/main/state.json
 ```
 
 ```bash
@@ -349,6 +349,7 @@ See `examples/openai_embedder/` for a complete example.
 | `harvest` | Apply slow-learning pass from `learning_events.jsonl` to current graph |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
+| `serve` | `openclawbrain serve --state brain/state.json [--socket-path path] [--foreground]` starts the Unix socket service in the foreground |
 | `journal` | Show event journal |
 | `doctor` | Run diagnostic checks |
 | `info` | Show brain info (nodes, edges, embedder) |

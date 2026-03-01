@@ -1,5 +1,10 @@
 ## Unreleased
 
+### Operator CLI: canonical brain-on command (issues #24, #25)
+- Added `openclawbrain serve --state <path> [--socket-path <path>] [--foreground]` as the first-class foreground socket service command for OpenClaw operators.
+- Startup now prints an operator banner with socket path, state path, status-check command, and `Ctrl-C` shutdown guidance.
+- Updated operator docs to recommend `openclawbrain serve` as the canonical production startup path.
+
 ### Replay ops hardening + simple parallel replay v0 (issue #19)
 - `openclawbrain replay` adds:
   - `--progress-every N` (periodic progress, JSONL events when `--json` is enabled)

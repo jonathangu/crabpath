@@ -159,6 +159,16 @@ def _build_parser() -> argparse.ArgumentParser:
     d.add_argument("--embed-model", default="text-embedding-3-small")
     d.add_argument("--auto-save-interval", type=int, default=10)
 
+    serve = sub.add_parser("serve", help="Run the OpenClawBrain socket service in the foreground")
+    serve.add_argument("--state", required=True, help="Path to state.json")
+    serve.add_argument("--socket-path", help="Override Unix socket path (default: ~/.openclawbrain/<agent>/daemon.sock)")
+    serve.add_argument(
+        "--foreground",
+        action="store_true",
+        default=True,
+        help="Run in foreground mode (default: true)",
+    )
+
     x = sub.add_parser("inject")
     x.add_argument("--state")
     x.add_argument("--id", required=True)
@@ -1902,6 +1912,34 @@ def cmd_daemon(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """cmd serve."""
+    state_path = _resolve_state_path(args.state, allow_default=False)
+    if state_path is None:
+        raise SystemExit("--state is required for serve")
+    state_path = str(Path(state_path).expanduser())
+
+    from .socket_server import _default_socket_path as _server_default_socket_path
+    from .socket_server import main as socket_server_main
+
+    socket_path = (
+        str(Path(args.socket_path).expanduser())
+        if args.socket_path
+        else str(Path(_server_default_socket_path(state_path)).expanduser())
+    )
+
+    print("OpenClawBrain socket service (foreground)", file=sys.stderr)
+    print(f"  socket path: {socket_path}", file=sys.stderr)
+    print(f"  state path: {state_path}", file=sys.stderr)
+    print(f"  query status: openclawbrain status --state {state_path}", file=sys.stderr)
+    print("  stop: Ctrl-C", file=sys.stderr)
+
+    server_argv = ["--state", state_path]
+    if args.socket_path:
+        server_argv.extend(["--socket-path", socket_path])
+    return socket_server_main(server_argv)
+
+
 def cmd_journal(args: argparse.Namespace) -> int:
     """cmd journal."""
     journal_path = _resolve_journal_path(args, allow_default_state=True)
@@ -1939,6 +1977,7 @@ def main(argv: list[str] | None = None) -> int:
         "connect": cmd_connect,
         "compact": cmd_compact,
         "daemon": cmd_daemon,
+        "serve": cmd_serve,
         "inject": cmd_inject,
         "replay": cmd_replay,
         "status": cmd_status,
