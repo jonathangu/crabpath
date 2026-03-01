@@ -257,9 +257,17 @@ def _handle_query(
         raise ValueError("query must be a non-empty string")
 
     top_k = _parse_int(params.get("top_k"), "top_k", default=4)
+
+    # Prompt caching appendix (deterministic) size.
     max_prompt_chars = params.get("max_prompt_context_chars")
     if not isinstance(max_prompt_chars, int):
         max_prompt_chars = 20000
+
+    # Returned `context` size (human-readable, non-deterministic ordering). If not set, default
+    # to the prompt appendix size so operators can bound output in one knob.
+    max_context_chars = params.get("max_context_chars")
+    if not isinstance(max_context_chars, int):
+        max_context_chars = max_prompt_chars
 
     total_start = time.perf_counter()
     resolved_embed = embed_fn or HashEmbedder().embed
@@ -279,7 +287,7 @@ def _handle_query(
     result = traverse(
         graph=graph,
         seeds=seeds,
-        config=TraversalConfig(max_hops=15, max_context_chars=20000),
+        config=TraversalConfig(max_hops=15, max_context_chars=max_context_chars),
         query_text=query_text,
     )
     traverse_stop = time.perf_counter()
