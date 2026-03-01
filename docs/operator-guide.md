@@ -251,3 +251,29 @@ How to respond when it flags:
 - `FAIL missing state.json`: restore from known-good backup or rebuild state, then restart daemon
 - `WARN daemon.sock missing`: start or restart `openclawbrain serve` for that brain and re-check status
 - `WARN missing env/workspace hints`: align LaunchAgent plists with your standard template, then `launchctl unload/load` and rerun the audit
+
+## 16) Secret pointers recipe: harvest + audit
+Use this to track capabilities and key pointers without ever storing values:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --out ~/.openclaw/workspace/docs/secret-pointers.md
+```
+
+Optional JSON output for automation:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace ~/.openclaw/workspace \
+  --json
+```
+
+Run leak audit (path + line only, no secret echo):
+
+```bash
+python3 -m openclawbrain.ops.audit_secret_leaks \
+  --workspace ~/.openclaw/workspace \
+  --state ~/.openclawbrain/main/state.json \
+  --strict
+```

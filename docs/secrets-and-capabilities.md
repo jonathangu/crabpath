@@ -1,0 +1,109 @@
+# Secrets and Capabilities Registry
+
+This is the canonical policy for secrets in OpenClaw/OpenClawBrain workspaces.
+
+## Policy
+
+- Secret values must never be stored in memory notes, prompts, or OpenClawBrain state.
+- Agents should only retain capability metadata and secret pointers.
+- Pointers are allowed: env var names, `tokenFile` paths, and local file locations.
+- Verification must be boolean only (present/missing), never value disclosure.
+
+## Minimal Schema
+
+Each registry entry should track:
+
+- `service`: provider or system (for example, `Mapbox`).
+- `capability`: what the secret enables.
+- `required_keys`: required env var names.
+- `storage_pointer`: local pointer (env file path, `tokenFile`, or equivalent).
+- `verify`: boolean check only (no value output).
+- `notes`: scope, rotation, and handling constraints.
+
+## Canonical Capability Entries
+
+### Mapbox
+
+- `service`: `Mapbox`
+- `capability`: maps, geocoding, tiles, routing
+- `required_keys`: `VITE_MAPBOX_TOKEN`, `MAPBOX_API_KEY`, `MAPBOX_SECRET_TOKEN`
+- `storage_pointer`: `.env*` key location or operator token file
+- `verify`: key assignment is non-empty (`true/false`)
+- `notes`: `VITE_MAPBOX_TOKEN` is public-facing; keep secret tokens server-side
+
+### Perplexity
+
+- `service`: `Perplexity`
+- `capability`: web-grounded LLM search
+- `required_keys`: `PPLX_API_KEY`
+- `storage_pointer`: `.env*` key location
+- `verify`: key assignment is non-empty (`true/false`)
+- `notes`: rotate on exposure or permission changes
+
+### Polygon
+
+- `service`: `Polygon`
+- `capability`: market data APIs
+- `required_keys`: `POLYGON_API_KEY`
+- `storage_pointer`: `.env*` key location
+- `verify`: key assignment is non-empty (`true/false`)
+- `notes`: scope to required market products
+
+### NewsAPI
+
+- `service`: `NewsAPI`
+- `capability`: top-headlines and article search
+- `required_keys`: `NEWSAPI_KEY`
+- `storage_pointer`: `.env*` key location
+- `verify`: key assignment is non-empty (`true/false`)
+- `notes`: monitor plan limits and rotate when needed
+
+### OpenAI
+
+- `service`: `OpenAI`
+- `capability`: embeddings + LLM calls
+- `required_keys`: `OPENAI_API_KEY`
+- `storage_pointer`: `.env*` key location
+- `verify`: key assignment is non-empty (`true/false`)
+- `notes`: required for OpenAI-based embedder/LLM paths
+
+### SEC/EDGAR
+
+- `service`: `SEC/EDGAR`
+- `capability`: public filings access
+- `required_keys`: none
+- `storage_pointer`: not applicable
+- `verify`: `true` (no key required)
+- `notes`: follow fair-access/User-Agent guidelines
+
+### ClinicalTrials.gov
+
+- `service`: `ClinicalTrials.gov`
+- `capability`: public clinical-trial registry queries
+- `required_keys`: none
+- `storage_pointer`: not applicable
+- `verify`: `true` (no key required)
+- `notes`: no key needed for standard public endpoints
+
+### FDA open data
+
+- `service`: `FDA open data`
+- `capability`: OpenFDA public datasets and search endpoints
+- `required_keys`: none
+- `storage_pointer`: not applicable
+- `verify`: `true` (no key required)
+- `notes`: no key needed for standard public endpoints
+
+## Operations
+
+Harvest capability pointers (no value output):
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers --workspace ~/.openclaw/workspace
+```
+
+Audit potential leaks (path + line only):
+
+```bash
+python3 -m openclawbrain.ops.audit_secret_leaks --workspace ~/.openclaw/workspace --strict
+```

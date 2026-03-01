@@ -18,6 +18,10 @@ def test_packaged_openclaw_adapter_cli_modules_importable() -> None:
 def test_packaged_ops_modules_importable() -> None:
     patch_mod = importlib.import_module("openclawbrain.ops.patch_openclaw_config")
     launchd_mod = importlib.import_module("openclawbrain.ops.write_launchd_plist")
+    harvest_mod = importlib.import_module("openclawbrain.ops.harvest_secret_pointers")
+    audit_mod = importlib.import_module("openclawbrain.ops.audit_secret_leaks")
 
     assert callable(patch_mod.main)
     assert callable(launchd_mod.main)
+    assert callable(harvest_mod.main)
+    assert callable(audit_mod.main)

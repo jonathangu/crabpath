@@ -144,6 +144,29 @@ Short inline schema snippet (reference only):
 }
 ```
 
+## Secrets: pointers only + run harvest
+
+Secrets policy:
+
+- Never store secret values in workspace memory files, prompts, or brain state.
+- Store only pointers: env key names and local `tokenFile` paths.
+- Verify only with boolean presence checks.
+
+Run capability/secret-pointer harvest after setup:
+
+```bash
+python3 -m openclawbrain.ops.harvest_secret_pointers \
+  --workspace "$workspaceDir"
+```
+
+Optional strict leak audit:
+
+```bash
+python3 -m openclawbrain.ops.audit_secret_leaks \
+  --workspace "$workspaceDir" \
+  --strict
+```
+
 ## F) Pin the query command in workspace `AGENTS.md`
 
 Use packaged CLI module invocation (no `~/openclawbrain` clone required):

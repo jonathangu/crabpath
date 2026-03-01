@@ -55,6 +55,16 @@ openclawbrain info --help
 
 ---
 
+## Secrets registry
+
+Use pointer-only secret handling. Keep capability names, required key names, and local secret pointers, but never secret values.
+
+- Canonical policy: [docs/secrets-and-capabilities.md](secrets-and-capabilities.md)
+- Harvest pointers: `python3 -m openclawbrain.ops.harvest_secret_pointers --workspace ~/.openclaw/workspace`
+- Leak audit (path + line only): `python3 -m openclawbrain.ops.audit_secret_leaks --workspace ~/.openclaw/workspace --strict`
+
+---
+
 ## Architecture (how it fits into OpenClaw)
 
 OpenClaw today is file-and-instructions driven: the agent reads `AGENTS.md`, then runs whatever you tell it to.
