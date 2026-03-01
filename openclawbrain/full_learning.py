@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import warnings
+from datetime import datetime
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -156,16 +157,42 @@ def _read_records(path: Path, start_line: int = 0) -> list[tuple[int, dict]]:
 
 
 def _extract_ts(payload: dict) -> float | None:
-    """Extract timestamp from session record."""
-    for key in ("ts", "timestamp", "created_at", "time"):
-        value = payload.get(key)
+    """Extract timestamp from an OpenClaw session record.
+
+    Supports numeric timestamps as well as ISO-8601 strings (including trailing `Z`).
+    Checks both the top-level record and nested `message` payloads.
+    """
+
+    def _parse(value: object) -> float | None:
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
             try:
-                return float(value)
+                return float(raw)
             except ValueError:
-                continue
+                iso_value = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+                try:
+                    return datetime.fromisoformat(iso_value).timestamp()
+                except ValueError:
+                    return None
+        return None
+
+    keys = ("ts", "timestamp", "created_at", "time")
+    for key in keys:
+        parsed = _parse(payload.get(key))
+        if parsed is not None:
+            return parsed
+
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else None
+    if isinstance(message, dict):
+        for key in keys:
+            parsed = _parse(message.get(key))
+            if parsed is not None:
+                return parsed
+
     return None
 
 
