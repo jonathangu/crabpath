@@ -138,6 +138,60 @@ def test_extract_interactions_parses_user_and_assistant_messages(tmp_path: Path)
     assert interactions[0]["tool_calls"] == [{"id": "tool-1", "name": "lookup", "arguments": "{}"}]
 
 
+def test_extract_interactions_attaches_allowlisted_tool_result_for_media_stub(tmp_path: Path) -> None:
+    """Allowlisted toolResult transcript text is appended to preceding media-stub user query."""
+    path = tmp_path / "session_tool_result.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "user",
+                            "content": [{"type": "text", "text": "[media attached: voice note (audio/ogg)]"}],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "tool_call", "name": "openai-whisper", "arguments": "{}"}],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "toolResult",
+                            "toolName": "openai-whisper",
+                            "content": "Deploy to staging after tests pass.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "I transcribed your note."}],
+                        },
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    interactions = extract_interactions(path)
+    assert len(interactions) == 1
+    assert "[toolResult:openai-whisper] Deploy to staging after tests pass." in interactions[0]["query"]
+    assert interactions[0]["response"] == "I transcribed your note."
+
+
 def test_extract_queries_filtering_since_timestamp(tmp_path: Path) -> None:
     """test extract queries filtering since timestamp."""
     path = tmp_path / "session.jsonl"

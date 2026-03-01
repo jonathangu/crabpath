@@ -11,6 +11,17 @@ from .learn import LearningConfig, apply_outcome
 from .traverse import TraversalConfig, traverse
 from ._util import _tokenize
 
+DEFAULT_TOOL_RESULT_ALLOWLIST = frozenset(
+    {
+        "image",
+        "openai-whisper",
+        "openai-whisper-api",
+        "openai-whisper-local",
+        "summarize",
+    }
+)
+DEFAULT_TOOL_RESULT_MAX_CHARS = 20_000
+
 
 def _extract_user_query_content(content: object) -> str | None:
     """ extract user query content."""
@@ -49,7 +60,50 @@ def _extract_message_payload(payload: dict) -> dict | None:
         message = payload.get("message")
         return message if isinstance(message, dict) else None
 
-    return payload if payload.get("role") in {"user", "assistant"} else None
+    role = payload.get("role")
+    if isinstance(role, str) and role.strip().lower() in {"user", "assistant", "toolresult", "tool_result"}:
+        return payload
+    return None
+
+
+def _normalize_tool_result_allowlist(tool_names: set[str] | list[str] | tuple[str, ...] | None) -> set[str]:
+    """Normalize a tool-result allowlist to lowercase tool names."""
+    if tool_names is None:
+        tool_names = set(DEFAULT_TOOL_RESULT_ALLOWLIST)
+    normalized: set[str] = set()
+    for name in tool_names:
+        if not isinstance(name, str):
+            continue
+        value = name.strip().lower()
+        if value:
+            normalized.add(value)
+    return normalized
+
+
+def _is_media_stub_query(query: str) -> bool:
+    """Detect OpenClaw media attachment stubs in user query text."""
+    text = query.strip().lower()
+    if not text:
+        return False
+    if "[media attached:" in text:
+        return True
+    if "media attached" in text and any(marker in text for marker in ("audio/", "image/", "video/", "application/pdf")):
+        return True
+    return False
+
+
+def _extract_tool_result(message: dict) -> tuple[str | None, str | None]:
+    """Extract tool name and text body from a toolResult message payload."""
+    tool_name = message.get("toolName")
+    if isinstance(tool_name, str):
+        normalized_name = tool_name.strip().lower()
+        if not normalized_name:
+            normalized_name = None
+    else:
+        normalized_name = None
+
+    text = _extract_user_query_content(message.get("content"))
+    return normalized_name, text
 
 
 def _extract_openclaw_query(payload: dict) -> str | None:
@@ -192,6 +246,10 @@ def _extract_query_record(raw: str) -> tuple[str | None, float | None]:
 def extract_interactions(
     session_path: str | Path,
     since_ts: float | None = None,
+    *,
+    include_tool_results: bool = True,
+    tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
+    tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
 ) -> list[dict[str, object]]:
     """Extract user/assistant interactions from a session log.
 
@@ -205,6 +263,9 @@ def extract_interactions(
 
     interactions: list[dict[str, object]] = []
     last_user_index: int | None = None
+    tool_result_allow = _normalize_tool_result_allowlist(tool_result_allowlist)
+    max_tool_chars = max(0, int(tool_result_max_chars))
+    appended_tool_chars: dict[int, int] = {}
 
     try:
         fh = path.open("r", encoding="utf-8")
@@ -244,10 +305,34 @@ def extract_interactions(
                 continue
             interactions.append({"query": query, "response": None, "tool_calls": [], "ts": record_ts})
             last_user_index = len(interactions) - 1
+            appended_tool_chars[last_user_index] = 0
             continue
 
-        if role != "assistant":
-            last_user_index = None
+        normalized_role = role.strip().lower()
+        if normalized_role in {"toolresult", "tool_result"}:
+            if (
+                include_tool_results
+                and last_user_index is not None
+                and max_tool_chars > 0
+                and isinstance(interactions[last_user_index].get("query"), str)
+            ):
+                base_query = interactions[last_user_index]["query"]
+                if isinstance(base_query, str) and _is_media_stub_query(base_query):
+                    tool_name, tool_text = _extract_tool_result(message)
+                    if tool_name in tool_result_allow and isinstance(tool_text, str):
+                        cleaned = tool_text.strip()
+                        if cleaned:
+                            used = appended_tool_chars.get(last_user_index, 0)
+                            remaining = max_tool_chars - used
+                            if remaining > 0:
+                                snippet = cleaned[:remaining]
+                                interactions[last_user_index]["query"] = (
+                                    f"{base_query}\n\n[toolResult:{tool_name}] {snippet}"
+                                )
+                                appended_tool_chars[last_user_index] = used + len(snippet)
+            continue
+
+        if normalized_role != "assistant":
             continue
 
         response = _extract_user_query_content(message.get("content"))
@@ -273,7 +358,6 @@ def extract_interactions(
             else:
                 interactions[last_user_index]["response"] = None
                 interactions[last_user_index]["tool_calls"] = []
-            last_user_index = None
             continue
 
         if since_ts is not None and record_ts is not None and record_ts <= since_ts:

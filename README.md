@@ -552,6 +552,32 @@ full learning pipeline (LLM transcript mining + edge replay + harvest):
 openclawbrain replay --state /tmp/brain/state.json --sessions ./sessions/
 ```
 
+OpenClaw media uploads are usually logged as user text stubs like
+`[media attached: ...]`. Those stubs alone have little semantic value, so they
+often do not improve memory quality by themselves. The useful text typically
+arrives in later `toolResult` messages (OCR, image captions, audio transcript).
+
+Recommended approach:
+
+- Use dedicated media tools to emit transcript/OCR/caption text as `toolResult`.
+- Let OpenClawBrain attach allowlisted `toolResult` text to media-stub user
+  queries during replay and expose the same text to fast-learning windows.
+
+Replay controls for this behavior:
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --include-tool-results \
+  --tool-result-allowlist image,openai-whisper,openai-whisper-api,openai-whisper-local,summarize \
+  --tool-result-max-chars 20000
+```
+
+- `--include-tool-results` / `--no-include-tool-results` (default enabled)
+- `--tool-result-allowlist` (comma-separated tool names)
+- `--tool-result-max-chars` (max allowlisted tool text appended per user query)
+
 This is equivalent to passing `--full-learning` explicitly. Decay is enabled
 during replay by default and the harvest pass runs
 (`decay,scale,split,merge,prune,connect`), so unrelated edges weaken while

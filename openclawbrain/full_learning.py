@@ -27,7 +27,14 @@ try:
     from .openai_llm import openai_llm_fn
 except Exception:
     openai_llm_fn = None
-from .replay import replay_queries
+from .replay import (
+    DEFAULT_TOOL_RESULT_ALLOWLIST,
+    DEFAULT_TOOL_RESULT_MAX_CHARS,
+    _extract_tool_result,
+    _is_media_stub_query,
+    _normalize_tool_result_allowlist,
+    replay_queries,
+)
 from .store import load_state, save_state
 
 
@@ -195,6 +202,10 @@ def collect_session_files(session_paths: str | Path | list[str] | list[Path]) ->
 def _collect_turns(
     session_paths: str | Path | list[str] | list[Path],
     since_lines: dict[str, int] | None = None,
+    *,
+    include_tool_results: bool = True,
+    tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
+    tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
 ) -> tuple[list[tuple[str, list[SessionTurn]]], dict[str, int]]:
     """Collect role turns from session files.
 
@@ -204,12 +215,16 @@ def _collect_turns(
     files = collect_session_files(session_paths)
     grouped: list[tuple[str, list[SessionTurn]]] = []
     next_offsets: dict[str, int] = {}
+    tool_result_allow = _normalize_tool_result_allowlist(tool_result_allowlist)
+    max_tool_chars = max(0, int(tool_result_max_chars))
 
     for path in files:
         path_name = str(path)
         start_line = int((since_lines or {}).get(path_name, 0))
         turns: list[SessionTurn] = []
         last_line = start_line
+        active_user_is_media_stub = False
+        active_user_tool_chars = 0
 
         for line_no, payload in _read_records(path, start_line=start_line):
             last_line = line_no
@@ -217,20 +232,66 @@ def _collect_turns(
             if not isinstance(record_message, dict):
                 continue
             role = str(record_message.get("role", "")).strip().lower()
-            if role not in {"user", "assistant"}:
-                continue
-            content = _resolve_text(record_message.get("content"))
-            if not content:
-                continue
-            turns.append(
-                SessionTurn(
-                    role=role,
-                    content=content,
-                    line_no=line_no,
-                    source=path_name,
-                    ts=_extract_ts(payload),
+            if role == "user":
+                content = _resolve_text(record_message.get("content"))
+                if not content:
+                    active_user_is_media_stub = False
+                    active_user_tool_chars = 0
+                    continue
+                turns.append(
+                    SessionTurn(
+                        role=role,
+                        content=content,
+                        line_no=line_no,
+                        source=path_name,
+                        ts=_extract_ts(payload),
+                    )
                 )
-            )
+                active_user_is_media_stub = _is_media_stub_query(content)
+                active_user_tool_chars = 0
+                continue
+
+            if role == "assistant":
+                content = _resolve_text(record_message.get("content"))
+                if not content:
+                    continue
+                turns.append(
+                    SessionTurn(
+                        role=role,
+                        content=content,
+                        line_no=line_no,
+                        source=path_name,
+                        ts=_extract_ts(payload),
+                    )
+                )
+                continue
+
+            if (
+                role in {"toolresult", "tool_result"}
+                and include_tool_results
+                and active_user_is_media_stub
+                and max_tool_chars > 0
+            ):
+                tool_name, tool_text = _extract_tool_result(record_message)
+                if tool_name not in tool_result_allow or not isinstance(tool_text, str):
+                    continue
+                cleaned = tool_text.strip()
+                if not cleaned:
+                    continue
+                remaining = max_tool_chars - active_user_tool_chars
+                if remaining <= 0:
+                    continue
+                snippet = cleaned[:remaining]
+                turns.append(
+                    SessionTurn(
+                        role="tool",
+                        content=f"[toolResult:{tool_name}] {snippet}",
+                        line_no=line_no,
+                        source=path_name,
+                        ts=_extract_ts(payload),
+                    )
+                )
+                active_user_tool_chars += len(snippet)
         grouped.append((path_name, turns))
         next_offsets[path_name] = last_line
     return grouped, next_offsets
@@ -542,6 +603,9 @@ def run_fast_learning(
     resume: bool = False,
     ignore_checkpoint: bool = False,
     backup: bool = True,
+    include_tool_results: bool = True,
+    tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
+    tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
 ) -> dict[str, Any]:
     """Run LLM-backed transcript mining and inject new learning nodes."""
     if workers < 1:
@@ -556,7 +620,13 @@ def run_fast_learning(
         checkpoint = {"sessions": {}}
     start_lines = checkpoint.get("sessions", {})
 
-    grouped_turns, turn_offsets = _collect_turns(session_paths, since_lines=start_lines)
+    grouped_turns, turn_offsets = _collect_turns(
+        session_paths,
+        since_lines=start_lines,
+        include_tool_results=include_tool_results,
+        tool_result_allowlist=tool_result_allowlist,
+        tool_result_max_chars=tool_result_max_chars,
+    )
     windows: list[tuple[str, list[SessionTurn], int]] = []
     for source, turns in grouped_turns:
         for idx, (start, end) in enumerate(
