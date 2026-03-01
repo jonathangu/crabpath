@@ -87,7 +87,16 @@ Use the provided ops utility to patch `~/.openclaw/openclaw.json` with the real 
   - `{"agentId":"family","match":{"channel":"telegram","accountId":"family"}}`
 - Telegram accounts live at `channels.telegram.accounts[accountId]`.
 
-Run:
+Create a stable token file (avoid `/tmp`):
+
+```bash
+mkdir -p "$HOME/.openclaw/tokens"
+# paste token into file and lock permissions
+printf '%s' "PASTE_TELEGRAM_BOT_TOKEN_HERE" > "$HOME/.openclaw/tokens/telegram-${agentId}.token"
+chmod 600 "$HOME/.openclaw/tokens/telegram-${agentId}.token"
+```
+
+Then run:
 
 ```bash
 python3 examples/ops/patch_openclaw_config.py \
