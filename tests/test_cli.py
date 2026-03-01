@@ -781,7 +781,7 @@ def test_cli_replay_edges_only_skips_learning(tmp_path, capsys) -> None:
 
 
 def test_cli_replay_tool_result_flags_forwarded_json_and_text(tmp_path, capsys, monkeypatch) -> None:
-    """replay toolResult controls are forwarded in both json and text output modes."""
+    """replay toolResult controls are forwarded to the replay loader."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
     sessions = tmp_path / "sessions.jsonl"
@@ -791,19 +791,21 @@ def test_cli_replay_tool_result_flags_forwarded_json_and_text(tmp_path, capsys, 
 
     seen: list[dict[str, object]] = []
 
-    def fake_extract_interactions(session_file, since_ts=None, **kwargs):
-        seen.append(
+    def fake_load_interactions_for_replay(session_paths, since_lines=None, **kwargs):
+        seen.append(dict(kwargs))
+        interactions = [
             {
-                "session_file": str(session_file),
-                "since_ts": since_ts,
-                "include_tool_results": kwargs.get("include_tool_results"),
-                "tool_result_allowlist": kwargs.get("tool_result_allowlist"),
-                "tool_result_max_chars": kwargs.get("tool_result_max_chars"),
+                "query": "alpha",
+                "response": None,
+                "tool_calls": [],
+                "ts": 1.0,
+                "source": str(sessions),
+                "line_no": 1,
             }
-        )
-        return [{"query": "alpha", "response": None, "tool_calls": [], "ts": 1.0}]
+        ]
+        return interactions, {str(sessions): 1}
 
-    monkeypatch.setattr(cli_module, "extract_interactions", fake_extract_interactions)
+    monkeypatch.setattr(cli_module, "load_interactions_for_replay", fake_load_interactions_for_replay)
 
     code = main(
         [
@@ -822,6 +824,7 @@ def test_cli_replay_tool_result_flags_forwarded_json_and_text(tmp_path, capsys, 
         ]
     )
     assert code == 0
+    # JSON output should parse.
     json.loads(capsys.readouterr().out.strip())
     assert seen[-1]["include_tool_results"] is False
     assert seen[-1]["tool_result_allowlist"] == {"image", "summarize"}
@@ -846,6 +849,195 @@ def test_cli_replay_tool_result_flags_forwarded_json_and_text(tmp_path, capsys, 
     assert seen[-1]["include_tool_results"] is True
     assert seen[-1]["tool_result_allowlist"] == {"openai-whisper"}
     assert seen[-1]["tool_result_max_chars"] == 456
+
+
+def test_cli_replay_progress_events_jsonl(tmp_path, capsys) -> None:
+    """replay emits JSONL progress events when --json and --progress-every are set."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+                json.dumps({"role": "user", "content": "beta", "ts": 2.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 2.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--progress-every",
+            "1",
+            "--json",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert '{"type": "progress", "phase": "replay"' in out
+
+
+def test_cli_replay_writes_checkpoint_and_resume_uses_it(tmp_path, capsys) -> None:
+    """replay writes checkpoint and resume only replays new lines."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    checkpoint_path = tmp_path / "replay_checkpoint.json"
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--checkpoint",
+            str(checkpoint_path),
+            "--checkpoint-every",
+            "1",
+            "--resume",
+            "--json",
+        ]
+    )
+    assert code == 0
+    first_payload = json.loads(capsys.readouterr().out.strip())
+    assert first_payload["queries_replayed"] == 1
+    assert checkpoint_path.exists()
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    replay_checkpoint = checkpoint.get("replay", {})
+    assert replay_checkpoint.get("sessions")
+
+    with sessions.open("a", encoding="utf-8") as handle:
+        handle.write("\n" + json.dumps({"role": "user", "content": "beta", "ts": 2.0}))
+        handle.write("\n" + json.dumps({"role": "assistant", "content": "ok", "ts": 2.1}))
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--checkpoint",
+            str(checkpoint_path),
+            "--resume",
+            "--json",
+        ]
+    )
+    assert code == 0
+    second_payload = json.loads(capsys.readouterr().out.strip())
+    assert second_payload["queries_replayed"] == 1
+    assert second_payload["last_replayed_ts"] == 2.1
+
+
+def test_cli_replay_stop_after_fast_learning(tmp_path, capsys, monkeypatch) -> None:
+    """stop-after-fast-learning exits before replay and harvest."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "do not do that", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    from openclawbrain import full_learning as learning_module
+
+    def fake_llm(_: str, __: str) -> str:
+        return json.dumps(
+            {
+                "corrections": [{"content": "Never do that.", "context": "ctx", "severity": "high"}],
+                "teachings": [],
+                "reinforcements": [],
+            }
+        )
+
+    monkeypatch.setattr(learning_module, "openai_llm_fn", fake_llm)
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--fast-learning",
+            "--stop-after-fast-learning",
+            "--ignore-checkpoint",
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["stopped_after_fast_learning"] is True
+    assert "fast_learning" in payload
+    assert "harvest" not in payload
+    assert "queries_replayed" not in payload
+
+
+def test_cli_replay_parallel_mode_v0(tmp_path, capsys) -> None:
+    """replay supports simple parallel reducer mode."""
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(
+        "\n".join(
+            [
+                json.dumps({"role": "user", "content": "alpha", "ts": 1.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 1.1}),
+                json.dumps({"role": "user", "content": "beta", "ts": 2.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 2.1}),
+                json.dumps({"role": "user", "content": "alpha beta", "ts": 3.0}),
+                json.dumps({"role": "assistant", "content": "ok", "ts": 3.1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "replay",
+            "--state",
+            str(state_path),
+            "--sessions",
+            str(sessions),
+            "--edges-only",
+            "--replay-workers",
+            "2",
+            "--checkpoint-every",
+            "1",
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["queries_replayed"] == 3
+    assert payload["replay_workers"] == 2
+    assert payload["merge_batches"] >= 1
 
 
 def test_cli_init_auto_embedder_falls_back_to_hash(tmp_path, monkeypatch) -> None:

@@ -604,6 +604,50 @@ openclawbrain replay \
   --checkpoint /tmp/brain/replay_checkpoint.json
 ```
 
+For cutover-friendly startup (inject quickly, then start daemon immediately):
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --fast-learning \
+  --stop-after-fast-learning \
+  --checkpoint /tmp/brain/replay_checkpoint.json
+```
+
+For durable long replays with periodic progress/checkpoint/state persistence:
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --edges-only \
+  --resume \
+  --checkpoint /tmp/brain/replay_checkpoint.json \
+  --checkpoint-every-seconds 60 \
+  --checkpoint-every 1 \
+  --persist-state-every-seconds 30 \
+  --progress-every 250
+```
+
+When `--json` is set, progress is emitted as JSONL events:
+`{"type":"progress","phase":"replay",...}`.
+
+For simple true-parallel replay v0:
+
+```bash
+openclawbrain replay \
+  --state /tmp/brain/state.json \
+  --sessions ./sessions/ \
+  --edges-only \
+  --replay-workers 4 \
+  --checkpoint-every 1
+```
+
+Parallel replay v0 is an approximation: workers process deterministic shards and
+compute replay deltas without mutating shared state; the reducer applies those
+deltas in deterministic merge order, with checkpoints after each merge batch.
+
 To enable decay during an edges-only replay:
 
 ```bash

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from .decay import apply_decay
 from .graph import Graph
 from .learn import LearningConfig, apply_outcome
 from .traverse import TraversalConfig, traverse
@@ -531,6 +533,40 @@ def _interaction_query_outcome(entry: dict[str, object]) -> tuple[str, float | N
     return query, query_ts, response_text, tool_calls
 
 
+def _normalize_replay_queries(
+    queries: list[str | tuple[str, float | None] | dict[str, object]],
+    *,
+    since_ts: float | None = None,
+) -> list[tuple[str, float | None, str | None, list[dict[str, object]]]]:
+    """Normalize replay inputs into (query, ts, response, tool_calls)."""
+    normalized_queries: list[tuple[str, float | None, str | None, list[dict[str, object]]]] = []
+    for entry in queries:
+        if isinstance(entry, tuple) and len(entry) == 2 and isinstance(entry[0], str):
+            query, query_ts = entry
+            if not query.strip():
+                continue
+            normalized_queries.append((query, query_ts, None, []))
+            continue
+        if isinstance(entry, dict):
+            query, query_ts, response_text, tool_calls = _interaction_query_outcome(entry)
+            if query is None or not query.strip():
+                continue
+            normalized_queries.append((query, query_ts, response_text, tool_calls))
+            continue
+
+        query = str(entry)
+        if query.strip():
+            normalized_queries.append((query, None, None, []))
+
+    if since_ts is not None:
+        normalized_queries = [
+            (query, query_ts, response, tools)
+            for query, query_ts, response, tools in normalized_queries
+            if query_ts is None or query_ts > since_ts
+        ]
+    return normalized_queries
+
+
 def replay_queries(
     graph: Graph,
     queries: list[str | tuple[str, float | None] | dict[str, object]],
@@ -557,31 +593,7 @@ def replay_queries(
     cfg = config or TraversalConfig()
     seed_fn = keyword_seed_fn or default_keyword_seed_fn
 
-    normalized_queries: list[tuple[str, float | None, str | None, list[dict[str, object]]]] = []
-    for entry in queries:
-        if isinstance(entry, tuple) and len(entry) == 2 and isinstance(entry[0], str):
-            query, query_ts = entry
-            if not query.strip():
-                continue
-            normalized_queries.append((query, query_ts, None, []))
-            continue
-        if isinstance(entry, dict):
-            query, query_ts, response_text, tool_calls = _interaction_query_outcome(entry)
-            if query is None or not query.strip():
-                continue
-            normalized_queries.append((query, query_ts, response_text, tool_calls))
-            continue
-
-        query = str(entry)
-        if query.strip():
-            normalized_queries.append((query, None, None, []))
-
-    if since_ts is not None:
-        normalized_queries = [
-            (query, query_ts, response, tools)
-            for query, query_ts, response, tools in normalized_queries
-            if query_ts is None or query_ts > since_ts
-        ]
+    normalized_queries = _normalize_replay_queries(queries=queries, since_ts=since_ts)
 
     if not normalized_queries:
         return {
@@ -651,6 +663,172 @@ def replay_queries(
             )
         if query_ts is not None:
             latest_ts = query_ts if latest_ts is None else max(latest_ts, query_ts)
+
+    stats["last_replayed_ts"] = latest_ts
+    return stats
+
+
+def replay_queries_parallel(
+    graph: Graph,
+    queries: list[str | tuple[str, float | None] | dict[str, object]],
+    *,
+    workers: int = 1,
+    merge_every: int = 50,
+    config: TraversalConfig | None = None,
+    keyword_seed_fn: Callable[[Graph, str], list[tuple[str, float]]] | None = None,
+    outcome: float = 1.0,
+    outcome_fn: Callable[[str], float] | None = None,
+    verbose: bool = False,
+    since_ts: float | None = None,
+    auto_decay: bool = False,
+    decay_interval: int = 10,
+    on_merge: Callable[[dict[str, object]], None] | None = None,
+) -> dict:
+    """Approximate true-parallel replay with deterministic shard merges."""
+    worker_count = max(1, workers)
+    batch_size = max(1, merge_every)
+    if worker_count <= 1:
+        return replay_queries(
+            graph=graph,
+            queries=queries,
+            config=config,
+            keyword_seed_fn=keyword_seed_fn,
+            outcome=outcome,
+            outcome_fn=outcome_fn,
+            verbose=verbose,
+            since_ts=since_ts,
+            auto_decay=auto_decay,
+            decay_interval=decay_interval,
+        )
+
+    cfg = config or TraversalConfig()
+    seed_fn = keyword_seed_fn or default_keyword_seed_fn
+    normalized = _normalize_replay_queries(queries=queries, since_ts=since_ts)
+    if not normalized:
+        return {
+            "queries_replayed": 0,
+            "edges_reinforced": 0,
+            "cross_file_edges_created": 0,
+            "last_replayed_ts": None,
+            "merge_batches": 0,
+            "replay_workers": worker_count,
+        }
+
+    indexed = [
+        (idx, query, query_ts, query_response)
+        for idx, (query, query_ts, query_response, _tool_calls) in enumerate(normalized)
+    ]
+    shards: list[list[tuple[int, str, float | None, str | None]]] = [[] for _ in range(worker_count)]
+    for item in indexed:
+        shards[item[0] % worker_count].append(item)
+
+    def _worker_shard(
+        shard_id: int,
+        shard_items: list[tuple[int, str, float | None, str | None]],
+    ) -> tuple[int, list[list[dict[str, object]]]]:
+        shard_batches: list[list[dict[str, object]]] = []
+        pending: list[dict[str, object]] = []
+        for global_idx, query, query_ts, query_response in shard_items:
+            seeds = seed_fn(graph, query)
+            result = traverse(graph=graph, seeds=seeds, config=cfg)
+            event: dict[str, object] = {"idx": global_idx, "ts": query_ts}
+            if result.fired:
+                query_outcome = outcome_fn(query) if outcome_fn is not None else outcome
+                query_outcome = _auto_score_query_outcome(query_outcome, query_response, result.fired, graph)
+                fired_nodes = (
+                    [result.steps[0].from_node, *[step.to_node for step in result.steps]]
+                    if result.steps
+                    else result.fired
+                )
+                event["fired_nodes"] = fired_nodes
+                event["outcome"] = query_outcome
+            pending.append(event)
+            if len(pending) >= batch_size:
+                shard_batches.append(pending)
+                pending = []
+        if pending:
+            shard_batches.append(pending)
+        return shard_id, shard_batches
+
+    shard_batches_by_id: list[list[list[dict[str, object]]]] = [[] for _ in range(worker_count)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(_worker_shard, shard_id, shard_items) for shard_id, shard_items in enumerate(shards)]
+        for future in concurrent.futures.as_completed(futures):
+            shard_id, shard_batches = future.result()
+            shard_batches_by_id[shard_id] = shard_batches
+
+    stats = {
+        "queries_replayed": len(normalized),
+        "edges_reinforced": 0,
+        "cross_file_edges_created": 0,
+        "last_replayed_ts": None,
+        "merge_batches": 0,
+        "replay_workers": worker_count,
+    }
+    latest_ts = None
+    processed = 0
+    decay_counter = 0
+    max_rounds = max((len(shard_batches) for shard_batches in shard_batches_by_id), default=0)
+
+    for round_idx in range(max_rounds):
+        for shard_id, shard_batches in enumerate(shard_batches_by_id):
+            if round_idx >= len(shard_batches):
+                continue
+            batch = sorted(
+                shard_batches[round_idx],
+                key=lambda item: int(item.get("idx", -1)),
+            )
+            for event in batch:
+                query_ts = event.get("ts")
+                if isinstance(query_ts, (float, int)):
+                    query_ts_value = float(query_ts)
+                    latest_ts = query_ts_value if latest_ts is None else max(latest_ts, query_ts_value)
+                else:
+                    query_ts_value = None
+
+                fired_nodes = event.get("fired_nodes")
+                query_outcome = event.get("outcome")
+                if isinstance(fired_nodes, list) and len(fired_nodes) >= 2 and isinstance(query_outcome, (float, int)):
+                    before_weights = _snapshot_edges(graph)
+                    before_cross_edges = _cross_file_edges(graph)
+                    apply_outcome(
+                        graph=graph,
+                        fired_nodes=[str(node_id) for node_id in fired_nodes],
+                        outcome=float(query_outcome),
+                        config=LearningConfig(),
+                        auto_decay=False,
+                    )
+                    decay_counter += 1
+                    after_weights = _snapshot_edges(graph)
+                    after_cross_edges = _cross_file_edges(graph)
+                    for key, weight in after_weights.items():
+                        if before_weights.get(key) != weight:
+                            stats["edges_reinforced"] += 1
+                    stats["cross_file_edges_created"] += len(after_cross_edges - before_cross_edges)
+                    if auto_decay and decay_interval > 0 and decay_counter % max(1, decay_interval) == 0:
+                        apply_decay(graph)
+                if query_ts_value is not None:
+                    latest_ts = query_ts_value if latest_ts is None else max(latest_ts, query_ts_value)
+                processed += 1
+
+            stats["merge_batches"] += 1
+            if on_merge is not None:
+                on_merge(
+                    {
+                        "merged_queries": processed,
+                        "total_queries": len(normalized),
+                        "round": round_idx + 1,
+                        "shard": shard_id + 1,
+                        "batch_size": len(batch),
+                        "merge_batches": stats["merge_batches"],
+                        "last_replayed_ts": latest_ts,
+                    }
+                )
+            if verbose:
+                print(
+                    f"Merged batch {stats['merge_batches']} ({processed}/{len(normalized)} queries)",
+                    file=sys.stderr,
+                )
 
     stats["last_replayed_ts"] = latest_ts
     return stats

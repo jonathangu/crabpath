@@ -6,6 +6,7 @@ import argparse
 import socket
 import json
 import os
+import time
 import warnings
 from datetime import datetime, timezone
 import sys
@@ -41,6 +42,7 @@ from .replay import (
     extract_queries,
     extract_queries_from_dir,
     replay_queries,
+    replay_queries_parallel,
 )
 from .split import split_workspace
 from .hasher import HashEmbedder
@@ -49,9 +51,12 @@ from .sync import DEFAULT_AUTHORITY_MAP, sync_workspace
 from .full_learning import (
     collect_session_files,
     default_checkpoint_path,
+    load_interactions_for_replay,
     run_fast_learning,
     run_harvest,
+    _load_checkpoint,
     _persist_state,
+    _save_checkpoint,
 )
 from ._util import _tokenize
 from .maintain import run_maintenance
@@ -210,6 +215,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Comma-separated tool names whose toolResult text may be attached for media stubs.",
     )
     r.add_argument("--tool-result-max-chars", type=int, default=DEFAULT_TOOL_RESULT_MAX_CHARS)
+    r.add_argument("--progress-every", type=int, default=0)
+    r.add_argument("--checkpoint-every-seconds", type=int, default=60)
+    r.add_argument("--checkpoint-every", type=int, default=0, help="Checkpoint every K replay windows/merge batches")
+    r.add_argument("--stop-after-fast-learning", action="store_true")
+    r.add_argument("--replay-workers", type=int, default=1)
+    r.add_argument("--persist-state-every-seconds", type=int, default=0)
     r.add_argument("--json", action="store_true")
 
     hcmd = sub.add_parser("harvest")
@@ -1226,6 +1237,23 @@ def cmd_replay(args: argparse.Namespace) -> int:
     if (run_fast or run_full) and state_path is None:
         raise SystemExit("--state is required for fast/full learning replay mode")
 
+    checkpoint_path = args.checkpoint or (str(default_checkpoint_path(str(state_path))) if state_path is not None else None)
+    checkpoint_every_windows = max(0, int(args.checkpoint_every))
+    checkpoint_every_seconds = max(0, int(args.checkpoint_every_seconds))
+    persist_state_every_seconds = max(0, int(args.persist_state_every_seconds))
+    progress_every = max(0, int(args.progress_every))
+    replay_workers = max(1, int(args.replay_workers))
+
+    def _emit_progress(payload: dict[str, object]) -> None:
+        if args.json:
+            print(json.dumps(payload))
+            return
+        completed = int(payload.get("completed", 0))
+        total = int(payload.get("total", 0))
+        pct = (100.0 * completed / total) if total > 0 else 100.0
+        phase = payload.get("phase", "replay")
+        print(f"[{phase}] {completed}/{total} ({pct:.1f}%)", file=sys.stderr)
+
     fast_stats: dict[str, object] | None = None
     if run_fast or run_full:
         fast_stats = run_fast_learning(
@@ -1235,27 +1263,44 @@ def cmd_replay(args: argparse.Namespace) -> int:
             window_radius=max(1, args.window_radius),
             max_windows=max(1, args.max_windows),
             hard_max_turns=max(1, args.hard_max_turns),
-            checkpoint_path=args.checkpoint or str(default_checkpoint_path(str(state_path))),
+            checkpoint_path=checkpoint_path,
             resume=bool(args.resume),
             ignore_checkpoint=bool(args.ignore_checkpoint),
             backup=bool(args.backup),
             include_tool_results=include_tool_results,
             tool_result_allowlist=tool_result_allowlist,
             tool_result_max_chars=tool_result_max_chars,
+            checkpoint_every=checkpoint_every_windows,
+            checkpoint_every_seconds=checkpoint_every_seconds,
         )
         graph, index, meta = load_state(str(state_path))
+        if args.stop_after_fast_learning:
+            output: dict[str, object] = {
+                "stopped_after_fast_learning": True,
+                "fast_learning": fast_stats,
+            }
+            if args.json:
+                print(json.dumps(output, indent=2))
+            else:
+                print("Completed fast-learning; stopped before replay/harvest.")
+            return 0
 
-    last_replayed_ts = meta.get("last_replayed_ts")
-    if not isinstance(last_replayed_ts, (int, float)):
-        last_replayed_ts = None
-
-    replay_since_ts = last_replayed_ts
+    checkpoint_data = _load_checkpoint(checkpoint_path) if (checkpoint_path and args.resume and not args.ignore_checkpoint) else {"version": 1}
+    replay_checkpoint = checkpoint_data.get("replay")
+    if not isinstance(replay_checkpoint, dict):
+        replay_checkpoint = {}
+    replay_since_lines_raw = replay_checkpoint.get("sessions")
+    replay_since_lines = (
+        {k: int(v) for k, v in replay_since_lines_raw.items() if isinstance(v, (int, float))}
+        if isinstance(replay_since_lines_raw, dict)
+        else {}
+    )
     if args.ignore_checkpoint:
-        replay_since_ts = None
+        replay_since_lines = {}
 
-    interactions = _load_session_interactions(
+    interactions, replay_offsets = load_interactions_for_replay(
         args.sessions,
-        since_ts=replay_since_ts,
+        since_lines=replay_since_lines if args.resume and not args.ignore_checkpoint else {},
         include_tool_results=include_tool_results,
         tool_result_allowlist=tool_result_allowlist,
         tool_result_max_chars=tool_result_max_chars,
@@ -1266,14 +1311,156 @@ def cmd_replay(args: argparse.Namespace) -> int:
     )
     auto_decay = bool(args.decay_during_replay) or run_full
     decay_interval = max(1, args.decay_interval)
-    stats = replay_queries(
-        graph=graph,
-        queries=interactions,
-        verbose=not args.json,
-        since_ts=replay_since_ts,
-        auto_decay=auto_decay,
-        decay_interval=decay_interval,
-    )
+
+    total_interactions = len(interactions)
+    processed_interactions = 0
+    progress_mark = 0
+    merge_batches = 0
+    state_dirty = False
+    replay_offsets_done = dict(replay_since_lines)
+    last_checkpoint_at = time.monotonic()
+    last_persist_at = time.monotonic()
+    replay_latest_ts: float | None = None
+    stats = {
+        "queries_replayed": 0,
+        "edges_reinforced": 0,
+        "cross_file_edges_created": 0,
+        "last_replayed_ts": None,
+    }
+
+    def _update_offsets_from_batch(batch: list[dict[str, object]]) -> None:
+        for item in batch:
+            source = item.get("source")
+            line_no = item.get("line_no")
+            if not isinstance(source, str) or not isinstance(line_no, (int, float)):
+                continue
+            prev = replay_offsets_done.get(source, 0)
+            if int(line_no) > prev:
+                replay_offsets_done[source] = int(line_no)
+
+    def _checkpoint_if_due(force: bool = False) -> None:
+        nonlocal last_checkpoint_at
+        if not checkpoint_path:
+            return
+        due_by_count = checkpoint_every_windows > 0 and merge_batches > 0 and merge_batches % checkpoint_every_windows == 0
+        due_by_time = checkpoint_every_seconds > 0 and (time.monotonic() - last_checkpoint_at) >= checkpoint_every_seconds
+        if not force and not (due_by_count or due_by_time):
+            return
+        _save_checkpoint(
+            checkpoint_path,
+            phase="replay",
+            session_offsets=replay_offsets_done,
+            extra={
+                "queries_processed": processed_interactions,
+                "queries_total": total_interactions,
+                "merge_batches": merge_batches,
+                "updated_at": time.time(),
+            },
+        )
+        last_checkpoint_at = time.monotonic()
+
+    def _persist_if_due(force: bool = False) -> None:
+        nonlocal last_persist_at, state_dirty
+        if state_path is None or not state_dirty:
+            return
+        due = force or (persist_state_every_seconds > 0 and (time.monotonic() - last_persist_at) >= persist_state_every_seconds)
+        if not due:
+            return
+        state_meta = _state_meta(meta)
+        if replay_latest_ts is not None:
+            state_meta["last_replayed_ts"] = replay_latest_ts
+        _persist_state(
+            graph=graph,
+            index=index if index is not None else VectorIndex(),
+            meta=state_meta,
+            state_path=str(state_path),
+            backup=bool(args.backup),
+        )
+        last_persist_at = time.monotonic()
+        state_dirty = False
+
+    def _emit_periodic_progress() -> None:
+        nonlocal progress_mark
+        if progress_every <= 0:
+            return
+        while processed_interactions - progress_mark >= progress_every:
+            progress_mark += progress_every
+            _emit_progress(
+                {
+                    "type": "progress",
+                    "phase": "replay",
+                    "completed": processed_interactions,
+                    "total": total_interactions,
+                    "merge_batches": merge_batches,
+                }
+            )
+
+    if replay_workers > 1:
+        merge_every = checkpoint_every_windows if checkpoint_every_windows > 0 else 50
+
+        def _on_merge(event: dict[str, object]) -> None:
+            nonlocal processed_interactions, merge_batches, state_dirty, replay_latest_ts
+            merged_queries = int(event.get("merged_queries", processed_interactions))
+            merge_batches = int(event.get("merge_batches", merge_batches))
+            processed_interactions = merged_queries
+            last_ts = event.get("last_replayed_ts")
+            if isinstance(last_ts, (int, float)):
+                replay_latest_ts = float(last_ts)
+            state_dirty = True
+            _checkpoint_if_due()
+            _persist_if_due()
+            _emit_periodic_progress()
+
+        parallel_stats = replay_queries_parallel(
+            graph=graph,
+            queries=interactions,
+            workers=replay_workers,
+            merge_every=merge_every,
+            verbose=not args.json,
+            auto_decay=auto_decay,
+            decay_interval=decay_interval,
+            on_merge=_on_merge,
+        )
+        stats["queries_replayed"] = int(parallel_stats.get("queries_replayed", 0))
+        stats["edges_reinforced"] = int(parallel_stats.get("edges_reinforced", 0))
+        stats["cross_file_edges_created"] = int(parallel_stats.get("cross_file_edges_created", 0))
+        stats["last_replayed_ts"] = parallel_stats.get("last_replayed_ts")
+        merge_batches = int(parallel_stats.get("merge_batches", merge_batches))
+        if isinstance(stats["last_replayed_ts"], (int, float)):
+            replay_latest_ts = float(stats["last_replayed_ts"])
+        processed_interactions = int(stats["queries_replayed"])
+        state_dirty = bool(processed_interactions)
+        replay_offsets_done.update({key: int(value) for key, value in replay_offsets.items()})
+        stats["replay_workers"] = replay_workers
+        stats["merge_batches"] = merge_batches
+    else:
+        window_size = checkpoint_every_windows if checkpoint_every_windows > 0 else 50
+        for start in range(0, len(interactions), window_size):
+            batch = interactions[start : start + window_size]
+            replay_batch = replay_queries(
+                graph=graph,
+                queries=batch,
+                verbose=False,
+                auto_decay=auto_decay,
+                decay_interval=decay_interval,
+            )
+            merge_batches += 1
+            processed_interactions += len(batch)
+            _update_offsets_from_batch(batch)
+            stats["queries_replayed"] += int(replay_batch.get("queries_replayed", 0))
+            stats["edges_reinforced"] += int(replay_batch.get("edges_reinforced", 0))
+            stats["cross_file_edges_created"] += int(replay_batch.get("cross_file_edges_created", 0))
+            batch_last_ts = replay_batch.get("last_replayed_ts")
+            if isinstance(batch_last_ts, (int, float)):
+                replay_latest_ts = float(batch_last_ts) if replay_latest_ts is None else max(replay_latest_ts, float(batch_last_ts))
+            stats["last_replayed_ts"] = replay_latest_ts
+            state_dirty = state_dirty or bool(replay_batch.get("queries_replayed", 0))
+            _checkpoint_if_due()
+            _persist_if_due()
+            _emit_periodic_progress()
+
+    _checkpoint_if_due(force=True)
+    _persist_if_due(force=True)
 
     harvest_stats: dict[str, object] | None = None
     if run_full:

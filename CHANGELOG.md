@@ -1,5 +1,16 @@
 ## Unreleased
 
+### Replay ops hardening + simple parallel replay v0 (issue #19)
+- `openclawbrain replay` adds:
+  - `--progress-every N` (periodic progress, JSONL events when `--json` is enabled)
+  - `--checkpoint-every-seconds S` and `--checkpoint-every K` (frequent checkpoints during fast-learning and replay)
+  - `--persist-state-every-seconds S` (periodic state persistence during replay)
+  - `--stop-after-fast-learning` (cutover mode: inject/embed/persist, then exit before replay/harvest)
+  - `--replay-workers N` (simple true-parallel replay mode; default `1`)
+- Replay now supports line-offset checkpoint resume through replay sessions, and writes replay checkpoints incrementally during processing.
+- Added simple deterministic parallel replay reducer: workers compute shard deltas from traversal results, reducer merges batches in deterministic order, and checkpoints are written after merges.
+- Added tests for replay progress events, replay checkpoint+resume behavior, stop-after-fast-learning early exit, and parallel replay mode output.
+
 ### OpenAI LLM client stability (issue #17)
 - `openai_llm.py`: made OpenAI clients thread-local for batch-thread safety, added client-level defaults `timeout=60` and `max_retries=2` when supported, and narrowed the `TypeError` fallback in `openai_llm_fn` to timeout-only compatibility only.
 

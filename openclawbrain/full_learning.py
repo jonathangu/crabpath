@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -478,30 +479,59 @@ def append_learning_events(path: Path | str, events: list[dict]) -> None:
             pass
 
 
-def _load_checkpoint(path: Path | str) -> dict[str, int]:
+def _load_checkpoint(path: Path | str) -> dict[str, Any]:
     """Load checkpoint JSON."""
-    payload = {"sessions": {}}
+    payload: dict[str, Any] = {"version": 1, "sessions": {}}
     p = Path(path)
     if not p.exists():
-        return {"sessions": {}}
+        return payload
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return payload
     if not isinstance(raw, dict):
         return payload
-    sessions = raw.get("sessions")
-    if not isinstance(sessions, dict):
-        return payload
-    return {"sessions": {k: int(v) for k, v in sessions.items() if isinstance(v, (int, float))}}
+    raw_sessions = raw.get("sessions")
+    if isinstance(raw_sessions, dict):
+        payload["sessions"] = {k: int(v) for k, v in raw_sessions.items() if isinstance(v, (int, float))}
+
+    for phase in ("fast_learning", "replay"):
+        phase_payload = raw.get(phase)
+        if not isinstance(phase_payload, dict):
+            continue
+        normalized_phase: dict[str, Any] = dict(phase_payload)
+        sessions = phase_payload.get("sessions")
+        if isinstance(sessions, dict):
+            normalized_phase["sessions"] = {k: int(v) for k, v in sessions.items() if isinstance(v, (int, float))}
+        payload[phase] = normalized_phase
+    return payload
 
 
-def _save_checkpoint(path: Path | str, session_offsets: dict[str, int]) -> None:
-    """Save replay checkpoint."""
+def _save_checkpoint(
+    path: Path | str,
+    *,
+    phase: str,
+    session_offsets: dict[str, int] | None = None,
+    extra: dict[str, object] | None = None,
+) -> None:
+    """Save replay checkpoint with phase-scoped fields."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = _load_checkpoint(path)
+    payload["version"] = 1
+    phase_payload = payload.get(phase)
+    if not isinstance(phase_payload, dict):
+        phase_payload = {}
+    phase_payload = dict(phase_payload)
+    if session_offsets is not None:
+        phase_payload["sessions"] = {key: int(value) for key, value in session_offsets.items()}
+    if extra:
+        phase_payload.update(extra)
+    payload[phase] = phase_payload
+    if phase == "fast_learning" and session_offsets is not None:
+        payload["sessions"] = dict(phase_payload.get("sessions", {}))
     with path.open("w", encoding="utf-8") as handle:
-        json.dump({"version": 1, "sessions": session_offsets}, handle, indent=2)
+        json.dump(payload, handle, indent=2)
 
 
 def _persist_state(
@@ -526,11 +556,27 @@ def _persist_state(
 def load_interactions_for_replay(
     session_paths: str | Path | list[str] | list[Path],
     since_lines: dict[str, int] | None = None,
+    *,
+    include_tool_results: bool = True,
+    tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
+    tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
 ) -> tuple[list[dict], dict[str, int]]:
-    """Load interactions from sessions with line-aware resume support."""
+    """Load interactions from sessions with line-aware resume support.
+
+    This is used by `openclawbrain replay` so that `--resume` can be driven by
+    session file offsets (line numbers) instead of timestamps.
+
+    When enabled, allowlisted `toolResult` messages (OCR, audio transcripts,
+    captions) are attached to the preceding user query if that query looks like
+    an OpenClaw media stub (`[media attached: ...]`).
+    """
     files = collect_session_files(session_paths)
     interactions: list[dict] = []
     offsets: dict[str, int] = {}
+
+    tool_result_allow = _normalize_tool_result_allowlist(tool_result_allowlist)
+    max_tool_chars = max(0, int(tool_result_max_chars))
+    appended_tool_chars: dict[int, int] = {}
 
     for path in files:
         path_name = str(path)
@@ -545,18 +591,54 @@ def load_interactions_for_replay(
                 continue
 
             role = str(message.get("role", "")).strip().lower()
-            if role not in {"user", "assistant"}:
-                last_user_idx = None
-                continue
-
             record_ts = _extract_ts(payload)
+
             if role == "user":
                 query = _resolve_text(message.get("content"))
                 if not query:
                     last_user_idx = None
                     continue
-                interactions.append({"query": query, "response": None, "tool_calls": [], "ts": record_ts})
+                interactions.append(
+                    {
+                        "query": query,
+                        "response": None,
+                        "tool_calls": [],
+                        "ts": record_ts,
+                        "source": path_name,
+                        "line_no": line_no,
+                    }
+                )
                 last_user_idx = len(interactions) - 1
+                appended_tool_chars[last_user_idx] = 0
+                continue
+
+            if role in {"toolresult", "tool_result"}:
+                if (
+                    include_tool_results
+                    and last_user_idx is not None
+                    and max_tool_chars > 0
+                    and isinstance(interactions[last_user_idx].get("query"), str)
+                ):
+                    base_query = interactions[last_user_idx]["query"]
+                    if isinstance(base_query, str) and _is_media_stub_query(base_query):
+                        tool_name, tool_text = _extract_tool_result(message)
+                        if tool_name in tool_result_allow and isinstance(tool_text, str):
+                            cleaned = tool_text.strip()
+                            if cleaned:
+                                used = appended_tool_chars.get(last_user_idx, 0)
+                                remaining = max_tool_chars - used
+                                if remaining > 0:
+                                    snippet = cleaned[:remaining]
+                                    interactions[last_user_idx]["query"] = (
+                                        f"{base_query}\n\n[toolResult:{tool_name}] {snippet}"
+                                    )
+                                    appended_tool_chars[last_user_idx] = used + len(snippet)
+                # Keep last_user_idx so the assistant response can still attach.
+                continue
+
+            if role != "assistant":
+                # Any other role breaks the interaction pairing.
+                last_user_idx = None
                 continue
 
             if last_user_idx is None:
@@ -606,6 +688,8 @@ def run_fast_learning(
     include_tool_results: bool = True,
     tool_result_allowlist: set[str] | list[str] | tuple[str, ...] | None = None,
     tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS,
+    checkpoint_every: int = 0,
+    checkpoint_every_seconds: int = 60,
 ) -> dict[str, Any]:
     """Run LLM-backed transcript mining and inject new learning nodes."""
     if workers < 1:
@@ -615,10 +699,16 @@ def run_fast_learning(
             raise SystemExit("LLM required for fast-learning; install openai and set OPENAI_API_KEY")
         llm_fn = openai_llm_fn
 
-    checkpoint = _load_checkpoint(checkpoint_path) if (checkpoint_path and resume) else {"sessions": {}}
+    checkpoint = _load_checkpoint(checkpoint_path) if (checkpoint_path and resume) else {"version": 1, "sessions": {}}
     if ignore_checkpoint:
-        checkpoint = {"sessions": {}}
-    start_lines = checkpoint.get("sessions", {})
+        checkpoint = {"version": 1, "sessions": {}}
+    fast_checkpoint = checkpoint.get("fast_learning")
+    if not isinstance(fast_checkpoint, dict):
+        fast_checkpoint = {}
+    start_lines_raw = fast_checkpoint.get("sessions")
+    if not isinstance(start_lines_raw, dict):
+        start_lines_raw = checkpoint.get("sessions", {})
+    start_lines = {k: int(v) for k, v in start_lines_raw.items() if isinstance(v, (int, float))}
 
     grouped_turns, turn_offsets = _collect_turns(
         session_paths,
@@ -642,11 +732,43 @@ def run_fast_learning(
                 windows.append((source, turns[start:end], idx))
 
     all_events: list[dict] = []
+    completed_windows = 0
+    checkpoint_every_windows = max(0, checkpoint_every)
+    checkpoint_interval_seconds = max(0, checkpoint_every_seconds)
+    last_checkpoint_at = time.monotonic()
+
+    def _maybe_checkpoint_fast() -> None:
+        nonlocal last_checkpoint_at
+        if not checkpoint_path:
+            return
+        should_checkpoint_by_count = (
+            checkpoint_every_windows > 0 and completed_windows > 0 and completed_windows % checkpoint_every_windows == 0
+        )
+        should_checkpoint_by_time = (
+            checkpoint_interval_seconds > 0 and (time.monotonic() - last_checkpoint_at) >= checkpoint_interval_seconds
+        )
+        if not (should_checkpoint_by_count or should_checkpoint_by_time):
+            return
+        _save_checkpoint(
+            checkpoint_path,
+            phase="fast_learning",
+            session_offsets=None,
+            extra={
+                "status": "running",
+                "windows_processed": completed_windows,
+                "windows_total": len(windows),
+                "updated_at": time.time(),
+            },
+        )
+        last_checkpoint_at = time.monotonic()
+
     if windows:
         request_ctx = [(source, idx + 1, len(windows), segment) for idx, (source, segment, _) in enumerate(windows)]
         if workers == 1:
             for source, idx, total, segment in request_ctx:
                 all_events.extend(_window_to_payload(session=source, window=segment, window_idx=idx, total_windows=total, llm_fn=llm_fn))
+                completed_windows += 1
+                _maybe_checkpoint_fast()
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {
@@ -662,6 +784,8 @@ def run_fast_learning(
                 }
                 for future in concurrent.futures.as_completed(futures):
                     all_events.extend(future.result())
+                    completed_windows += 1
+                    _maybe_checkpoint_fast()
 
     if not include_reinforcements:
         all_events = [event for event in all_events if event.get("type") != "REINFORCEMENT"]
@@ -715,8 +839,18 @@ def run_fast_learning(
         )
         _persist_state(graph=graph, index=index, meta=meta, state_path=state_path, backup=backup)
 
-    if checkpoint_path and resume:
-        _save_checkpoint(checkpoint_path, turn_offsets)
+    if checkpoint_path:
+        _save_checkpoint(
+            checkpoint_path,
+            phase="fast_learning",
+            session_offsets=turn_offsets,
+            extra={
+                "status": "complete",
+                "windows_processed": completed_windows,
+                "windows_total": len(windows),
+                "updated_at": time.time(),
+            },
+        )
 
     return {
         "windows": len(windows),
