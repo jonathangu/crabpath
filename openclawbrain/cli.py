@@ -206,13 +206,34 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--state")
     r.add_argument("--graph")
     r.add_argument("--sessions", nargs="+")
-    r.add_argument("--fast-learning", action="store_true")
-    r.add_argument("--full-learning", action="store_true")
+    r.add_argument(
+        "--fast-learning",
+        "--extract-learning-events",
+        dest="fast_learning",
+        action="store_true",
+        help=(
+            "Run only LLM transcript mining + learning node injection "
+            "(alias: --extract-learning-events). Note: this can be the slowest step because it is LLM-bound."
+        ),
+    )
+    r.add_argument(
+        "--full-learning",
+        "--full-pipeline",
+        dest="full_learning",
+        action="store_true",
+        help="Run full pipeline: fast-learning + edge replay + harvest (alias: --full-pipeline).",
+    )
+
     r.add_argument("--edges-only", action="store_true")
     r.add_argument("--show-checkpoint", action="store_true")
     r.add_argument("--decay-during-replay", action="store_true")
     r.add_argument("--decay-interval", type=int, default=10)
-    r.add_argument("--workers", type=int, default=4)
+    r.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="LLM workers for fast-learning transcript extraction.",
+    )
     r.add_argument("--window-radius", type=int, default=8)
     r.add_argument("--max-windows", type=int, default=6)
     r.add_argument("--hard-max-turns", type=int, default=120)
@@ -227,12 +248,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Comma-separated tool names whose toolResult text may be attached for media stubs.",
     )
     r.add_argument("--tool-result-max-chars", type=int, default=DEFAULT_TOOL_RESULT_MAX_CHARS)
-    r.add_argument("--progress-every", type=int, default=0)
+    r.add_argument(
+        "--progress-every",
+        type=int,
+        default=0,
+        help=(
+            "Emit replay progress every N interactions "
+            "(non-JSON mode also emits heartbeat progress every 30s unless --quiet)."
+        ),
+    )
     r.add_argument("--checkpoint-every-seconds", type=int, default=60)
     r.add_argument("--checkpoint-every", type=int, default=0, help="Checkpoint every K replay windows/merge batches")
     r.add_argument("--stop-after-fast-learning", action="store_true")
-    r.add_argument("--replay-workers", type=int, default=1)
+    r.add_argument(
+        "--replay-workers",
+        type=int,
+        default=1,
+        help=(
+            "Edge replay workers. 1 keeps strict sequential replay behavior; "
+            ">1 uses deterministic shard/merge approximation for higher throughput."
+        ),
+    )
     r.add_argument("--persist-state-every-seconds", type=int, default=0)
+    r.add_argument("--quiet", action="store_true", help="Suppress replay banners and progress output.")
     r.add_argument("--json", action="store_true")
 
     hcmd = sub.add_parser("harvest")
@@ -1413,8 +1451,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
     persist_state_every_seconds = max(0, int(args.persist_state_every_seconds))
     progress_every = max(0, int(args.progress_every))
     replay_workers = max(1, int(args.replay_workers))
+    quiet = bool(args.quiet)
+    timed_progress_interval_seconds = 30
 
     def _emit_progress(payload: dict[str, object]) -> None:
+        if quiet:
+            return
         if args.json:
             print(json.dumps(payload))
             return
@@ -1465,7 +1507,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             }
             if args.json:
                 print(json.dumps(output, indent=2))
-            else:
+            elif not quiet:
                 print("Completed fast-learning; stopped before replay/harvest.")
             return 0
 
@@ -1486,16 +1528,18 @@ def cmd_replay(args: argparse.Namespace) -> int:
         tool_result_allowlist=tool_result_allowlist,
         tool_result_max_chars=tool_result_max_chars,
     )
-    print(
-        f"Loaded {len(interactions)} interactions from session files",
-        file=sys.stderr,
-    )
+    if not quiet:
+        print(
+            f"Loaded {len(interactions)} interactions from session files",
+            file=sys.stderr,
+        )
     auto_decay = bool(args.decay_during_replay) or run_full
     decay_interval = max(1, args.decay_interval)
 
     total_interactions = len(interactions)
     processed_interactions = 0
     progress_mark = 0
+    last_timed_progress_at = time.monotonic()
     merge_batches = 0
     state_dirty = False
     replay_offsets_done = dict(replay_since_lines)
@@ -1576,6 +1620,24 @@ def cmd_replay(args: argparse.Namespace) -> int:
                 }
             )
 
+    def _emit_timed_progress(force: bool = False) -> None:
+        nonlocal last_timed_progress_at
+        if args.json or quiet or total_interactions <= 0:
+            return
+        now = time.monotonic()
+        if not force and (now - last_timed_progress_at) < timed_progress_interval_seconds:
+            return
+        last_timed_progress_at = now
+        _emit_progress(
+            {
+                "type": "progress",
+                "phase": "replay",
+                "completed": processed_interactions,
+                "total": total_interactions,
+                "merge_batches": merge_batches,
+            }
+        )
+
     if replay_workers > 1:
         merge_every = checkpoint_every_windows if checkpoint_every_windows > 0 else 50
 
@@ -1591,13 +1653,14 @@ def cmd_replay(args: argparse.Namespace) -> int:
             _checkpoint_if_due()
             _persist_if_due()
             _emit_periodic_progress()
+            _emit_timed_progress()
 
         parallel_stats = replay_queries_parallel(
             graph=graph,
             queries=interactions,
             workers=replay_workers,
             merge_every=merge_every,
-            verbose=not args.json,
+            verbose=(not args.json and not quiet),
             auto_decay=auto_decay,
             decay_interval=decay_interval,
             on_merge=_on_merge,
@@ -1639,9 +1702,11 @@ def cmd_replay(args: argparse.Namespace) -> int:
             _checkpoint_if_due()
             _persist_if_due()
             _emit_periodic_progress()
+            _emit_timed_progress()
 
     _checkpoint_if_due(force=True)
     _persist_if_due(force=True)
+    _emit_timed_progress(force=True)
 
     harvest_stats: dict[str, object] | None = None
     if run_full:

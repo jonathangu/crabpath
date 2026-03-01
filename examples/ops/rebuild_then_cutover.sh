@@ -65,6 +65,7 @@ openclawbrain init --workspace "$WORKSPACE_DIR" --output "$NEW"
 
 echo
 echo "== 2) Fast-learning replay into NEW state =="
+echo "(alias available: --extract-learning-events)"
 openclawbrain replay \
   --state "$NEW_STATE" \
   --sessions "${SESSIONS[@]}" \
@@ -80,7 +81,7 @@ cat <<EOF
 # openclawbrain replay \\
 #   --state "$NEW_STATE" \\
 #   --sessions ${SESSIONS[*]} \\
-#   --full-learning \\
+#   --full-learning \\  # alias: --full-pipeline
 #   --resume \\
 #   --checkpoint "$CHECKPOINT"
 #

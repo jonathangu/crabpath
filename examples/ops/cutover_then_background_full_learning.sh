@@ -18,8 +18,8 @@ Usage: cutover_then_background_full_learning.sh [options]
 Options:
   --state PATH
   --sessions-dir PATH
-  --replay-workers N
-  --workers N
+  --replay-workers N    # edge replay workers
+  --workers N           # fast-learning LLM workers
   --progress-every N
   --checkpoint-every-seconds N
   --checkpoint-every N
@@ -70,6 +70,7 @@ OUT_LOG="${OUT_LOG:-$STATE_DIR/replay-full-${timestamp}.out.log}"
 ERR_LOG="${ERR_LOG:-$STATE_DIR/replay-full-${timestamp}.err.log}"
 
 echo "1) Fast cutover pass (stop after fast-learning)"
+echo "   (alias available: --extract-learning-events)"
 openclawbrain replay \
   --state "$STATE" \
   --sessions "$SESSIONS_DIR" \
@@ -82,6 +83,7 @@ openclawbrain replay \
   --checkpoint-every "$CHECKPOINT_EVERY"
 
 echo "2) Starting background full-learning replay with nohup"
+echo "   (alias available: --full-pipeline)"
 nohup openclawbrain replay \
   --state "$STATE" \
   --sessions "$SESSIONS_DIR" \

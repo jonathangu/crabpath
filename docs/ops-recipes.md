@@ -22,6 +22,7 @@ openclawbrain replay \
   --resume \
   --checkpoint ~/.openclawbrain/main/replay_checkpoint.json
 ```
+`--extract-learning-events` is an alias for `--fast-learning`.
 
 Example progress output during fast-learning:
 
@@ -47,6 +48,7 @@ openclawbrain replay \
   --resume \
   --checkpoint ~/.openclawbrain/main/replay_checkpoint.json
 ```
+`--full-pipeline` is an alias for `--full-learning`.
 
 `examples/ops/cutover_then_background_full_learning.sh` automates this sequence.
 
@@ -80,7 +82,7 @@ examples/ops/rebuild_then_cutover.sh main ~/.openclaw/workspace \
 
 Notes:
 - `replay --sessions` accepts one or more paths, and each path may be a sessions directory or an individual `.jsonl` file.
-- The helper script uses fast-learning (`--fast-learning --stop-after-fast-learning`) for fast, safe cutover.
+- The helper script uses fast-learning (`--fast-learning --stop-after-fast-learning`; alias: `--extract-learning-events`) for fast, safe cutover.
 - For full-learning, either run it into NEW before cutover, or rebuild again into a new directory and cut over again. Avoid replaying directly against LIVE while the daemon is running.
 - Tradeoff: events learned while rebuild is running are not in the NEW snapshot unless you pause learning traffic or run a small delta replay before/after cutover.
 - On systems without `launchctl`, the script skips stop/start and tells you what to do manually.
@@ -105,6 +107,8 @@ openclawbrain replay \
 
 Notes:
 - `--replay-workers` controls edge-replay parallelism.
+- `--workers` controls fast-learning LLM extraction workers.
+- `--replay-workers > 1` uses a deterministic shard/merge approximation rather than strict sequential replay semantics.
 - `merge_batches` in replay output indicates how many merge windows were applied.
 - Use both `--checkpoint-every-seconds` and `--checkpoint-every` for long runs so restarts resume from recent progress.
 - Replay startup now prints a banner (unless `--json`) with checkpoint path, `resume`, `ignore_checkpoint`, and planned phases.

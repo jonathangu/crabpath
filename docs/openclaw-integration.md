@@ -347,7 +347,7 @@ OpenClawBrain ships an OpenClaw adapter that logs fired IDs per chat.
 
 That’s the ergonomic way to do “same-turn correction” inside OpenClaw.
 
-For full-history rebuilds, replay your sessions (full-learning is the default):
+For full-history rebuilds, replay your sessions (full-learning is the default; explicit alias pair: `--full-learning` / `--full-pipeline`):
 
 ```bash
 openclawbrain replay \
@@ -374,7 +374,7 @@ openclawbrain replay \
 This does:
 
 - replay query edges from session history (with decay enabled by default)
-- LLM transcript mining into `learning::` nodes (`--fast-learning` behavior)
+- LLM transcript mining into `learning::` nodes (`--fast-learning` / `--extract-learning-events` behavior)
 - slow-learning maintenance pass (`harvest`) with decay/scale/split/merge/prune/connect
 
 For cheap edge-only replay (no LLM, no harvest), use `--edges-only`:

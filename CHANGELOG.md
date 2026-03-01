@@ -21,6 +21,20 @@
 - Added tests for CLI JSON progress emission during fast-learning.
 - Updated `docs/ops-recipes.md` with a fast-learning progress output example.
 
+### Replay CLI ergonomics and clearer naming (issue #25)
+- Added replay flag aliases:
+  - `--extract-learning-events` as an alias for `--fast-learning`
+  - `--full-pipeline` as an alias for `--full-learning`
+- Clarified replay help text:
+  - fast-learning is LLM-bound and can be the slowest stage
+  - `--workers` controls fast-learning LLM workers
+  - `--replay-workers` controls edge replay workers
+  - `--replay-workers > 1` uses a deterministic shard/merge approximation instead of strict sequential replay behavior
+- Added `--quiet` to suppress replay banners/progress output.
+- Replay now emits heartbeat progress every 30 seconds by default (unless `--quiet`); `--progress-every` still controls count-based progress events.
+- Updated docs and operator examples to mention the new aliases while keeping existing flags.
+- Added CLI tests for replay alias parsing and alias execution paths.
+
 ### Replay ops hardening + simple parallel replay v0 (issue #19)
 - `openclawbrain replay` adds:
   - `--progress-every N` (periodic progress, JSONL events when `--json` is enabled)
