@@ -5,6 +5,7 @@ Canonical docs and examples: https://openclawbrain.ai
 Primary operator runbook: [docs/operator-guide.md](operator-guide.md)
 Operator recipes (cutover, parallel replay, prompt caching, media memory): [docs/ops-recipes.md](ops-recipes.md)
 New-agent canonical SOP (workspace + dedicated brain + launchd + routing): [docs/new-agent-sop.md](new-agent-sop.md)
+Packaged adapter CLIs (no repo clone required): `python3 -m openclawbrain.openclaw_adapter.query_brain ...` and `python3 -m openclawbrain.openclaw_adapter.learn_correction ...`
 
 If you’re already running OpenClaw, this guide shows the fastest path to:
 
@@ -93,7 +94,7 @@ With `openclawbrain serve`, you pay the load cost once and queries become:
 
 This is the “production shape” for OpenClaw integration.
 
-Adapter scripts (`query_brain.py` and `learn_correction.py`) now auto-detect the daemon socket:
+Adapter CLIs (`python3 -m openclawbrain.openclaw_adapter.query_brain` and `python3 -m openclawbrain.openclaw_adapter.learn_correction`) now auto-detect the daemon socket:
 
 - If `~/.openclawbrain/<agent>/daemon.sock` exists, they use the in-memory socket transport (fast path).
 - If the socket is missing, they fall back to loading `state.json` from disk directly (slower but still works).
@@ -156,7 +157,7 @@ Paste this block into your OpenClaw workspace `AGENTS.md` (edit `AGENT` and path
 
 **Query** (before answering questions about prior work, context, decisions, corrections, lessons):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json --compact --no-include-node-ids --exclude-bootstrap --max-prompt-context-chars 12000
+python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json --compact --no-include-node-ids --exclude-bootstrap --max-prompt-context-chars 12000
 ```
 Always pass `--chat-id` so fired nodes are logged for later corrections.
 Use `--exclude-recent-memory <today-note> <yesterday-note>` only when those files are already loaded by OpenClaw in the same prompt and you want to avoid duplication.

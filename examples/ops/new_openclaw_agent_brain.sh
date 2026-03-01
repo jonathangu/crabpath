@@ -87,7 +87,7 @@ Replace this with your agent operating instructions.
 AGENTS
 fi
 
-for f in SOUL.md USER.md MEMORY.md active-tasks.md memory/today.md; do
+for f in SOUL.md USER.md MEMORY.md IDENTITY.md TOOLS.md active-tasks.md "memory/$(date +%F).md"; do
   touch "$WORKSPACE_DIR/$f"
 done
 
@@ -106,6 +106,8 @@ echo
 echo "[4/4] Next actions"
 cat <<NEXT
 - Pin the tight query line in: $WORKSPACE_DIR/AGENTS.md
+- Recommended query command:
+    python3 -m openclawbrain.openclaw_adapter.query_brain "$STATE_PATH" '<summary>' --chat-id '<chat_id>' --json --compact --no-include-node-ids --exclude-bootstrap --max-prompt-context-chars 12000
 - Start daemon manually for smoke test:
     openclawbrain serve --state "$STATE_PATH"
 - Or configure launchd with template:

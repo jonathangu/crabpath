@@ -1,18 +1,8 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import sys
-from pathlib import Path
-
-
-def _load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"failed to load module: {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _write_state(path: Path, *, with_openai_meta: bool = False) -> None:
@@ -34,11 +24,11 @@ def _write_state(path: Path, *, with_openai_meta: bool = False) -> None:
 
 
 def _load_module_query() -> object:
-    return _load_module(Path("examples/openclaw_adapter/query_brain.py"), "oc_query")
+    return importlib.import_module("openclawbrain.openclaw_adapter.query_brain")
 
 
 def _load_module_learn() -> object:
-    return _load_module(Path("examples/openclaw_adapter/learn_correction.py"), "oc_learn")
+    return importlib.import_module("openclawbrain.openclaw_adapter.learn_correction")
 
 
 def test_query_brain_logs_fired_nodes_by_chat_id(tmp_path, capsys, monkeypatch):

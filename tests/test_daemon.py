@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-import importlib.util
+import importlib
 
 from openclawbrain import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
 from openclawbrain.traverse import TraversalResult
@@ -79,12 +79,7 @@ def _shutdown_daemon(proc: subprocess.Popen) -> dict:
 
 
 def _load_query_brain_module():
-    spec = importlib.util.spec_from_file_location("oc_query_brain", Path("examples/openclaw_adapter/query_brain.py"))
-    if spec is None or spec.loader is None:
-        raise RuntimeError("failed to load query_brain module")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module("openclawbrain.openclaw_adapter.query_brain")
 
 
 def test_daemon_responds_to_health(tmp_path: Path) -> None:

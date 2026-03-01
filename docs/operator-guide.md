@@ -6,6 +6,9 @@ OpenClawBrain is the long-term memory layer for OpenClaw agents: it builds a lea
 ## New agent recipe
 Use the canonical bootstrap SOP when creating a brand-new OpenClaw profile-style setup (new workspace + dedicated brain + launchd + routing):
 - [docs/new-agent-sop.md](new-agent-sop.md)
+Use packaged adapter CLIs for agent hooks (no `~/openclawbrain` clone required):
+- `python3 -m openclawbrain.openclaw_adapter.query_brain ...`
+- `python3 -m openclawbrain.openclaw_adapter.learn_correction ...`
 
 ## 2) Turn brain ON
 Canonical run command:
@@ -158,7 +161,7 @@ Useful telemetry fields (daemon `query` response + journal metadata):
 ## 11) OpenClaw adapter defaults for context efficiency
 For OpenClaw integration, keep the adapter output compact and avoid re-sending files OpenClaw already loads:
 
-- Use `query_brain.py --json --compact`.
+- Use `python3 -m openclawbrain.openclaw_adapter.query_brain ... --json --compact`.
 - Keep `--exclude-bootstrap` enabled (adapter default) so `AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, and `active-tasks.md` are not duplicated in `prompt_context`.
 - Start with `--max-prompt-context-chars 8000` to `12000`; increase only when retrieval quality requires it.
 - Use `--exclude-recent-memory <today> <yesterday>` only when those daily notes are already loaded elsewhere in the same turn.
