@@ -218,6 +218,48 @@ def test_daemon_query_ranked_prompt_context_uses_authority_and_scores(monkeypatc
     assert response["prompt_context_dropped_authority_counts"] == {"overlay": 1}
 
 
+def test_daemon_query_exclusions_affect_only_prompt_context(monkeypatch, tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("bootstrap", "bootstrap policy", metadata={"file": "AGENTS.md", "authority": "canonical"}))
+    graph.add_node(Node("work", "workspace context", metadata={"file": "docs/work.md", "authority": "canonical"}))
+
+    index = VectorIndex()
+    index.upsert("bootstrap", [1.0, 0.0])
+    index.upsert("work", [0.9, 0.1])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+
+    def _fake_traverse(*_args, **_kwargs):
+        return TraversalResult(
+            fired=["bootstrap", "work"],
+            steps=[],
+            context="raw context body",
+            fired_scores={"bootstrap": 0.95, "work": 0.7},
+        )
+
+    monkeypatch.setattr(daemon_module, "traverse", _fake_traverse)
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={
+            "query": "anything",
+            "top_k": 2,
+            "exclude_files": ["AGENTS.md"],
+            "max_prompt_context_chars": 500,
+        },
+        state_path=str(tmp_path / "state.json"),
+    )
+
+    assert response["fired_nodes"] == ["bootstrap", "work"]
+    assert response["context"] == "raw context body"
+    assert "bootstrap policy" not in response["prompt_context"]
+    assert "workspace context" in response["prompt_context"]
+    assert response["prompt_context_excluded_files_count"] == 1
+    assert response["prompt_context_excluded_node_ids_count"] == 1
+
+
 def test_daemon_unknown_method_returns_error(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     _write_state(state_path)
@@ -399,3 +441,39 @@ def test_query_brain_uses_state_embedder_for_embeddings(monkeypatch) -> None:
     openai_vector, embedder_name = query_module._embed_fn_from_state({"embedder_name": "text-embedding-3-small"})
     assert openai_vector("probe") == [0.1, 0.2, 0.3]
     assert embedder_name == "text-embedding-3-small"
+
+
+def test_query_brain_json_compact_omits_context(tmp_path: Path, capsys, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    query_module = _load_query_brain_module()
+    monkeypatch.setattr(
+        query_module,
+        "_load_query_via_socket",
+        lambda *args, **kwargs: {
+            "fired_nodes": ["a"],
+            "context": "non-deterministic context",
+            "prompt_context": "[BRAIN_CONTEXT v1]\n- node: a\n  alpha\n[/BRAIN_CONTEXT]",
+            "prompt_context_len": 54,
+            "prompt_context_max_chars": 12000,
+            "prompt_context_trimmed": False,
+            "embed_query_ms": 1.0,
+            "traverse_ms": 2.0,
+            "total_ms": 3.0,
+        },
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["query_brain.py", str(state_path), "alpha", "--socket", str(tmp_path / "daemon.sock"), "--json"],
+    )
+    query_module.main()
+
+    output = json.loads(capsys.readouterr().out.strip())
+    assert output["state"] == str(state_path)
+    assert output["fired_nodes"] == ["a"]
+    assert "prompt_context" in output
+    assert "prompt_context_len" in output
+    assert "context" not in output

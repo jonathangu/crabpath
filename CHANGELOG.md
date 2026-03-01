@@ -1,5 +1,24 @@
 ## Unreleased
 
+### OpenClaw integration context dedupe + compact adapter output
+- Daemon `query` now accepts prompt-context-only exclusions:
+  - `exclude_files` (exact `metadata.file` matches)
+  - `exclude_file_prefixes` (prefix matches)
+- Added daemon query stats:
+  - `prompt_context_excluded_files_count`
+  - `prompt_context_excluded_node_ids_count`
+- `examples/openclaw_adapter/query_brain.py` now supports compact JSON output:
+  - `--compact` / `--no-compact`
+  - `--json` defaults to compact mode
+  - compact JSON omits non-deterministic `context` and keeps deterministic `prompt_context` + `prompt_context_*` stats
+- Adapter now prefers daemon-provided `prompt_context` in socket mode (no local recompute when available).
+- Added adapter controls for tighter prompt budgets and duplication avoidance:
+  - `--max-prompt-context-chars` (default `12000`)
+  - `--exclude-bootstrap` (default enabled)
+  - `--exclude-recent-memory <files...>` (optional exact file exclusions)
+- Added `examples/ops/audit_prompt_context_duplication.py` to report bootstrap-vs-other fired-node ratios and suggest compact/exclusion flags.
+- Added tests for daemon query exclusion behavior and adapter compact JSON output.
+
 ## v12.2.5 (2026-03-01)
 
 ### Bootstrap include + authority metadata sync fixes

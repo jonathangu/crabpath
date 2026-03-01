@@ -270,6 +270,8 @@ def _handle_query(
         max_context_chars = max_prompt_chars
 
     max_fired_nodes = _parse_int(params.get("max_fired_nodes"), "max_fired_nodes", default=30)
+    exclude_files = set(_parse_str_list(params.get("exclude_files"), "exclude_files", required=False))
+    exclude_file_prefixes = _parse_str_list(params.get("exclude_file_prefixes"), "exclude_file_prefixes", required=False)
 
     total_start = time.perf_counter()
     resolved_embed = embed_fn or HashEmbedder().embed
@@ -295,13 +297,34 @@ def _handle_query(
     traverse_stop = time.perf_counter()
     total_stop = time.perf_counter()
 
+    fired_node_ids = [str(node_id) for node_id in result.fired]
+    fired_node_scores = {str(node_id): float(score) for node_id, score in result.fired_scores.items()}
+
+    excluded_node_ids: set[str] = set()
+    excluded_files: set[str] = set()
+    if exclude_files or exclude_file_prefixes:
+        for node_id in fired_node_ids:
+            node = graph.get_node(node_id)
+            metadata = node.metadata if node is not None and isinstance(node.metadata, dict) else {}
+            file_path = metadata.get("file")
+            if not isinstance(file_path, str) or not file_path:
+                continue
+            if file_path in exclude_files or any(file_path.startswith(prefix) for prefix in exclude_file_prefixes):
+                excluded_node_ids.add(node_id)
+                excluded_files.add(file_path)
+
+    prompt_node_ids = [node_id for node_id in fired_node_ids if node_id not in excluded_node_ids]
+    prompt_node_scores = {node_id: score for node_id, score in fired_node_scores.items() if node_id in prompt_node_ids}
+
     prompt_context, prompt_context_stats = build_prompt_context_ranked_with_stats(
         graph=graph,
-        node_ids=[str(node_id) for node_id in result.fired],
-        node_scores={str(node_id): float(score) for node_id, score in result.fired_scores.items()},
+        node_ids=prompt_node_ids,
+        node_scores=prompt_node_scores,
         max_chars=max_prompt_chars,
         include_node_ids=True,
     )
+    prompt_context_stats["prompt_context_excluded_files_count"] = len(excluded_files)
+    prompt_context_stats["prompt_context_excluded_node_ids_count"] = len(excluded_node_ids)
     log_query(
         query_text=query_text,
         fired_ids=result.fired,

@@ -155,9 +155,10 @@ Paste this block into your OpenClaw workspace `AGENTS.md` (edit `AGENT` and path
 
 **Query** (before answering questions about prior work, context, decisions, corrections, lessons):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json
+python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json --compact --exclude-bootstrap --max-prompt-context-chars 12000
 ```
 Always pass `--chat-id` so fired nodes are logged for later corrections.
+Use `--exclude-recent-memory <today-note> <yesterday-note>` only when those files are already loaded by OpenClaw in the same prompt and you want to avoid duplication.
 
 **Learn** (after each response, using fired node IDs from query output):
 - Good: `openclawbrain learn --state ~/.openclawbrain/AGENT/state.json --outcome 1.0 --fired-ids <ids>`
@@ -196,6 +197,19 @@ openclawbrain compact --state ~/.openclawbrain/AGENT/state.json --memory-dir /pa
 ```
 
 That block is intentionally boring: it’s the contract OpenClaw already supports.
+
+### Prompt-context duplication control (recommended)
+
+OpenClaw already loads bootstrap files (`AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, `active-tasks.md`) into the base prompt. If you also include them again from brain retrieval, token usage grows quickly with little value.
+
+Use adapter compact mode and exclusions to keep context “tight and right”:
+
+- Prefer `--json --compact` for deterministic prompt appendices only.
+- Keep `--exclude-bootstrap` enabled (default in the adapter).
+- Start with `--max-prompt-context-chars 8000` to `12000`; only increase when needed.
+- Use `--exclude-recent-memory ...` only for explicit daily notes already injected into the same OpenClaw turn.
+
+This aligns retrieval output with OpenClawBrain’s context-efficiency goal: preserve high-value retrieved nodes while minimizing repeated bootstrap content.
 
 ---
 
