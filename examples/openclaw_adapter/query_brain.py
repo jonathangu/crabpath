@@ -75,6 +75,7 @@ def _load_query_via_socket(
     max_prompt_context_chars: int,
     exclude_files: list[str],
     exclude_file_prefixes: list[str],
+    prompt_context_include_node_ids: bool,
 ) -> dict[str, object] | None:
     if socket_path is None:
         return None
@@ -91,6 +92,7 @@ def _load_query_via_socket(
             params["exclude_files"] = exclude_files
         if exclude_file_prefixes:
             params["exclude_file_prefixes"] = exclude_file_prefixes
+        params["prompt_context_include_node_ids"] = prompt_context_include_node_ids
         payload = client.request("query", params)
         if not isinstance(payload, dict):
             raise RuntimeError("invalid socket response payload")
@@ -122,6 +124,33 @@ def _expand_recent_memory_files(values: list[str]) -> list[str]:
     return expanded
 
 
+def _compact_stats_subset(
+    prompt_context_stats: dict[str, object],
+    timings: dict[str, object] | None,
+) -> dict[str, object]:
+    allowed_prompt_keys = (
+        "prompt_context_len",
+        "prompt_context_max_chars",
+        "prompt_context_trimmed",
+        "prompt_context_dropped_count",
+        "prompt_context_dropped_authority_counts",
+        "prompt_context_excluded_files_count",
+        "prompt_context_excluded_node_ids_count",
+    )
+    subset = {key: prompt_context_stats[key] for key in allowed_prompt_keys if key in prompt_context_stats}
+    if timings:
+        for key in ("embed_query_ms", "traverse_ms", "total_ms"):
+            if key in timings:
+                subset[key] = timings[key]
+    return subset
+
+
+def _dump_json(payload: dict[str, object], *, pretty: bool) -> str:
+    if pretty:
+        return json.dumps(payload, indent=2)
+    return json.dumps(payload, separators=(",", ":"))
+
+
 def _build_json_output(
     *,
     state_path: Path,
@@ -133,6 +162,7 @@ def _build_json_output(
     context: object | None = None,
     timings: dict[str, object] | None = None,
     compact: bool,
+    include_stats: bool,
 ) -> dict[str, object]:
     if compact:
         output: dict[str, object] = {
@@ -141,9 +171,8 @@ def _build_json_output(
             "fired_nodes": fired_nodes,
             "prompt_context": prompt_context,
         }
-        output.update(prompt_context_stats)
-        if timings:
-            output.update(timings)
+        if include_stats:
+            output.update(_compact_stats_subset(prompt_context_stats, timings))
         return output
 
     output = {
@@ -250,9 +279,33 @@ def main(argv: list[str] | None = None) -> None:
         action="store_false",
         help="Full JSON output (includes context/seeds)",
     )
+    parser.add_argument(
+        "--include-node-ids",
+        dest="include_node_ids",
+        action="store_true",
+        default=None,
+        help="Include '- node: <id>' lines in prompt_context",
+    )
+    parser.add_argument(
+        "--no-include-node-ids",
+        dest="include_node_ids",
+        action="store_false",
+        help="Omit '- node: <id>' lines in prompt_context",
+    )
+    parser.add_argument(
+        "--include-stats",
+        action="store_true",
+        help="In compact JSON, include a small scalar stats/timings subset",
+    )
+    parser.add_argument(
+        "--pretty-json",
+        action="store_true",
+        help="Pretty-print JSON with indentation",
+    )
     args = parser.parse_args(argv)
     output_format = "json" if args.json else args.format
     compact = args.compact if args.compact is not None else bool(args.json)
+    include_node_ids = args.include_node_ids if args.include_node_ids is not None else (not compact)
 
     query_text = " ".join(args.query).strip()
     state_path = Path(args.state_path)
@@ -283,6 +336,7 @@ def main(argv: list[str] | None = None) -> None:
                 args.max_prompt_context_chars,
                 exclude_files,
                 [],
+                include_node_ids,
             )
             if result is not None:
                 fired_nodes = [str(node_id) for node_id in result.get("fired_nodes", [])]
@@ -294,6 +348,7 @@ def main(argv: list[str] | None = None) -> None:
                         graph=graph,
                         node_ids=fired_nodes,
                         max_chars=args.max_prompt_context_chars,
+                        include_node_ids=include_node_ids,
                     )
                 timings = {
                     key: result[key]
@@ -311,8 +366,9 @@ def main(argv: list[str] | None = None) -> None:
                         context=result.get("context"),
                         timings=timings,
                         compact=compact,
+                        include_stats=bool(args.include_stats),
                     )
-                    print(json.dumps(output, indent=2))
+                    print(_dump_json(output, pretty=bool(args.pretty_json or not compact)))
                     return
                 if output_format == "prompt":
                     print(prompt_context)
@@ -363,6 +419,7 @@ def main(argv: list[str] | None = None) -> None:
         node_ids=prompt_node_ids,
         node_scores={str(node_id): float(score) for node_id, score in result.fired_scores.items()},
         max_chars=args.max_prompt_context_chars,
+        include_node_ids=include_node_ids,
     )
     prompt_context_stats["prompt_context_excluded_files_count"] = len(excluded_files)
     prompt_context_stats["prompt_context_excluded_node_ids_count"] = len(excluded_node_ids)
@@ -386,8 +443,9 @@ def main(argv: list[str] | None = None) -> None:
             seeds=seeds,
             context=result.context,
             compact=compact,
+            include_stats=bool(args.include_stats),
         )
-        print(json.dumps(output, indent=2))
+        print(_dump_json(output, pretty=bool(args.pretty_json or not compact)))
         return
     if output_format == "prompt":
         print(prompt_context)

@@ -218,6 +218,41 @@ def test_daemon_query_ranked_prompt_context_uses_authority_and_scores(monkeypatc
     assert response["prompt_context_dropped_authority_counts"] == {"overlay": 1}
 
 
+def test_daemon_query_can_omit_prompt_context_node_id_lines(monkeypatch, tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "alpha", metadata={"authority": "canonical", "file": "docs/a.md", "start_line": 1}))
+
+    index = VectorIndex()
+    index.upsert("a", [1.0, 0.0])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+
+    def _fake_traverse(*_args, **_kwargs):
+        return TraversalResult(
+            fired=["a"],
+            steps=[],
+            context="",
+            fired_scores={"a": 0.95},
+        )
+
+    monkeypatch.setattr(daemon_module, "traverse", _fake_traverse)
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={
+            "query": "anything",
+            "top_k": 1,
+            "prompt_context_include_node_ids": False,
+        },
+        state_path=str(tmp_path / "state.json"),
+    )
+
+    assert "alpha" in response["prompt_context"]
+    assert "- node:" not in response["prompt_context"]
+
+
 def test_daemon_query_exclusions_affect_only_prompt_context(monkeypatch, tmp_path: Path) -> None:
     graph = Graph()
     graph.add_node(Node("bootstrap", "bootstrap policy", metadata={"file": "AGENTS.md", "authority": "canonical"}))
@@ -471,9 +506,103 @@ def test_query_brain_json_compact_omits_context(tmp_path: Path, capsys, monkeypa
     )
     query_module.main()
 
-    output = json.loads(capsys.readouterr().out.strip())
+    raw_output = capsys.readouterr().out.strip()
+    output = json.loads(raw_output)
     assert output["state"] == str(state_path)
     assert output["fired_nodes"] == ["a"]
     assert "prompt_context" in output
-    assert "prompt_context_len" in output
     assert "context" not in output
+    assert "seeds" not in output
+    assert "prompt_context_included_node_ids" not in output
+    assert "\n" not in raw_output
+
+
+def test_query_brain_socket_node_id_default_follows_compact_mode(tmp_path: Path, capsys, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    query_module = _load_query_brain_module()
+
+    captured: list[bool] = []
+
+    def _fake_socket(*args, **_kwargs):
+        captured.append(bool(args[-1]))
+        return {
+            "fired_nodes": ["a"],
+            "context": "ctx",
+            "seeds": [["a", 1.0]],
+            "prompt_context": "[BRAIN_CONTEXT v1]\nalpha\n[/BRAIN_CONTEXT]",
+        }
+
+    monkeypatch.setattr(query_module, "_load_query_via_socket", _fake_socket)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["query_brain.py", str(state_path), "alpha", "--socket", str(tmp_path / "daemon.sock"), "--json"],
+    )
+    query_module.main()
+    capsys.readouterr()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["query_brain.py", str(state_path), "alpha", "--socket", str(tmp_path / "daemon.sock"), "--json", "--no-compact"],
+    )
+    query_module.main()
+    capsys.readouterr()
+
+    assert captured == [False, True]
+
+
+def test_query_brain_compact_include_stats_uses_slim_subset(tmp_path: Path, capsys, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    query_module = _load_query_brain_module()
+    monkeypatch.setattr(
+        query_module,
+        "_load_query_via_socket",
+        lambda *args, **kwargs: {
+            "fired_nodes": ["a"],
+            "context": "non-deterministic context",
+            "prompt_context": "[BRAIN_CONTEXT v1]\nalpha\n[/BRAIN_CONTEXT]",
+            "prompt_context_len": 54,
+            "prompt_context_max_chars": 12000,
+            "prompt_context_trimmed": False,
+            "prompt_context_dropped_count": 1,
+            "prompt_context_dropped_authority_counts": {"overlay": 1},
+            "prompt_context_excluded_files_count": 2,
+            "prompt_context_excluded_node_ids_count": 2,
+            "prompt_context_included_node_ids": ["a"],
+            "prompt_context_dropped_node_ids": ["b"],
+            "embed_query_ms": 1.0,
+            "traverse_ms": 2.0,
+            "total_ms": 3.0,
+        },
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "query_brain.py",
+            str(state_path),
+            "alpha",
+            "--socket",
+            str(tmp_path / "daemon.sock"),
+            "--json",
+            "--include-stats",
+        ],
+    )
+    query_module.main()
+
+    output = json.loads(capsys.readouterr().out.strip())
+    assert output["state"] == str(state_path)
+    assert output["fired_nodes"] == ["a"]
+    assert output["prompt_context_len"] == 54
+    assert output["prompt_context_dropped_authority_counts"] == {"overlay": 1}
+    assert output["embed_query_ms"] == 1.0
+    assert "prompt_context_included_node_ids" not in output
+    assert "prompt_context_dropped_node_ids" not in output
+    assert "context" not in output
+    assert "seeds" not in output

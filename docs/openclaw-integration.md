@@ -155,7 +155,7 @@ Paste this block into your OpenClaw workspace `AGENTS.md` (edit `AGENT` and path
 
 **Query** (before answering questions about prior work, context, decisions, corrections, lessons):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json --compact --exclude-bootstrap --max-prompt-context-chars 12000
+python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json --compact --no-include-node-ids --exclude-bootstrap --max-prompt-context-chars 12000
 ```
 Always pass `--chat-id` so fired nodes are logged for later corrections.
 Use `--exclude-recent-memory <today-note> <yesterday-note>` only when those files are already loaded by OpenClaw in the same prompt and you want to avoid duplication.
@@ -205,6 +205,9 @@ OpenClaw already loads bootstrap files (`AGENTS.md`, `SOUL.md`, `USER.md`, `MEMO
 Use adapter compact mode and exclusions to keep context “tight and right”:
 
 - Prefer `--json --compact` for deterministic prompt appendices only.
+- Compact JSON is minified by default (single-line, no indentation). Use `--pretty-json` when you need human-readable formatting.
+- In compact mode, node id lines are omitted by default (`--no-include-node-ids` behavior). Use `--include-node-ids` only when operators need explicit IDs in prompt context.
+- Compact JSON returns only `state`, `query`, `fired_nodes`, and `prompt_context` by default. Add `--include-stats` only when you need lightweight scalar stats/timings.
 - Keep `--exclude-bootstrap` enabled (default in the adapter).
 - Start with `--max-prompt-context-chars 8000` to `12000`; only increase when needed.
 - Use `--exclude-recent-memory ...` only for explicit daily notes already injected into the same OpenClaw turn.

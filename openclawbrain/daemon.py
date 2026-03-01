@@ -131,6 +131,15 @@ def _parse_float(value: object, label: str, required: bool = False, default: flo
     return float(value)
 
 
+def _parse_bool(value: object, label: str, *, default: bool) -> bool:
+    """Validate boolean input with a default."""
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be a boolean")
+    return value
+
+
 def _parse_str_list(value: object, label: str, required: bool = True) -> list[str]:
     """Parse a JSON list of non-empty strings."""
     if value is None:
@@ -270,6 +279,11 @@ def _handle_query(
         max_context_chars = max_prompt_chars
 
     max_fired_nodes = _parse_int(params.get("max_fired_nodes"), "max_fired_nodes", default=30)
+    prompt_context_include_node_ids = _parse_bool(
+        params.get("prompt_context_include_node_ids"),
+        "prompt_context_include_node_ids",
+        default=True,
+    )
     exclude_files = set(_parse_str_list(params.get("exclude_files"), "exclude_files", required=False))
     exclude_file_prefixes = _parse_str_list(params.get("exclude_file_prefixes"), "exclude_file_prefixes", required=False)
 
@@ -321,7 +335,7 @@ def _handle_query(
         node_ids=prompt_node_ids,
         node_scores=prompt_node_scores,
         max_chars=max_prompt_chars,
-        include_node_ids=True,
+        include_node_ids=prompt_context_include_node_ids,
     )
     prompt_context_stats["prompt_context_excluded_files_count"] = len(excluded_files)
     prompt_context_stats["prompt_context_excluded_node_ids_count"] = len(excluded_node_ids)
