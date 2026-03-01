@@ -263,3 +263,21 @@ def test_split_text_file_uses_blank_line_split(tmp_path: Path) -> None:
     graph, texts = split_workspace(str(workspace), file_extensions=(".txt",))
     assert len(graph.nodes()) == 3
     assert len(texts) == 3
+
+
+def test_split_always_includes_bootstrap_and_memory_when_gitignored(tmp_path: Path) -> None:
+    """split includes bootstrap and memory paths even when ignored by .gitignore."""
+    workspace = tmp_path / "split_always_include"
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True)
+    (workspace / ".gitignore").write_text("SOUL.md\nmemory/\n", encoding="utf-8")
+    (workspace / "SOUL.md").write_text("# Soul\nFoundational rules.", encoding="utf-8")
+    (memory_dir / "daily.md").write_text("## Log\nEntry", encoding="utf-8")
+
+    graph, texts = split_workspace(str(workspace))
+    node_ids = {node.id for node in graph.nodes()}
+
+    assert "SOUL.md::0" in node_ids
+    assert "memory/daily.md::0" in node_ids
+    assert "SOUL.md::0" in texts
+    assert "memory/daily.md::0" in texts

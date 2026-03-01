@@ -120,6 +120,42 @@ def test_sync_sets_authority_from_map(tmp_path: Path) -> None:
     assert node.metadata["authority"] == "canonical"
 
 
+def test_sync_sets_authority_for_unchanged_nodes_without_reembedding(tmp_path: Path) -> None:
+    """sync updates missing authority metadata even when content is unchanged."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "SOUL.md").write_text("# Soul\nStable", encoding="utf-8")
+
+    state_path = tmp_path / "state.json"
+    _state_from_workspace(workspace, state_path)
+
+    graph, index, _ = load_state(str(state_path))
+    node = graph.get_node("SOUL.md::0")
+    assert node is not None
+    node.metadata.pop("authority", None)
+    _write_state(state_path, graph=graph, index=index)
+
+    report = sync_workspace(
+        state_path=str(state_path),
+        workspace_dir=str(workspace),
+        embed_fn=default_embed,
+        authority_map=DEFAULT_AUTHORITY_MAP,
+    )
+
+    assert report.nodes_added == 0
+    assert report.nodes_updated == 0
+    assert report.nodes_unchanged == 1
+    assert report.embeddings_computed == 0
+    assert report.nodes_metadata_updated == 1
+    assert report.authority_set["constitutional"] == 1
+
+    graph_after, _, _ = load_state(str(state_path))
+    node_after = graph_after.get_node("SOUL.md::0")
+    assert node_after is not None
+    assert node_after.content == "# Soul\nStable"
+    assert node_after.metadata["authority"] == "constitutional"
+
+
 def test_sync_dry_run_doesnt_modify(tmp_path: Path) -> None:
     """sync dry-run does not modify state payload."""
     workspace = tmp_path / "workspace"

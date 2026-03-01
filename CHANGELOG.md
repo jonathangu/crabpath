@@ -1,5 +1,14 @@
 ## Unreleased
 
+## v12.2.5 (2026-03-01)
+
+### Bootstrap include + authority metadata sync fixes
+- `split_workspace` now always includes OpenClaw bootstrap files and `memory/` notes even when `.gitignore` would otherwise skip them (`SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`, `IDENTITY.md`, `HEARTBEAT.md`, `active-tasks.md`, `WORKFLOW_AUTO.md`, and `memory/` paths).
+- Explicit `split_workspace(..., exclude=...)` patterns still take precedence, so operators can intentionally suppress any of these paths.
+- `sync_workspace` now applies authority metadata updates for all current workspace nodes (including unchanged content), without recomputing embeddings.
+- Added sync reporting for metadata-only changes via `nodes_metadata_updated` and included this in sync journal events.
+- Added regression tests for gitignored bootstrap/memory inclusion and unchanged-node authority backfill.
+
 ## v12.2.4 (2026-03-01)
 
 ### CLI lock enforcement + init authority metadata

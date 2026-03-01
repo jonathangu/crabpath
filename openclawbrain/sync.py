@@ -38,6 +38,7 @@ class SyncReport:
     nodes_updated: int
     nodes_removed: int
     nodes_unchanged: int
+    nodes_metadata_updated: int
     embeddings_computed: int
     authority_set: dict[str, int]
 
@@ -194,6 +195,7 @@ def sync_workspace(
         authority_map = dict(authority_map)
 
     authority_set: dict[str, int] = {}
+    nodes_metadata_updated = 0
     for node_id in changed_ids + added_ids:
         file_name, chunk_idx = _split_node_id(node_id)
         if file_name is None:
@@ -209,9 +211,11 @@ def sync_workspace(
         metadata["chunk"] = chunk_idx
         metadata["kind"] = metadata.get("kind", "markdown")
         authority = _resolve_authority(file_name, authority_map)
-        if authority is not None:
+        previous_authority = metadata.get("authority")
+        if authority is not None and previous_authority != authority:
             metadata["authority"] = authority
             authority_set[authority] = authority_set.get(authority, 0) + 1
+            nodes_metadata_updated += 1
         node = Node(
             id=node_id,
             content=content,
@@ -225,6 +229,26 @@ def sync_workspace(
         graph.remove_node(node_id)
         index.remove(node_id)
 
+    # Ensure authority metadata is corrected even for unchanged workspace nodes.
+    for node_id in sorted(current_ids):
+        if node_id in removed_ids:
+            continue
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        file_name = _node_file(node)
+        if file_name is None:
+            continue
+        authority = _resolve_authority(file_name, authority_map)
+        if authority is None:
+            continue
+        previous_authority = node.metadata.get("authority")
+        if previous_authority == authority:
+            continue
+        node.metadata["authority"] = authority
+        authority_set[authority] = authority_set.get(authority, 0) + 1
+        nodes_metadata_updated += 1
+
     for file_name in sorted(affected_files):
         ordered = [node_id for _, node_id in current_file_ids.get(file_name, [])]
         _remove_file_sibling_edges(graph, file_name)
@@ -236,6 +260,7 @@ def sync_workspace(
         nodes_updated=len(changed_ids),
         nodes_removed=len(removed_ids),
         nodes_unchanged=len(unchanged_ids),
+        nodes_metadata_updated=nodes_metadata_updated,
         embeddings_computed=len(vectors),
         authority_set=authority_set,
     )
@@ -252,6 +277,7 @@ def sync_workspace(
                 "nodes_updated": report.nodes_updated,
                 "nodes_removed": report.nodes_removed,
                 "nodes_unchanged": report.nodes_unchanged,
+                "nodes_metadata_updated": report.nodes_metadata_updated,
                 "embeddings_computed": report.embeddings_computed,
                 "authority_set": report.authority_set,
             },

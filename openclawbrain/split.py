@@ -54,6 +54,18 @@ SUPPORTED_FILE_EXTENSIONS = (
     ".rst",
     ".html",
 )
+ALWAYS_INCLUDE_PATHS = {
+    "SOUL.md",
+    "AGENTS.md",
+    "USER.md",
+    "TOOLS.md",
+    "MEMORY.md",
+    "IDENTITY.md",
+    "HEARTBEAT.md",
+    "active-tasks.md",
+    "WORKFLOW_AUTO.md",
+    "memory/",
+}
 
 
 def _extract_sections(raw: str) -> list[str]:
@@ -366,13 +378,21 @@ def _normalize_excludes(exclude: Iterable[str] | None) -> set[str]:
     return excludes
 
 
+def _is_always_include_path(relative_path: str) -> bool:
+    """Return True for bootstrap and memory paths that should bypass gitignore."""
+    normalized = relative_path.replace("\\", "/").lstrip("./")
+    if normalized in ALWAYS_INCLUDE_PATHS:
+        return True
+    if normalized == "memory" or normalized.startswith("memory/"):
+        return True
+    return False
+
+
 def _should_skip_path(relative_path: str, excludes: set[str], gitignore_patterns: list[str]) -> bool:
     """ should skip path."""
     if not relative_path:
         return False
     path = Path(relative_path)
-    if any(part.startswith(".") for part in path.parts):
-        return True
     normalized = str(path).replace("\\", "/").lstrip("./")
     for pattern in excludes:
         if path.name == pattern:
@@ -387,6 +407,10 @@ def _should_skip_path(relative_path: str, excludes: set[str], gitignore_patterns
             continue
         if fnmatch.fnmatch(path.name, pattern) or normalized == pattern:
             return True
+    if _is_always_include_path(normalized):
+        return False
+    if any(part.startswith(".") for part in path.parts):
+        return True
     normalized = str(path).replace("\\", "/").lstrip("./")
     if _match_gitignore(normalized, gitignore_patterns):
         return True
