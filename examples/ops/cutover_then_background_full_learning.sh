@@ -54,6 +54,17 @@ fi
 
 STATE_DIR="$(dirname "$STATE")"
 CHECKPOINT="${CHECKPOINT:-$STATE_DIR/replay_checkpoint.json}"
+SOCKET="$STATE_DIR/daemon.sock"
+
+# Safety: replay writes state.json. If the daemon socket is live, assume the daemon is running
+# and may write too. Enforce single-writer unless explicitly overridden.
+if [[ -S "$SOCKET" && "${ALLOW_LIVE_REPLAY:-}" != "1" ]]; then
+  echo "error: daemon socket detected at $SOCKET" >&2
+  echo "Running replay against LIVE state while the daemon is active can clobber/split state." >&2
+  echo "Stop the daemon first, or use examples/ops/rebuild_then_cutover.sh (no-drama rebuild)." >&2
+  echo "To force anyway: ALLOW_LIVE_REPLAY=1 $0 ..." >&2
+  exit 1
+fi
 timestamp="$(date '+%Y%m%d-%H%M%S')"
 OUT_LOG="${OUT_LOG:-$STATE_DIR/replay-full-${timestamp}.out.log}"
 ERR_LOG="${ERR_LOG:-$STATE_DIR/replay-full-${timestamp}.err.log}"

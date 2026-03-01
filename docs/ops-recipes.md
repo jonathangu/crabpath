@@ -28,6 +28,8 @@ python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
 
 3. Run full replay/harvest later (off-peak):
 
+⚠️ Single-writer rule: `replay` writes `state.json`. If your daemon is running and also writing/learning, do **not** replay against the LIVE state. Either stop the daemon during full-learning, or use the no-drama rebuild flow below.
+
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \
@@ -70,7 +72,7 @@ examples/ops/rebuild_then_cutover.sh main ~/.openclaw/workspace \
 Notes:
 - `replay --sessions` accepts one or more paths, and each path may be a sessions directory or an individual `.jsonl` file.
 - The helper script uses fast-learning (`--fast-learning --stop-after-fast-learning`) for fast, safe cutover.
-- Full-learning can be run later against LIVE during an off-peak window.
+- For full-learning, either run it into NEW before cutover, or rebuild again into a new directory and cut over again. Avoid replaying directly against LIVE while the daemon is running.
 - Tradeoff: events learned while rebuild is running are not in the NEW snapshot unless you pause learning traffic or run a small delta replay before/after cutover.
 - On systems without `launchctl`, the script skips stop/start and tells you what to do manually.
 

@@ -74,14 +74,18 @@ openclawbrain replay \
   --checkpoint "$CHECKPOINT"
 
 echo
-echo "Optional full-learning command (run later, against LIVE only after cutover):"
+echo "Optional full-learning (safe options):"
 cat <<EOF
+# Option A: Run full-learning into NEW *before* cutover (slower, but single-writer safe):
 # openclawbrain replay \\
-#   --state "$LIVE/state.json" \\
+#   --state "$NEW_STATE" \\
 #   --sessions ${SESSIONS[*]} \\
 #   --full-learning \\
 #   --resume \\
-#   --checkpoint "$LIVE/replay_checkpoint.json"
+#   --checkpoint "$CHECKPOINT"
+#
+# Option B: After cutover, rebuild again into a fresh directory (run this script again)
+# and cut over a second time.
 EOF
 
 echo
@@ -93,11 +97,11 @@ fi
 
 DOCTOR_OUTPUT="$(openclawbrain doctor --state "$NEW_STATE" 2>&1 || true)"
 printf '%s\n' "$DOCTOR_OUTPUT"
-if ! grep -q "PASS state_file_exists" <<<"$DOCTOR_OUTPUT"; then
+if ! grep -q "state_file_exists: PASS" <<<"$DOCTOR_OUTPUT"; then
   echo "error: doctor failed state_file_exists for $NEW_STATE" >&2
   exit 1
 fi
-if ! grep -q "PASS state_json_valid" <<<"$DOCTOR_OUTPUT"; then
+if ! grep -q "state_json_valid: PASS" <<<"$DOCTOR_OUTPUT"; then
   echo "error: doctor failed state_json_valid for $NEW_STATE" >&2
   exit 1
 fi
