@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Callable
+from contextlib import nullcontext
 
 from .autotune import measure_health
 from .graph import Graph, Node
@@ -23,6 +24,7 @@ from .journal import log_health, log_learn, log_query
 from .learn import apply_outcome, apply_outcome_pg
 from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_node
+from .state_lock import state_write_lock
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
 
@@ -38,6 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state", required=True)
     parser.add_argument("--embed-model", default="text-embedding-3-small")
     parser.add_argument("--auto-save-interval", type=int, default=10)
+    parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     return parser
 
 
@@ -572,180 +575,181 @@ def main(argv: list[str] | None = None) -> int:
     """Run NDJSON worker loop."""
     args = _build_parser().parse_args(argv)
     state_path = str(Path(args.state).expanduser())
+    lock_cm = state_write_lock(state_path, force=args.force, command_hint="openclawbrain daemon")
+    with lock_cm if state_path else nullcontext():
+        graph, index, meta = load_state(state_path)
+        daemon_state = _DaemonState(graph=graph, index=index, meta=meta, fired_log={})
+        embed_fn = _make_embed_fn(args.embed_model)
+        auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
 
-    graph, index, meta = load_state(state_path)
-    daemon_state = _DaemonState(graph=graph, index=index, meta=meta, fired_log={})
-    embed_fn = _make_embed_fn(args.embed_model)
-    auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
 
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
+        stop_requested = False
 
-    stop_requested = False
+        def _on_signal(_sig: int, _frame: object | None) -> None:
+            nonlocal stop_requested
+            stop_requested = True
 
-    def _on_signal(_sig: int, _frame: object | None) -> None:
-        nonlocal stop_requested
-        stop_requested = True
+        prev_handlers = {
+            signal.SIGINT: signal.getsignal(signal.SIGINT),
+            signal.SIGTERM: signal.getsignal(signal.SIGTERM),
+        }
+        signal.signal(signal.SIGINT, _on_signal)
+        signal.signal(signal.SIGTERM, _on_signal)
 
-    prev_handlers = {
-        signal.SIGINT: signal.getsignal(signal.SIGINT),
-        signal.SIGTERM: signal.getsignal(signal.SIGTERM),
-    }
-    signal.signal(signal.SIGINT, _on_signal)
-    signal.signal(signal.SIGTERM, _on_signal)
-
-    try:
-        for raw_line in sys.stdin:
-            if stop_requested:
-                break
-
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            req_id: object = None
-            should_write = False
-            try:
-                request = json.loads(line)
-                if not isinstance(request, dict):
-                    raise ValueError("request must be a JSON object")
-                req_id = request.get("id")
-                method = request.get("method")
-                params = request.get("params", {})
-                if not isinstance(params, dict):
-                    raise ValueError("params must be a JSON object")
-                if not isinstance(method, str):
-                    raise ValueError("method must be a string")
-
-                if method == "query":
-                    payload = _handle_query(
-                        graph=daemon_state.graph,
-                        index=daemon_state.index,
-                        meta=daemon_state.meta,
-                        embed_fn=embed_fn,
-                        params=params,
-                        state_path=state_path,
-                    )
-                    query_chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=False)
-                    if query_chat_id is not None:
-                        query_nodes = payload.get("fired_nodes", [])
-                        if not isinstance(query_nodes, list):
-                            query_nodes = []
-                        query_text = params.get("query")
-                        if not isinstance(query_text, str):
-                            query_text = ""
-
-                        _append_fired_history(
-                            daemon_state=daemon_state,
-                            chat_id=query_chat_id,
-                            query=query_text,
-                            fired_nodes=[node_id for node_id in query_nodes if isinstance(node_id, str)],
-                            timestamp=time.time(),
-                        )
-                        _append_fired_log(
-                            state_path=state_path,
-                            entry={
-                                "chat_id": query_chat_id,
-                                "query": query_text,
-                                "fired_nodes": [node_id for node_id in query_nodes if isinstance(node_id, str)],
-                                "ts": time.time(),
-                            },
-                        )
-                elif method == "learn":
-                    payload, should_write = _handle_learn(
-                        daemon_state.graph, daemon_state.index, embed_fn,
-                        state_path, params,
-                    )
-                elif method == "inject":
-                    payload, should_write = _handle_inject(
-                        graph=daemon_state.graph,
-                        index=daemon_state.index,
-                        embed_fn=embed_fn,
-                        params=params,
-                        meta=daemon_state.meta,
-                    )
-                elif method == "maintain":
-                    payload, should_write = _handle_maintain(
-                        daemon_state,
-                        params,
-                        embed_fn,
-                        state_path,
-                    )
-                elif method == "health":
-                    payload = _handle_health(daemon_state.graph)
-                elif method == "info":
-                    payload = _handle_info(daemon_state.graph, daemon_state.meta)
-                elif method == "save":
-                    save_state(
-                        graph=daemon_state.graph,
-                        index=daemon_state.index,
-                        path=state_path,
-                        meta=daemon_state.meta,
-                    )
-                    daemon_state.write_count = 0
-                    payload = {"saved": True}
-                elif method == "reload":
-                    daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
-                    daemon_state.write_count = 0
-                    payload = {"reloaded": True}
-                elif method == "correction":
-                    payload, should_write = _handle_correction(
-                        daemon_state=daemon_state,
-                        graph=daemon_state.graph,
-                        index=daemon_state.index,
-                        embed_fn=embed_fn,
-                        state_path=state_path,
-                        params=params,
-                    )
-                elif method in ("self_learn", "self_correct"):
-                    payload, should_write = _handle_self_learn(
-                        daemon_state=daemon_state,
-                        graph=daemon_state.graph,
-                        index=daemon_state.index,
-                        embed_fn=embed_fn,
-                        state_path=state_path,
-                        params=params,
-                    )
-                elif method == "shutdown":
-                    if daemon_state.write_count > 0:
-                        save_state(
-                            graph=daemon_state.graph,
-                            index=daemon_state.index,
-                            path=state_path,
-                            meta=daemon_state.meta,
-                        )
-                    _emit_response(req_id, {"shutdown": True})
+        try:
+            for raw_line in sys.stdin:
+                if stop_requested:
                     break
-                else:
-                    _emit_response(req_id, None, {"code": -32601, "message": f"unknown method: {method}"})
+
+                line = raw_line.strip()
+                if not line:
                     continue
 
-                if should_write:
-                    daemon_state.write_count += 1
-                    if auto_save_interval and daemon_state.write_count % auto_save_interval == 0:
+                req_id: object = None
+                should_write = False
+                try:
+                    request = json.loads(line)
+                    if not isinstance(request, dict):
+                        raise ValueError("request must be a JSON object")
+                    req_id = request.get("id")
+                    method = request.get("method")
+                    params = request.get("params", {})
+                    if not isinstance(params, dict):
+                        raise ValueError("params must be a JSON object")
+                    if not isinstance(method, str):
+                        raise ValueError("method must be a string")
+
+                    if method == "query":
+                        payload = _handle_query(
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            meta=daemon_state.meta,
+                            embed_fn=embed_fn,
+                            params=params,
+                            state_path=state_path,
+                        )
+                        query_chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=False)
+                        if query_chat_id is not None:
+                            query_nodes = payload.get("fired_nodes", [])
+                            if not isinstance(query_nodes, list):
+                                query_nodes = []
+                            query_text = params.get("query")
+                            if not isinstance(query_text, str):
+                                query_text = ""
+
+                            _append_fired_history(
+                                daemon_state=daemon_state,
+                                chat_id=query_chat_id,
+                                query=query_text,
+                                fired_nodes=[node_id for node_id in query_nodes if isinstance(node_id, str)],
+                                timestamp=time.time(),
+                            )
+                            _append_fired_log(
+                                state_path=state_path,
+                                entry={
+                                    "chat_id": query_chat_id,
+                                    "query": query_text,
+                                    "fired_nodes": [node_id for node_id in query_nodes if isinstance(node_id, str)],
+                                    "ts": time.time(),
+                                },
+                            )
+                    elif method == "learn":
+                        payload, should_write = _handle_learn(
+                            daemon_state.graph, daemon_state.index, embed_fn,
+                            state_path, params,
+                        )
+                    elif method == "inject":
+                        payload, should_write = _handle_inject(
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            embed_fn=embed_fn,
+                            params=params,
+                            meta=daemon_state.meta,
+                        )
+                    elif method == "maintain":
+                        payload, should_write = _handle_maintain(
+                            daemon_state,
+                            params,
+                            embed_fn,
+                            state_path,
+                        )
+                    elif method == "health":
+                        payload = _handle_health(daemon_state.graph)
+                    elif method == "info":
+                        payload = _handle_info(daemon_state.graph, daemon_state.meta)
+                    elif method == "save":
                         save_state(
                             graph=daemon_state.graph,
                             index=daemon_state.index,
                             path=state_path,
                             meta=daemon_state.meta,
                         )
+                        daemon_state.write_count = 0
+                        payload = {"saved": True}
+                    elif method == "reload":
+                        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
+                        daemon_state.write_count = 0
+                        payload = {"reloaded": True}
+                    elif method == "correction":
+                        payload, should_write = _handle_correction(
+                            daemon_state=daemon_state,
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            embed_fn=embed_fn,
+                            state_path=state_path,
+                            params=params,
+                        )
+                    elif method in ("self_learn", "self_correct"):
+                        payload, should_write = _handle_self_learn(
+                            daemon_state=daemon_state,
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            embed_fn=embed_fn,
+                            state_path=state_path,
+                            params=params,
+                        )
+                    elif method == "shutdown":
+                        if daemon_state.write_count > 0:
+                            save_state(
+                                graph=daemon_state.graph,
+                                index=daemon_state.index,
+                                path=state_path,
+                                meta=daemon_state.meta,
+                            )
+                        _emit_response(req_id, {"shutdown": True})
+                        break
+                    else:
+                        _emit_response(req_id, None, {"code": -32601, "message": f"unknown method: {method}"})
+                        continue
 
-                _emit_response(req_id, payload)
-            except Exception as exc:  # noqa: BLE001
-                _emit_response(req_id, None, {"code": -1, "message": str(exc)})
+                    if should_write:
+                        daemon_state.write_count += 1
+                        if auto_save_interval and daemon_state.write_count % auto_save_interval == 0:
+                            save_state(
+                                graph=daemon_state.graph,
+                                index=daemon_state.index,
+                                path=state_path,
+                                meta=daemon_state.meta,
+                            )
 
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if stop_requested and daemon_state.write_count > 0:
-            save_state(
-                graph=daemon_state.graph,
-                index=daemon_state.index,
-                path=state_path,
-                meta=daemon_state.meta,
-            )
-        signal.signal(signal.SIGINT, prev_handlers[signal.SIGINT])
-        signal.signal(signal.SIGTERM, prev_handlers[signal.SIGTERM])
+                    _emit_response(req_id, payload)
+                except Exception as exc:  # noqa: BLE001
+                    _emit_response(req_id, None, {"code": -1, "message": str(exc)})
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if stop_requested and daemon_state.write_count > 0:
+                save_state(
+                    graph=daemon_state.graph,
+                    index=daemon_state.index,
+                    path=state_path,
+                    meta=daemon_state.meta,
+                )
+            signal.signal(signal.SIGINT, prev_handlers[signal.SIGINT])
+            signal.signal(signal.SIGTERM, prev_handlers[signal.SIGTERM])
 
     return 0
 

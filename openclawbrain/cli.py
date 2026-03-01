@@ -13,6 +13,7 @@ import sys
 import tempfile
 import shutil
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +62,7 @@ from .full_learning import (
 )
 from ._util import _tokenize
 from .maintain import run_maintenance
+from .state_lock import state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
 from . import __version__
 
@@ -144,6 +146,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--prune-below", type=float, default=0.01)
     p.add_argument("--llm", choices=["none", "openai"], default="none")
     p.add_argument("--embedder", choices=["hash", "openai"], default=None)
+    p.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     p.add_argument("--json", action="store_true")
 
     z = sub.add_parser("compact")
@@ -153,6 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
     z.add_argument("--target-lines", type=int, default=15)
     z.add_argument("--llm", choices=["none", "openai"], default="none")
     z.add_argument("--dry-run", action="store_true")
+    z.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     z.add_argument("--json", action="store_true")
 
     d = sub.add_parser("daemon")
@@ -271,6 +275,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     r.add_argument("--persist-state-every-seconds", type=int, default=0)
     r.add_argument("--quiet", action="store_true", help="Suppress replay banners and progress output.")
+    r.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     r.add_argument("--json", action="store_true")
 
     hcmd = sub.add_parser("harvest")
@@ -316,6 +321,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="JSON object mapping file name -> authority level",
     )
     sync.add_argument("--dry-run", action="store_true")
+    sync.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     sync.add_argument("--json", action="store_true")
     return parser
 

@@ -40,6 +40,8 @@ python3 -m openclawbrain.socket_server --state ~/.openclawbrain/main/state.json
 
 ⚠️ Single-writer rule: `replay` writes `state.json`. If your daemon is running and also writing/learning, do **not** replay against the LIVE state. Either stop the daemon during full-learning, or use the no-drama rebuild flow below.
 
+`openclawbrain` now enforces this with a lock file next to state (`state.json.lock`). If another writer holds the lock, writer commands fail fast with guidance. Expert override is available with `--force` or `OPENCLAWBRAIN_STATE_LOCK_FORCE=1` (only use when you are certain no conflicting writer is active).
+
 ```bash
 openclawbrain replay \
   --state ~/.openclawbrain/main/state.json \

@@ -1,5 +1,11 @@
 ## Unreleased
 
+### Single-writer state lock (issue #25)
+- Added `openclawbrain/state_lock.py`: advisory file lock (`fcntl.flock`) to enforce single-writer safety for `state.json`.
+- Writer commands (`replay`, `maintain`, `compact`, `sync`) and `socket_server`/`daemon` acquire the lock before writing.
+- Clear error message when lock is held; `--force` flag or env var (`OPENCLAWBRAIN_STATE_LOCK_FORCE=1`) bypasses.
+- Tests for lock acquisition and contention.
+
 ### Operator CLI: canonical brain-on command (issues #24, #25)
 - Added `openclawbrain serve --state <path> [--socket-path <path>] [--foreground]` as the first-class foreground socket service command for OpenClaw operators.
 - Startup now prints an operator banner with socket path, state path, status-check command, and `Ctrl-C` shutdown guidance.

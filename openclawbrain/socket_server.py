@@ -22,6 +22,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--socket-path")
     parser.add_argument("--embed-model", default="text-embedding-3-small")
     parser.add_argument("--auto-save-interval", type=int, default=10)
+    parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     return parser.parse_args(argv)
 
@@ -49,6 +50,7 @@ class SocketDaemonServer:
         socket_path: str | None,
         embed_model: str,
         auto_save_interval: int,
+        force: bool,
         verbose: bool,
     ) -> None:
         self.state_path = Path(state_path).expanduser()
@@ -59,6 +61,7 @@ class SocketDaemonServer:
         )
         self.embed_model = embed_model
         self.auto_save_interval = auto_save_interval
+        self.force = force
         self.pid_path = Path(_default_pid_path(str(self.socket_path)))
 
         self._logger = logging.getLogger("openclawbrain.socket_server")
@@ -118,6 +121,8 @@ class SocketDaemonServer:
             "--auto-save-interval",
             str(self.auto_save_interval),
         ]
+        if self.force:
+            cmd.append("--force")
         self._logger.info("starting daemon: %s", " ".join(cmd))
         self._daemon = await asyncio.create_subprocess_exec(
             *cmd,
@@ -329,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         socket_path=args.socket_path,
         embed_model=args.embed_model,
         auto_save_interval=args.auto_save_interval,
+        force=args.force,
         verbose=args.verbose,
     )
     try:
