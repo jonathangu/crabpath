@@ -67,6 +67,12 @@ class OCBClient:
     def learn(self, fired_nodes: list[str], outcome: float) -> dict[str, Any]:
         return self.request("learn", {"fired_nodes": fired_nodes, "outcome": outcome})
 
+    def last_fired(self, chat_id: str, lookback: int = 1) -> dict[str, Any]:
+        return self.request("last_fired", {"chat_id": chat_id, "lookback": lookback})
+
+    def learn_by_chat_id(self, chat_id: str, outcome: float, lookback: int = 1) -> dict[str, Any]:
+        return self.request("learn_by_chat_id", {"chat_id": chat_id, "outcome": outcome, "lookback": lookback})
+
     def correction(
         self,
         chat_id: str,

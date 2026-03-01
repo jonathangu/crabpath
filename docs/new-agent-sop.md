@@ -54,21 +54,18 @@ Expected result: `statePath` exists and doctor output is healthy.
 
 ## D) Start daemon in production (launchd)
 
-1. Copy template from this repo:
+1. Generate a filled plist from the packaged template writer:
 
 ```bash
 mkdir -p "$HOME/Library/LaunchAgents"
-cp examples/ops/com.openclawbrain.AGENT.plist.template \
-  "$HOME/Library/LaunchAgents/com.openclawbrain.${agentId}.plist"
+python3 -m openclawbrain.ops.write_launchd_plist \
+  --agent-id "$agentId" \
+  --state-path "$statePath" \
+  --out-path "$HOME/Library/LaunchAgents/com.openclawbrain.${agentId}.plist" \
+  --log-path "$HOME/.openclawbrain/${agentId}/daemon.log"
 ```
 
-2. Replace placeholders in copied plist:
-
-- `AGENT_ID` -> your `agentId`
-- `STATE_PATH` -> `~/.openclawbrain/<agentId>/state.json`
-- `LOG_PATH` -> stable log path (example: `~/.openclawbrain/<agentId>/daemon.log`)
-
-3. Load and verify:
+2. Load and verify:
 
 ```bash
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.openclawbrain.${agentId}.plist"
@@ -76,7 +73,7 @@ launchctl kickstart -k "gui/$(id -u)/com.openclawbrain.${agentId}"
 launchctl print "gui/$(id -u)/com.openclawbrain.${agentId}"
 ```
 
-Security note: if plist contains secrets, set `chmod 600` on that plist and prefer secure key-loading over inline secrets.
+Security note: if plist contains secrets, set `chmod 600 "$HOME/Library/LaunchAgents/com.openclawbrain.${agentId}.plist"` and prefer secure key-loading over inline secrets.
 
 ## E) Patch OpenClaw routing config (safe, idempotent)
 
@@ -99,7 +96,7 @@ chmod 600 "$HOME/.openclaw/tokens/telegram-${agentId}.token"
 Then run:
 
 ```bash
-python3 examples/ops/patch_openclaw_config.py \
+python3 -m openclawbrain.ops.patch_openclaw_config \
   --agent-id "$agentId" \
   --agent-name "$agentName" \
   --workspace "$workspaceDir" \
@@ -110,7 +107,7 @@ python3 examples/ops/patch_openclaw_config.py \
 Optional allow-list (repeat `--allow-from`):
 
 ```bash
-python3 examples/ops/patch_openclaw_config.py \
+python3 -m openclawbrain.ops.patch_openclaw_config \
   --agent-id "$agentId" \
   --agent-name "$agentName" \
   --workspace "$workspaceDir" \
@@ -152,7 +149,13 @@ Short inline schema snippet (reference only):
 Use packaged CLI module invocation (no `~/openclawbrain` clone required):
 
 ```bash
-python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/<agentId>/state.json '<summary>' --chat-id '<chat_id>' --json --compact --no-include-node-ids --exclude-bootstrap --max-prompt-context-chars 12000
+python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/<agentId>/state.json '<summary>' --chat-id '<chat_id>' --format prompt --exclude-bootstrap --max-prompt-context-chars 12000
+```
+
+Learn command (no fired node IDs in prompt payload):
+
+```bash
+python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --outcome 1.0 --lookback 1 --json
 ```
 
 Correction command:
@@ -161,23 +164,18 @@ Correction command:
 python3 -m openclawbrain.openclaw_adapter.learn_correction --state ~/.openclawbrain/<agentId>/state.json --chat-id '<chat_id>' --outcome -1.0 --lookback 1 --content '<correction text>'
 ```
 
-Back-compat shims remain available:
-
-- `python3 examples/openclaw_adapter/query_brain.py ...`
-- `python3 examples/openclaw_adapter/learn_correction.py ...`
-
 ## G) Verification checklist
 
 - `openclawbrain status --state ~/.openclawbrain/<agentId>/state.json` shows running socket.
-- Adapter compact output check:
+- Adapter prompt output check:
 
 ```bash
 python3 -m openclawbrain.openclaw_adapter.query_brain \
   ~/.openclawbrain/<agentId>/state.json "test query" \
-  --chat-id "smoke-test" --json --compact --exclude-bootstrap
+  --chat-id "smoke-test" --format prompt --exclude-bootstrap
 ```
 
-In compact mode, verify JSON has only 4 top-level keys by default: `state`, `query`, `fired_nodes`, `prompt_context`.
+Verify output is a `[BRAIN_CONTEXT v1]...[/BRAIN_CONTEXT]` block.
 
 - `openclaw channels status --probe` is healthy.
 - Send `/start` to the new bot and confirm route goes to the new agent.

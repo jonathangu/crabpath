@@ -155,10 +155,12 @@ Use `examples/ops/replay_last_days.sh` when you want a bounded replay window.
 For stable prompt caching, build the appendix from fired nodes and append it late:
 
 ```bash
-python3 examples/openclaw_adapter/query_brain.py \
+python3 -m openclawbrain.openclaw_adapter.query_brain \
   ~/.openclawbrain/main/state.json \
   "user query summary" \
-  --format prompt
+  --format prompt \
+  --exclude-bootstrap \
+  --max-prompt-context-chars 12000
 ```
 
 Guidelines:

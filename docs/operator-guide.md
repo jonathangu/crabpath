@@ -159,9 +159,10 @@ Useful telemetry fields (daemon `query` response + journal metadata):
 - `prompt_context_dropped_authority_counts`
 
 ## 11) OpenClaw adapter defaults for context efficiency
-For OpenClaw integration, keep the adapter output compact and avoid re-sending files OpenClaw already loads:
+For OpenClaw integration, keep prompts token-tight and avoid re-sending files OpenClaw already loads:
 
-- Use `python3 -m openclawbrain.openclaw_adapter.query_brain ... --json --compact`.
+- Use `python3 -m openclawbrain.openclaw_adapter.query_brain ... --format prompt`.
+- Learn after each response with `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ... --chat-id ... --outcome ...`.
 - Keep `--exclude-bootstrap` enabled (adapter default) so `AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, and `active-tasks.md` are not duplicated in `prompt_context`.
 - Start with `--max-prompt-context-chars 8000` to `12000`; increase only when retrieval quality requires it.
 - Use `--exclude-recent-memory <today> <yesterday>` only when those daily notes are already loaded elsewhere in the same turn.

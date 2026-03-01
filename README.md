@@ -3,7 +3,7 @@
 
 > Your retrieval routes become the prompt — assembled by learned routing, not top-k similarity.
 
-**Current release: v12.2.1**
+**Repo version:** `v12.2.5` (see `pyproject.toml`; PyPI may lag)
 **Website:** https://openclawbrain.ai
 
 **Setup:** [Setup Guide](docs/setup-guide.md)

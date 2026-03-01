@@ -516,6 +516,44 @@ def _handle_correction(
     return payload, should_write
 
 
+def _handle_last_fired(
+    daemon_state: "_DaemonState",
+    params: dict[str, object],
+) -> dict[str, object]:
+    """Return recent fired node ids for a chat_id."""
+    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    return {
+        "chat_id": chat_id,
+        "lookback": lookback,
+        "fired_nodes": _recent_fired_nodes(daemon_state, chat_id, lookback),
+    }
+
+
+def _handle_learn_by_chat_id(
+    daemon_state: "_DaemonState",
+    graph: Graph,
+    index: VectorIndex,
+    embed_fn: Callable[[str], list[float]] | None,
+    state_path: str,
+    params: dict[str, object],
+) -> tuple[dict[str, object], bool]:
+    """Learn by chat_id lookback using in-memory fired history only."""
+    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    outcome = _parse_float(params.get("outcome"), "outcome", required=True)
+    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    fired_ids = _recent_fired_nodes(daemon_state, chat_id, lookback)
+    return _do_learn(
+        graph,
+        index,
+        embed_fn,
+        state_path,
+        fired_ids=fired_ids,
+        outcome=outcome,
+        log_metadata={"chat_id": chat_id},
+    )
+
+
 def _handle_self_learn(
     daemon_state: "_DaemonState",
     graph: Graph,
@@ -758,6 +796,20 @@ def main(argv: list[str] | None = None) -> int:
                         payload = {"reloaded": True}
                     elif method == "correction":
                         payload, should_write = _handle_correction(
+                            daemon_state=daemon_state,
+                            graph=daemon_state.graph,
+                            index=daemon_state.index,
+                            embed_fn=embed_fn,
+                            state_path=state_path,
+                            params=params,
+                        )
+                    elif method == "last_fired":
+                        payload = _handle_last_fired(
+                            daemon_state=daemon_state,
+                            params=params,
+                        )
+                    elif method == "learn_by_chat_id":
+                        payload, should_write = _handle_learn_by_chat_id(
                             daemon_state=daemon_state,
                             graph=daemon_state.graph,
                             index=daemon_state.index,

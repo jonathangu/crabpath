@@ -409,6 +409,42 @@ def test_daemon_query_populates_fired_history(tmp_path: Path) -> None:
         _shutdown_daemon(proc)
 
 
+def test_daemon_last_fired_and_learn_by_chat_id(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    proc = _start_daemon(state_path)
+    try:
+        query_response = _call(
+            proc,
+            "query",
+            {"query": "alpha", "top_k": 2, "chat_id": "chat-learn"},
+            req_id="query-1",
+        )["result"]
+        assert query_response["fired_nodes"]
+
+        last_fired = _call(
+            proc,
+            "last_fired",
+            {"chat_id": "chat-learn", "lookback": 1},
+            req_id="last-fired-1",
+        )["result"]
+        assert last_fired["chat_id"] == "chat-learn"
+        assert last_fired["lookback"] == 1
+        assert last_fired["fired_nodes"] == query_response["fired_nodes"]
+
+        learned = _call(
+            proc,
+            "learn_by_chat_id",
+            {"chat_id": "chat-learn", "outcome": -1.0, "lookback": 1},
+            req_id="learn-chat-1",
+        )["result"]
+        assert learned["fired_ids_penalized"] == query_response["fired_nodes"]
+        assert learned["edges_updated"] >= 1
+    finally:
+        _shutdown_daemon(proc)
+
+
 def test_daemon_fired_log_ring_buffer_tracks_per_chat_id() -> None:
     graph = Graph()
     graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))

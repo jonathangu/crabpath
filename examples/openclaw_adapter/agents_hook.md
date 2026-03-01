@@ -2,17 +2,17 @@
 
 **Query** (before answering questions about prior work, context, decisions, corrections, lessons):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/query_brain.py ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --json
+python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --format prompt --exclude-bootstrap --max-prompt-context-chars 12000
 ```
 Always pass `--chat-id` so fired nodes are logged for later corrections.
 
-**Learn** (after each response, using fired node IDs from query output):
-- Good: `openclawbrain learn --state ~/.openclawbrain/AGENT/state.json --outcome 1.0 --fired-ids <ids>`
-- Bad: `openclawbrain learn --state ~/.openclawbrain/AGENT/state.json --outcome -1.0 --fired-ids <ids>`
+**Learn** (after each response, no fired node IDs needed):
+- Good: `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/AGENT/state.json --chat-id '<chat_id>' --outcome 1.0 --lookback 1 --json`
+- Bad: `python3 -m openclawbrain.openclaw_adapter.learn_by_chat_id --state ~/.openclawbrain/AGENT/state.json --chat-id '<chat_id>' --outcome -1.0 --lookback 1 --json`
 
 **Inject correction** (when corrected — same turn, don't wait for harvester):
 ```bash
-python3 ~/openclawbrain/examples/openclaw_adapter/learn_correction.py \
+python3 -m openclawbrain.openclaw_adapter.learn_correction \
   --state ~/.openclawbrain/AGENT/state.json \
   --chat-id '<chat_id>' --outcome -1.0 \
   --content "The correction text here"
