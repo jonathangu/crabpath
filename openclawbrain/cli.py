@@ -13,10 +13,11 @@ import sys
 import tempfile
 import shutil
 from collections.abc import Callable, Iterable
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Iterator
 
 from .connect import apply_connections, suggest_connections
 from .autotune import measure_health
@@ -62,7 +63,7 @@ from .full_learning import (
 )
 from ._util import _tokenize
 from .maintain import run_maintenance
-from .state_lock import state_write_lock
+from .state_lock import StateLockError, state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
 from . import __version__
 
@@ -81,6 +82,85 @@ def _resolve_state_path(
     if allow_default:
         return resolve_default_state_path(profile)
     return None
+
+
+def _resolve_effective_state_path(
+    args: argparse.Namespace,
+    *,
+    allow_default_state: bool = False,
+) -> str | None:
+    """Resolve CLI state path, optionally allowing the default profile state."""
+    use_default_state = allow_default_state and getattr(args, "graph", None) is None
+    return _resolve_state_path(getattr(args, "state", None), allow_default=use_default_state)
+
+
+@contextmanager
+def _command_state_write_lock(
+    args: argparse.Namespace,
+    *,
+    allow_default_state: bool = False,
+    explicit_state_path: str | Path | None = None,
+    command_hint: str | None = None,
+) -> Iterator[None]:
+    """Acquire the single-writer lock for mutating commands."""
+    if explicit_state_path is None:
+        state_path = _resolve_effective_state_path(args, allow_default_state=allow_default_state)
+    else:
+        state_path = str(Path(explicit_state_path).expanduser())
+
+    if state_path is None:
+        yield
+        return
+
+    try:
+        with state_write_lock(
+            state_path,
+            force=bool(getattr(args, "force", False)),
+            command_hint=command_hint,
+        ):
+            yield
+    except StateLockError as exc:
+        raise SystemExit(str(exc)) from None
+
+
+def _state_lock_context_for_command(args: argparse.Namespace):
+    """Return per-command state write lock context manager when required."""
+    command = getattr(args, "command", None)
+    if command is None:
+        return nullcontext()
+
+    command_hint = f"openclawbrain {command}"
+    if command == "init":
+        output_dir = Path(args.output).expanduser()
+        if output_dir.suffix == ".json" and not output_dir.is_dir():
+            output_dir = output_dir.parent
+        return _command_state_write_lock(
+            args,
+            explicit_state_path=output_dir / "state.json",
+            command_hint=command_hint,
+        )
+
+    allow_default_state_map = {
+        "learn": True,
+        "maintain": True,
+        "compact": True,
+        "anchor": True,
+        "connect": True,
+        "merge": True,
+        "inject": True,
+        "self-learn": False,
+        "self-correct": False,
+        "replay": True,
+        "harvest": False,
+        "sync": True,
+    }
+    if command in allow_default_state_map:
+        return _command_state_write_lock(
+            args,
+            allow_default_state=allow_default_state_map[command],
+            command_hint=command_hint,
+        )
+    return nullcontext()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -867,6 +947,13 @@ def cmd_init(args: argparse.Namespace) -> int:
         llm_batch_fn=llm_batch_fn,
         should_use_llm_for_file=_should_use_llm,
     )
+    for node in graph.nodes():
+        file_name = node.metadata.get("file")
+        if not isinstance(file_name, str) or not file_name:
+            continue
+        authority = DEFAULT_AUTHORITY_MAP.get(Path(file_name).name)
+        if authority is not None:
+            node.metadata["authority"] = authority
 
     print("Phase 2/4: Embedding texts...", file=sys.stderr)
     embedder_fn, embed_batch_fn, embedder_name, embedder_dim = _resolve_embedder(args, prior_meta)
@@ -2236,7 +2323,7 @@ def cmd_journal(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     """main."""
     args = _build_parser().parse_args(argv)
-    return {
+    handlers = {
         "init": cmd_init,
         "query": cmd_query,
         "learn": cmd_learn,
@@ -2258,7 +2345,10 @@ def main(argv: list[str] | None = None) -> int:
         "doctor": cmd_doctor,
         "info": cmd_info,
         "sync": cmd_sync,
-    }[args.command](args)
+    }
+    handler = handlers[args.command]
+    with _state_lock_context_for_command(args):
+        return handler(args)
 
 
 if __name__ == "__main__":

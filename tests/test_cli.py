@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from io import StringIO
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from openclawbrain.cli import main
 from openclawbrain.hasher import default_embed
 from openclawbrain.journal import read_journal
+from openclawbrain.state_lock import lock_path_for_state
 
 
 def _write_graph_payload(path: Path) -> None:
@@ -101,6 +103,46 @@ def test_init_command_with_empty_workspace(tmp_path) -> None:
     assert graph_data["nodes"] == []
     assert graph_data["edges"] == []
     assert (output / "index.json").exists()
+
+
+def test_init_sets_authority_metadata_for_mapped_files(tmp_path, monkeypatch) -> None:
+    """init assigns authority metadata for files in DEFAULT_AUTHORITY_MAP."""
+    import openclawbrain.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "DEFAULT_AUTHORITY_MAP",
+        {
+            "SOUL.md": "constitutional",
+            "AGENTS.md": "constitutional",
+            "USER.md": "canonical",
+        },
+    )
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "SOUL.md").write_text("Constitutional guidance", encoding="utf-8")
+    (workspace / "AGENTS.md").write_text("Agent operating rules", encoding="utf-8")
+    (workspace / "USER.md").write_text("User preferences", encoding="utf-8")
+    output = tmp_path / "out"
+    output.mkdir()
+
+    code = main(["init", "--workspace", str(workspace), "--output", str(output), "--embedder", "hash", "--llm", "none"])
+    assert code == 0
+
+    state_data = json.loads((output / "state.json").read_text(encoding="utf-8"))
+    nodes = state_data["graph"]["nodes"]
+
+    def authorities_for(file_name: str) -> set[str]:
+        return {
+            str(node.get("metadata", {}).get("authority"))
+            for node in nodes
+            if node.get("metadata", {}).get("file") == file_name
+        }
+
+    assert "constitutional" in authorities_for("SOUL.md")
+    assert "constitutional" in authorities_for("AGENTS.md")
+    assert "canonical" in authorities_for("USER.md")
 
 
 def test_query_command_returns_json_with_fired_nodes(tmp_path, capsys) -> None:
@@ -362,6 +404,33 @@ def test_cli_replay_discovers_reset_session_files(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["queries_replayed"] == 2
     assert json.loads(state_path.read_text(encoding="utf-8"))["meta"]["last_replayed_ts"] == 2.0
+
+
+def test_cli_replay_fails_cleanly_when_state_lock_held_unless_force(tmp_path, capsys, monkeypatch) -> None:
+    """replay exits with a clean lock error unless --force is set."""
+    fcntl = pytest.importorskip("fcntl")
+    monkeypatch.delenv("OPENCLAWBRAIN_STATE_LOCK_FORCE", raising=False)
+    monkeypatch.delenv("OCB_STATE_LOCK_FORCE", raising=False)
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+
+    sessions = tmp_path / "sessions.jsonl"
+    sessions.write_text(json.dumps({"role": "user", "content": "alpha", "ts": 1.0}), encoding="utf-8")
+
+    lock_path = lock_path_for_state(state_path)
+    fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(SystemExit, match="state write lock is already held"):
+            main(["replay", "--state", str(state_path), "--sessions", str(sessions), "--edges-only", "--json"])
+
+        code = main(["replay", "--state", str(state_path), "--sessions", str(sessions), "--edges-only", "--force", "--json"])
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["queries_replayed"] == 1
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def test_cli_replay_with_fast_learning_writes_learning_events_and_injects_nodes(

@@ -73,4 +73,4 @@ __all__ = [
     "replay_queries",
 ]
 
-__version__ = "12.2.3"
+__version__ = "12.2.4"

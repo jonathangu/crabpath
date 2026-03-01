@@ -1,5 +1,14 @@
 ## Unreleased
 
+## v12.2.4 (2026-03-01)
+
+### CLI lock enforcement + init authority metadata
+- Enforced single-writer `state.json` locking in CLI for mutating commands (`init`, `learn`, `maintain`, `compact`, `anchor`, `connect`, `merge`, `inject`, `self-learn`/`self-correct`, `replay`, `harvest`, `sync`) whenever operating on `--state` or default state.
+- Added a shared CLI state-lock context resolver that computes the effective state path (including default-state behavior) and acquires `state_write_lock` for the full command duration.
+- Lock contention now exits cleanly via `SystemExit` with the lock error message (no traceback), and `--force` bypass behavior remains supported.
+- `init` now applies authority metadata from `DEFAULT_AUTHORITY_MAP` by source file basename (e.g., `SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`, `IDENTITY.md`, `HEARTBEAT.md`) to align with sync behavior.
+- Added CLI tests for replay lock contention/`--force` bypass and for init authority metadata assignment on mapped files.
+
 ## v12.2.3 (2026-03-01)
 
 ### Prompt-context and replay polish
