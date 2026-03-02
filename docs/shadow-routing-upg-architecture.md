@@ -56,10 +56,12 @@ PR2 introduces first-class replayable routing traces in `openclawbrain.trace`:
 - `RouteCandidate`
   - `target_id`, `edge_weight`, `edge_relevance`, optional `similarity`
   - `target_preview`, `target_file`, `target_authority`
+  - Optional score telemetry: `graph_prior_score`, `router_score_raw`, `final_score`
 - `RouteDecisionPoint`
   - `query_text`, `source_id`, `source_preview`
   - `candidates[]`
   - `teacher_choose[]`, `teacher_scores{}`
+  - Optional confidence telemetry: `router_entropy`, `router_conf`, `router_margin`, `relevance_entropy`, `relevance_conf`, `policy_disagreement`
   - `ts`, `reward_source`
 - `RouteTrace`
   - `query_id`, `ts`, optional `chat_id`
@@ -84,6 +86,23 @@ Determinism contract:
 5. Apply PG updates using weighted reward scaling.
 
 This split decouples trajectory sampling from supervision so label policies can be rerun deterministically against fixed decision-point sets.
+
+## Phase 2a: RL-native structural maintenance
+
+Phase 2a adds two RL-native controls on top of the existing async teacher loop:
+
+- Confidence-modulated reinforcement:
+  - `async-route-pg` now modulates update magnitude by decision `router_conf` when available.
+  - Effective update scale is `score_scale * teacher_score * (0.5 + 0.5*router_conf)` before reward-source weighting.
+  - Backward compatibility: if confidence is missing, multiplier defaults to `1.0`.
+
+- Soft prune maintenance (`soft_prune` task):
+  - Marks edges as inactive (`edge.metadata["inactive"]=true`) rather than deleting them.
+  - Triggered by strong negative local evidence:
+    - highly negative `relevance` with high `relevance_conf` (when confidence exists), or
+    - consistently negative teacher evidence from traces/labels or stored teacher-score aggregates.
+  - Authority-protected nodes are never soft-pruned (`constitutional`, `canonical`).
+  - Hard prune (`prune`) remains separate and still removes low-weight edges/nodes.
 
 ## Mega rearchitecture addendum
 

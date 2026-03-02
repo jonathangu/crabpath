@@ -516,7 +516,7 @@ def _build_parser() -> argparse.ArgumentParser:
     hcmd = sub.add_parser("harvest")
     hcmd.add_argument("--state", required=True)
     hcmd.add_argument("--events")
-    hcmd.add_argument("--tasks", default="split,merge,prune,connect,scale")
+    hcmd.add_argument("--tasks", default="split,merge,soft_prune,prune,connect,scale")
     hcmd.add_argument("--dry-run", action="store_true")
     hcmd.add_argument("--max-merges", type=int, default=5)
     hcmd.add_argument("--prune-below", type=float, default=0.01)
@@ -2159,7 +2159,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     if run_full:
         harvest_stats = run_harvest(
             state_path=str(state_path),
-            tasks=["decay", "scale", "split", "merge", "prune", "connect"],
+            tasks=["decay", "scale", "split", "merge", "soft_prune", "prune", "connect"],
             backup=bool(args.backup),
         )
         graph, index, meta = load_state(str(state_path))

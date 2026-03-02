@@ -20,6 +20,9 @@ class RouteCandidate:
     target_preview: str = ""
     target_file: str | None = None
     target_authority: str | None = None
+    graph_prior_score: float | None = None
+    router_score_raw: float | None = None
+    final_score: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +33,9 @@ class RouteCandidate:
             "target_preview": self.target_preview,
             "target_file": self.target_file,
             "target_authority": self.target_authority,
+            "graph_prior_score": None if self.graph_prior_score is None else float(self.graph_prior_score),
+            "router_score_raw": None if self.router_score_raw is None else float(self.router_score_raw),
+            "final_score": None if self.final_score is None else float(self.final_score),
         }
 
     @classmethod
@@ -42,6 +48,11 @@ class RouteCandidate:
             target_preview=str(payload.get("target_preview", "")),
             target_file=str(payload["target_file"]) if payload.get("target_file") is not None else None,
             target_authority=str(payload["target_authority"]) if payload.get("target_authority") is not None else None,
+            graph_prior_score=float(payload["graph_prior_score"])
+            if payload.get("graph_prior_score") is not None
+            else None,
+            router_score_raw=float(payload["router_score_raw"]) if payload.get("router_score_raw") is not None else None,
+            final_score=float(payload["final_score"]) if payload.get("final_score") is not None else None,
         )
 
 
@@ -60,6 +71,12 @@ class RouteDecisionPoint:
     candidates: list[RouteCandidate] = field(default_factory=list)
     teacher_choose: list[str] = field(default_factory=list)
     teacher_scores: dict[str, float] = field(default_factory=dict)
+    router_entropy: float | None = None
+    router_conf: float | None = None
+    router_margin: float | None = None
+    relevance_entropy: float | None = None
+    relevance_conf: float | None = None
+    policy_disagreement: float | None = None
     ts: float = 0.0
     reward_source: RewardSource = RewardSource.TEACHER
 
@@ -76,6 +93,12 @@ class RouteDecisionPoint:
             "candidates": [item.to_dict() for item in self.sorted_candidates()],
             "teacher_choose": sorted({str(item) for item in self.teacher_choose}),
             "teacher_scores": {k: float(v) for k, v in sorted(self.teacher_scores.items())},
+            "router_entropy": None if self.router_entropy is None else float(self.router_entropy),
+            "router_conf": None if self.router_conf is None else float(self.router_conf),
+            "router_margin": None if self.router_margin is None else float(self.router_margin),
+            "relevance_entropy": None if self.relevance_entropy is None else float(self.relevance_entropy),
+            "relevance_conf": None if self.relevance_conf is None else float(self.relevance_conf),
+            "policy_disagreement": None if self.policy_disagreement is None else float(self.policy_disagreement),
             "ts": float(self.ts),
             "reward_source": self.reward_source.value,
         }
@@ -108,6 +131,14 @@ class RouteDecisionPoint:
             candidates=candidates,
             teacher_choose=teacher_choose,
             teacher_scores=teacher_scores,
+            router_entropy=float(payload["router_entropy"]) if payload.get("router_entropy") is not None else None,
+            router_conf=float(payload["router_conf"]) if payload.get("router_conf") is not None else None,
+            router_margin=float(payload["router_margin"]) if payload.get("router_margin") is not None else None,
+            relevance_entropy=float(payload["relevance_entropy"]) if payload.get("relevance_entropy") is not None else None,
+            relevance_conf=float(payload["relevance_conf"]) if payload.get("relevance_conf") is not None else None,
+            policy_disagreement=float(payload["policy_disagreement"])
+            if payload.get("policy_disagreement") is not None
+            else None,
             ts=float(payload.get("ts", 0.0)),
             reward_source=reward_source,
         )

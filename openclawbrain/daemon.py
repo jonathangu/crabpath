@@ -927,7 +927,9 @@ def _handle_maintain(
         prune_below=prune_below,
     )
     should_write = False
-    if not dry_run and any(task in report.tasks_run for task in ("decay", "scale", "split", "prune", "merge", "connect")):
+    if not dry_run and any(
+        task in report.tasks_run for task in ("decay", "scale", "soft_prune", "split", "prune", "merge", "connect")
+    ):
         daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path, state_store)
         should_write = True
 

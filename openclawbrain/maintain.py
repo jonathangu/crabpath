@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +16,9 @@ from .journal import log_event, log_health
 from .merge import apply_merge, suggest_merges
 from .autotune import measure_health
 from .split_node import split_node, suggest_splits
+from .labels import LabelRecord, read_labels_jsonl
 from .store import load_state, save_state
+from .trace import RouteTrace, route_trace_from_json
 from ._util import _extract_json
 
 SPLIT_PROMPT = (
@@ -23,6 +26,7 @@ SPLIT_PROMPT = (
     'Return JSON: {"sections": ["chunk 1", "chunk 2", ...]}'
 )
 SPLIT_MAX_SPLITS = 3
+AUTHORITY_PROTECTED = {"constitutional", "canonical"}
 
 
 def _health_payload(graph: Graph) -> dict:
@@ -165,6 +169,112 @@ def prune_orphan_nodes(graph: Graph) -> int:
     return len(orphaned)
 
 
+def _read_traces_jsonl(path: str | None) -> list[RouteTrace]:
+    if not path:
+        return []
+    source = Path(path).expanduser()
+    if not source.exists():
+        return []
+    traces: list[RouteTrace] = []
+    for line in source.read_text(encoding="utf-8").splitlines():
+        raw = line.strip()
+        if not raw:
+            continue
+        traces.append(route_trace_from_json(raw))
+    return traces
+
+
+def _teacher_score_evidence(
+    *,
+    traces: list[RouteTrace] | None = None,
+    labels: list[LabelRecord] | None = None,
+) -> dict[tuple[str, str], list[float]]:
+    evidence: dict[tuple[str, str], list[float]] = {}
+    for trace in traces or []:
+        for point in trace.decision_points:
+            for target_id, value in point.teacher_scores.items():
+                key = (point.source_id, str(target_id))
+                evidence.setdefault(key, []).append(float(value))
+    for record in labels or []:
+        source_id = str(record.metadata.get("source_id", "")).strip() if isinstance(record.metadata, dict) else ""
+        if not source_id:
+            continue
+        for target_id, value in record.candidate_scores.items():
+            key = (source_id, str(target_id))
+            evidence.setdefault(key, []).append(float(value))
+    return evidence
+
+
+def soft_prune_edges(
+    graph: Graph,
+    *,
+    traces: list[RouteTrace] | None = None,
+    labels: list[LabelRecord] | None = None,
+    relevance_negative_threshold: float = -0.8,
+    relevance_conf_threshold: float = 0.7,
+    teacher_negative_threshold: float = -0.2,
+    teacher_mean_threshold: float = -0.6,
+    teacher_min_samples: int = 2,
+    teacher_negative_ratio_threshold: float = 0.8,
+) -> int:
+    """Soft-prune edges via metadata by marking them inactive on strong negative evidence."""
+    if teacher_min_samples < 1:
+        teacher_min_samples = 1
+    evidence = _teacher_score_evidence(traces=traces, labels=labels)
+    marked = 0
+    for source_id, edges in graph._edges.items():
+        for target_id, edge in edges.items():
+            source_auth = _node_authority(graph.get_node(source_id))
+            target_auth = _node_authority(graph.get_node(target_id))
+            if source_auth in AUTHORITY_PROTECTED or target_auth in AUTHORITY_PROTECTED:
+                continue
+
+            metadata = edge.metadata if isinstance(edge.metadata, dict) else {}
+            if bool(metadata.get("inactive", False)):
+                continue
+
+            relevance_reason = False
+            raw_relevance = metadata.get("relevance")
+            if isinstance(raw_relevance, (int, float)) and float(raw_relevance) <= relevance_negative_threshold:
+                raw_relevance_conf = metadata.get("relevance_conf")
+                relevance_conf_ok = True
+                if isinstance(raw_relevance_conf, (int, float)):
+                    relevance_conf_ok = float(raw_relevance_conf) >= relevance_conf_threshold
+                relevance_reason = relevance_conf_ok
+
+            teacher_scores = list(evidence.get((source_id, target_id), []))
+            if not teacher_scores:
+                count_raw = metadata.get("teacher_score_count")
+                mean_raw = metadata.get("teacher_score_mean")
+                if isinstance(count_raw, (int, float)) and isinstance(mean_raw, (int, float)):
+                    count = int(count_raw)
+                    if count >= teacher_min_samples:
+                        teacher_scores = [float(mean_raw)] * count
+
+            teacher_reason = False
+            if len(teacher_scores) >= teacher_min_samples:
+                mean_score = sum(teacher_scores) / len(teacher_scores)
+                negative_count = sum(1 for score in teacher_scores if score <= teacher_negative_threshold)
+                negative_ratio = negative_count / len(teacher_scores)
+                teacher_reason = mean_score <= teacher_mean_threshold and negative_ratio >= teacher_negative_ratio_threshold
+
+            if not (relevance_reason or teacher_reason):
+                continue
+
+            metadata["inactive"] = True
+            metadata["inactive_reason"] = (
+                "soft_prune:negative_relevance_confident"
+                if relevance_reason and not teacher_reason
+                else "soft_prune:consistent_negative_teacher"
+                if teacher_reason and not relevance_reason
+                else "soft_prune:negative_relevance_and_teacher"
+            )
+            metadata["inactive_ts"] = time.time()
+            edge.metadata = metadata
+            marked += 1
+    return marked
+
+
 def _node_vector(graph: Graph, index: VectorIndex, node_id: str, embed_fn: Callable[[str], list[float]] | None) -> list[float] | None:
     """Resolve a node embedding from index or callback."""
     existing = index._vectors.get(node_id)
@@ -238,6 +348,7 @@ class MaintenanceReport:
     edges_after: int
     merges_proposed: int
     merges_applied: int
+    soft_pruned_edges: int
     pruned_edges: int
     pruned_nodes: int
     notes: list[str]
@@ -254,12 +365,16 @@ def run_maintenance(
     max_merges: int = 5,
     prune_below: float = 0.01,
     decay_config: DecayConfig | None = None,
+    traces: list[RouteTrace] | None = None,
+    labels: list[LabelRecord] | None = None,
+    traces_path: str | None = None,
+    labels_path: str | None = None,
 ) -> MaintenanceReport:
     """Run an optional maintenance sweep over persisted graph state."""
-    task_order = ["health", "decay", "scale", "split", "merge", "prune", "connect"]
+    task_order = ["health", "decay", "scale", "soft_prune", "split", "merge", "prune", "connect"]
     default_tasks = ["health", "decay", "merge", "prune"]
     requested = (
-        list(dict.fromkeys([task.strip() for task in tasks if task.strip()]))
+        list(dict.fromkeys([task.strip().replace("-", "_") for task in tasks if task.strip()]))
         if tasks is not None
         else default_tasks
     )
@@ -278,6 +393,7 @@ def run_maintenance(
 
     merges_proposed = 0
     merges_applied = 0
+    soft_pruned_edges = 0
     pruned_edges = 0
     pruned_nodes = 0
     decay_applied = False
@@ -333,6 +449,28 @@ def run_maintenance(
                 "task": "decay",
                 "decay_half_life": adaptive_half_life,
                 "edges_decayed": changed,
+                "dry_run": dry_run,
+            },
+            journal_path=journal_path,
+        )
+
+    if "soft_prune" in selected:
+        tasks_run.append("soft_prune")
+        loaded_traces = traces if traces is not None else _read_traces_jsonl(traces_path)
+        loaded_labels = labels if labels is not None else read_labels_jsonl(labels_path) if labels_path else []
+        marked = soft_prune_edges(
+            target_graph,
+            traces=loaded_traces,
+            labels=loaded_labels,
+        )
+        soft_pruned_edges += marked
+        log_event(
+            {
+                "type": "maintenance",
+                "task": "soft_prune",
+                "edges_marked_inactive": marked,
+                "traces_loaded": len(loaded_traces),
+                "labels_loaded": len(loaded_labels),
                 "dry_run": dry_run,
             },
             journal_path=journal_path,
@@ -495,7 +633,7 @@ def run_maintenance(
 
     if dry_run:
         notes.append("dry_run=True; no state write performed")
-    elif any(task in selected for task in ("decay", "scale", "split", "prune", "merge", "connect")):
+    elif any(task in selected for task in ("decay", "scale", "soft_prune", "split", "prune", "merge", "connect")):
         save_state(graph=target_graph, index=target_index, path=str(Path(state_path)), meta=meta)
 
     health_after = _health_payload(target_graph)
@@ -510,6 +648,7 @@ def run_maintenance(
         edges_after=target_graph.edge_count(),
         merges_proposed=merges_proposed,
         merges_applied=merges_applied,
+        soft_pruned_edges=soft_pruned_edges,
         pruned_edges=pruned_edges,
         pruned_nodes=pruned_nodes,
         notes=notes,

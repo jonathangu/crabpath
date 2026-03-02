@@ -5,9 +5,11 @@ import json
 from openclawbrain.decay import DecayConfig
 from openclawbrain.graph import Edge, Graph, Node
 from openclawbrain.index import VectorIndex
+from openclawbrain.reward import RewardSource
 from openclawbrain.maintain import MaintenanceReport, connect_learning_nodes, prune_edges, prune_orphan_nodes, run_maintenance
 from openclawbrain.cli import main
 from openclawbrain.store import save_state
+from openclawbrain.trace import RouteCandidate, RouteDecisionPoint, RouteTrace
 
 
 def _write_state(path, graph: Graph, index_payload: dict[str, list[float]] | None = None) -> None:
@@ -330,3 +332,85 @@ def test_connect_learning_nodes_links_learning_to_workspace() -> None:
 
     added = connect_learning_nodes(graph, index, top_k=1, min_sim=0.0)
     assert added >= 1
+
+
+def test_soft_prune_marks_inactive_on_negative_relevance(tmp_path) -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_node(Node("b", "B"))
+    graph.add_edge(Edge("a", "b", 0.3, metadata={"relevance": -0.95, "relevance_conf": 0.9}))
+    state_path = tmp_path / "state.json"
+    _write_state(state_path, graph)
+
+    report = run_maintenance(
+        state_path=str(state_path),
+        tasks=["soft_prune"],
+    )
+    assert report.soft_pruned_edges == 1
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    edge_meta = payload["graph"]["edges"][0]["metadata"]
+    assert edge_meta["inactive"] is True
+    assert str(edge_meta["inactive_reason"]).startswith("soft_prune:")
+
+
+def test_soft_prune_skips_authority_protected_nodes(tmp_path) -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A", metadata={"authority": "canonical"}))
+    graph.add_node(Node("b", "B"))
+    graph.add_edge(Edge("a", "b", 0.3, metadata={"relevance": -0.95, "relevance_conf": 0.95}))
+    state_path = tmp_path / "state.json"
+    _write_state(state_path, graph)
+
+    report = run_maintenance(
+        state_path=str(state_path),
+        tasks=["soft_prune"],
+    )
+    assert report.soft_pruned_edges == 0
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    edge_meta = payload["graph"]["edges"][0]["metadata"]
+    assert "inactive" not in edge_meta
+
+
+def test_soft_prune_uses_consistent_negative_teacher_scores(tmp_path) -> None:
+    graph = Graph()
+    graph.add_node(Node("a", "A"))
+    graph.add_node(Node("b", "B"))
+    graph.add_edge(Edge("a", "b", 0.3))
+    state_path = tmp_path / "state.json"
+    _write_state(state_path, graph)
+
+    traces = [
+        RouteTrace(
+            query_id="q1",
+            ts=1.0,
+            query_text="alpha",
+            decision_points=[
+                RouteDecisionPoint(
+                    query_text="alpha",
+                    source_id="a",
+                    source_preview="A",
+                    chosen_target_id="b",
+                    candidates=[RouteCandidate(target_id="b", edge_weight=0.3, edge_relevance=0.0)],
+                    teacher_scores={"b": -0.9},
+                    reward_source=RewardSource.TEACHER,
+                ),
+                RouteDecisionPoint(
+                    query_text="alpha",
+                    source_id="a",
+                    source_preview="A",
+                    chosen_target_id="b",
+                    candidates=[RouteCandidate(target_id="b", edge_weight=0.3, edge_relevance=0.0)],
+                    teacher_scores={"b": -0.8},
+                    reward_source=RewardSource.TEACHER,
+                ),
+            ],
+        )
+    ]
+    report = run_maintenance(
+        state_path=str(state_path),
+        tasks=["soft_prune"],
+        traces=traces,
+    )
+    assert report.soft_pruned_edges == 1
