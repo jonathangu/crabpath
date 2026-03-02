@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Callable
 
 from ..graph import Edge, Graph
-from ..journal import read_journal
+from ..hasher import HashEmbedder
 from ..learn import apply_outcome_pg
 from ..replay import default_keyword_seed_fn
 from ..reward import RewardSource, RewardWeights, scale_reward
-from ..store import load_state, save_state
+from ..storage import EventStore, JsonStateStore, JsonlEventStore, StateStore
 from ..trace import RouteCandidate, RouteDecisionPoint, RouteTrace, route_trace_from_json, route_trace_to_json
 from ..traverse import TraversalConfig, traverse
 from .._util import _extract_json
@@ -173,8 +173,10 @@ def _select_query_entries(
     since_hours: float,
     max_queries: int,
     sample_rate: float,
+    event_store: EventStore | None = None,
 ) -> list[tuple[int, dict[str, object]]]:
-    entries = read_journal(journal_path=journal_path)
+    resolved_event_store = event_store or JsonlEventStore(journal_path)
+    entries = resolved_event_store.iter_since(None)
     cutoff = time.time() - max(0.0, since_hours) * 3600.0
     filtered: list[tuple[int, dict[str, object]]] = []
     for idx, entry in enumerate(entries):
@@ -201,6 +203,7 @@ def _select_query_entries(
 
 def _build_traces_from_journal(
     graph: Graph,
+    index,
     *,
     journal_path: str,
     since_hours: float,
@@ -209,12 +212,15 @@ def _build_traces_from_journal(
     max_candidates_per_node: int,
     max_decision_points: int,
     reward_source: RewardSource,
+    include_query_vector: bool,
+    event_store: EventStore | None = None,
 ) -> tuple[list[RouteTrace], bool]:
     sampled = _select_query_entries(
         journal_path=journal_path,
         since_hours=since_hours,
         max_queries=max_queries,
         sample_rate=sample_rate,
+        event_store=event_store,
     )
     config = TraversalConfig()
     policy = {"route_mode": "off"}
@@ -222,6 +228,34 @@ def _build_traces_from_journal(
     traces: list[RouteTrace] = []
     cap_hit = False
     total_points = 0
+    hash_embedder = HashEmbedder()
+
+    def _resolve_query_vector(seeds: list[tuple[str, float]], query: str) -> list[float] | None:
+        if not include_query_vector:
+            return None
+        weighted: list[float] | None = None
+        total_weight = 0.0
+        for node_id, score in seeds:
+            vector = index._vectors.get(node_id)
+            if vector is None:
+                continue
+            weight = max(0.001, float(score))
+            if weighted is None:
+                weighted = [0.0] * len(vector)
+            if len(weighted) != len(vector):
+                continue
+            for idx, value in enumerate(vector):
+                weighted[idx] += float(value) * weight
+            total_weight += weight
+        if weighted is not None and total_weight > 0:
+            return [value / total_weight for value in weighted]
+        if index._vectors:
+            first = next(iter(index._vectors.values()))
+            guess = hash_embedder.embed(query)
+            if len(first) == len(guess):
+                return [float(value) for value in guess]
+        return None
+
     for journal_idx, entry in sampled:
         query = str(entry.get("query", "")).strip()
         if not query:
@@ -238,12 +272,14 @@ def _build_traces_from_journal(
                 fired_nodes=[],
                 traversal_config=asdict(config),
                 route_policy=policy,
+                query_vector=None,
                 decision_points=[],
             )
             traces.append(trace)
             continue
 
         traversal = traverse(graph=graph, seeds=seeds, config=config, query_text=query)
+        query_vector = _resolve_query_vector(seeds, query)
         points: list[RouteDecisionPoint] = []
         for step in traversal.steps:
             if total_points >= max_decision_points:
@@ -319,6 +355,7 @@ def _build_traces_from_journal(
             fired_nodes=[str(node_id) for node_id in traversal.fired],
             traversal_config=asdict(config),
             route_policy=policy,
+            query_vector=query_vector,
             decision_points=points,
         )
         traces.append(trace)
@@ -467,12 +504,17 @@ def run_async_route_pg(
     score_scale: float = 0.3,
     traces_out: str | None = None,
     traces_in: str | None = None,
+    include_query_vector: bool = False,
     reward_source: RewardSource | str = RewardSource.TEACHER,
     reward_weights: RewardWeights | None = None,
+    state_store: StateStore | None = None,
+    event_store: EventStore | None = None,
     teacher_labeler: Callable[[list[DecisionPoint]], tuple[list[dict[str, float]], list[str]]] | None = None,
 ) -> AsyncRoutePgSummary:
     """Run teacher-shadow routing updates over recent query events."""
-    graph, index, meta = load_state(state_path)
+    resolved_state_store = state_store or JsonStateStore()
+    resolved_event_store = event_store or JsonlEventStore(journal_path)
+    graph, index, meta = resolved_state_store.load(state_path)
 
     effective_source = RewardSource.parse(reward_source, default=RewardSource.TEACHER)
     effective_weights = reward_weights or RewardWeights.from_env()
@@ -483,6 +525,7 @@ def run_async_route_pg(
     else:
         traces, cap_hit = _build_traces_from_journal(
             graph=graph,
+            index=index,
             journal_path=journal_path,
             since_hours=since_hours,
             max_queries=max_queries,
@@ -490,6 +533,8 @@ def run_async_route_pg(
             max_candidates_per_node=max_candidates_per_node,
             max_decision_points=max_decision_points,
             reward_source=effective_source,
+            include_query_vector=include_query_vector,
+            event_store=resolved_event_store,
         )
 
     if traces_out:
@@ -568,7 +613,7 @@ def run_async_route_pg(
                     working_graph._edges[point.source_id][target_id] = edge
 
     if apply and teacher_available and updates_applied > 0:
-        save_state(graph=working_graph, index=index, path=state_path, meta=meta)
+        resolved_state_store.save(state_path, graph=working_graph, index=index, meta=meta)
 
     return AsyncRoutePgSummary(
         teacher_requested=teacher,

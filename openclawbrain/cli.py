@@ -57,6 +57,7 @@ from .full_learning import (
     load_interactions_for_replay,
     run_fast_learning,
     run_harvest,
+    event_log_entries,
     _load_checkpoint,
     _persist_state,
     _save_checkpoint,
@@ -64,10 +65,13 @@ from .full_learning import (
 from ._util import _tokenize
 from .maintain import run_maintenance
 from .reward import RewardSource, RewardWeights
+from .labels import LabelRecord, from_self_learning_event, from_teacher_output, write_labels_jsonl
+from .trace import RouteTrace, route_trace_to_json
 from .state_lock import StateLockError, state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
 from .ops.async_route_pg import run_async_route_pg
 from .profile import BrainProfile, BrainProfileError
+from .train_route_model import train_route_model, write_summary_json
 from . import __version__
 
 DEFAULT_STATE_PROFILE = "main"
@@ -294,10 +298,11 @@ def _build_parser() -> argparse.ArgumentParser:
     d.add_argument("--embed-model", default=None)
     d.add_argument("--max-prompt-context-chars", type=int, default=None)
     d.add_argument("--max-fired-nodes", type=int, default=None)
-    d.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default=None)
+    d.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default=None)
     d.add_argument("--route-top-k", type=int, default=None)
     d.add_argument("--route-alpha-sim", type=float, default=None)
     d.add_argument("--route-use-relevance", choices=["true", "false"], default=None)
+    d.add_argument("--route-model", default=None)
     d.add_argument("--auto-save-interval", type=int, default=10)
 
     serve = sub.add_parser("serve", help="Run the OpenClawBrain socket service in the foreground")
@@ -307,10 +312,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--embed-model", default=None)
     serve.add_argument("--max-prompt-context-chars", type=int, default=None)
     serve.add_argument("--max-fired-nodes", type=int, default=None)
-    serve.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default=None)
+    serve.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default=None)
     serve.add_argument("--route-top-k", type=int, default=None)
     serve.add_argument("--route-alpha-sim", type=float, default=None)
     serve.add_argument("--route-use-relevance", choices=["true", "false"], default=None)
+    serve.add_argument("--route-model", default=None)
     serve.add_argument(
         "--foreground",
         action="store_true",
@@ -418,6 +424,8 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     r.add_argument("--persist-state-every-seconds", type=int, default=0)
+    r.add_argument("--traces-out", default=None)
+    r.add_argument("--labels-out", default=None)
     r.add_argument("--quiet", action="store_true", help="Suppress replay banners and progress output.")
     r.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     r.add_argument("--json", action="store_true")
@@ -430,6 +438,8 @@ def _build_parser() -> argparse.ArgumentParser:
     hcmd.add_argument("--max-merges", type=int, default=5)
     hcmd.add_argument("--prune-below", type=float, default=0.01)
     hcmd.add_argument("--backup", action=argparse.BooleanOptionalAction, default=True)
+    hcmd.add_argument("--traces-out", default=None)
+    hcmd.add_argument("--labels-out", default=None)
     hcmd.add_argument("--json", action="store_true")
 
     h = sub.add_parser("health")
@@ -452,6 +462,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--max-decision-points", type=int, default=500)
     ar.add_argument("--traces-out", default=None)
     ar.add_argument("--traces-in", default=None)
+    ar.add_argument("--include-query-vector", action="store_true")
     ar.add_argument(
         "--reward-source",
         choices=[
@@ -463,6 +474,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=RewardSource.TEACHER.value,
     )
     ar.add_argument("--reward-weights", default=None, help="Comma-separated weights: human=1.0,self=0.6,harvester=0.3,teacher=0.1")
+
+    tr = sub.add_parser("train-route-model")
+    tr.add_argument("--state", required=True)
+    tr.add_argument("--traces-in", required=True)
+    tr.add_argument("--labels-in", default=None)
+    tr.add_argument("--out", required=True)
+    tr.add_argument("--rank", type=int, default=16)
+    tr.add_argument("--epochs", type=int, default=3)
+    tr.add_argument("--lr", type=float, default=0.01)
+    tr.add_argument("--label-temp", type=float, default=0.5)
+    tr.add_argument("--reward-weights", default=None)
+    tr.add_argument("--json", action="store_true")
 
     j = sub.add_parser("journal")
     j.add_argument("--state")
@@ -727,6 +750,14 @@ def _load_session_query_records(session_paths: str | Iterable[str], since_ts: fl
         else:
             raise SystemExit(f"invalid sessions path: {path}")
     return records
+
+
+def _write_route_traces_jsonl(path: str, traces: list[RouteTrace]) -> None:
+    destination = Path(path).expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", encoding="utf-8") as handle:
+        for trace in traces:
+            handle.write(route_trace_to_json(trace) + "\n")
 
 
 def _load_session_interactions(
@@ -1949,6 +1980,28 @@ def cmd_replay(args: argparse.Namespace) -> int:
         journal_path=_resolve_journal_path(args, allow_default_state=True),
     )
 
+    if args.traces_out:
+        replay_traces = [
+            RouteTrace(
+                query_id=f"replay:{idx}",
+                ts=float(item.get("ts", 0.0) or 0.0),
+                query_text=str(item.get("query", "") or ""),
+                chat_id=str(item["chat_id"]) if isinstance(item.get("chat_id"), str) else None,
+                seeds=[],
+                fired_nodes=[],
+                traversal_config={},
+                route_policy={"route_mode": "off"},
+                query_vector=None,
+                decision_points=[],
+            )
+            for idx, item in enumerate(interactions)
+            if isinstance(item, dict)
+        ]
+        _write_route_traces_jsonl(str(args.traces_out), replay_traces)
+
+    if args.labels_out:
+        write_labels_jsonl(str(args.labels_out), [])
+
     output: dict[str, object] = dict(stats)
     if fast_stats is not None:
         output["fast_learning"] = fast_stats
@@ -1994,6 +2047,74 @@ def cmd_harvest(args: argparse.Namespace) -> int:
         prune_below=args.prune_below,
         backup=bool(args.backup),
     )
+
+    events = event_log_entries(Path(report["learning_events_path"]))
+    if args.traces_out:
+        harvest_traces = [
+            RouteTrace(
+                query_id=f"harvest:{idx}",
+                ts=float(event.get("ts", 0.0) or 0.0),
+                query_text=str(event.get("content", "") or ""),
+                chat_id=None,
+                seeds=[],
+                fired_nodes=[],
+                traversal_config={},
+                route_policy={"route_mode": "off"},
+                query_vector=None,
+                decision_points=[],
+            )
+            for idx, event in enumerate(events)
+            if isinstance(event, dict)
+        ]
+        _write_route_traces_jsonl(str(args.traces_out), harvest_traces)
+
+    if args.labels_out:
+        labels: list[LabelRecord] = []
+        for idx, event in enumerate(events):
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type", "")).upper()
+            query_id = str(event.get("session_pointer", event.get("session", f"harvest:{idx}")))
+            node_id = event.get("node_id")
+            if isinstance(node_id, str) and node_id:
+                base_score = -1.0 if event_type == "CORRECTION" else 1.0
+                labels.append(
+                    LabelRecord(
+                        query_id=query_id,
+                        decision_point_idx=0,
+                        candidate_scores={node_id: base_score},
+                        reward_source=RewardSource.HARVESTER,
+                        weight=1.0,
+                        ts=float(event.get("ts", 0.0) or 0.0),
+                        metadata={"event_type": event_type},
+                    )
+                )
+                continue
+            fallback = from_self_learning_event(
+                {
+                    "query_id": query_id,
+                    "decision_point_idx": 0,
+                    "fired_ids": event.get("fired_ids"),
+                    "outcome": event.get("outcome", -1.0 if event_type == "CORRECTION" else 1.0),
+                    "ts": float(event.get("ts", 0.0) or 0.0),
+                    "metadata": {"event_type": event_type},
+                }
+            )
+            if fallback is not None:
+                labels.append(fallback)
+                continue
+            if event_type in {"TEACHING", "REINFORCEMENT"}:
+                labels.append(
+                    from_teacher_output(
+                        query_id=query_id,
+                        decision_point_idx=0,
+                        teacher_scores={},
+                        ts=float(event.get("ts", 0.0) or 0.0),
+                        metadata={"event_type": event_type},
+                    )
+                )
+        write_labels_jsonl(str(args.labels_out), labels)
+
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
@@ -2375,6 +2496,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         profile.policy.route_use_relevance if profile is not None else None,
         True,
     )
+    route_model = args.route_model
     from .daemon import main as daemon_main
 
     return daemon_main(
@@ -2397,7 +2519,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
             "true" if route_use_relevance else "false",
             "--auto-save-interval",
             str(args.auto_save_interval),
-        ]
+        ] + (["--route-model", str(route_model)] if route_model else [])
     )
 
 
@@ -2437,6 +2559,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         profile.policy.route_use_relevance if profile is not None else None,
         True,
     )
+    route_model = args.route_model
 
     from .socket_server import _default_socket_path as _server_default_socket_path
     from .socket_server import main as socket_server_main
@@ -2472,6 +2595,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "--route-use-relevance",
         "true" if route_use_relevance else "false",
     ])
+    if route_model:
+        server_argv.extend(["--route-model", str(route_model)])
     return socket_server_main(server_argv)
 
 
@@ -2527,6 +2652,7 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
         score_scale=float(args.score_scale),
         traces_out=str(args.traces_out) if args.traces_out else None,
         traces_in=str(args.traces_in) if args.traces_in else None,
+        include_query_vector=bool(args.include_query_vector),
         reward_source=RewardSource.parse(args.reward_source),
         reward_weights=parsed_weights,
     )
@@ -2547,6 +2673,38 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
             print("errors:")
             for item in payload["errors"]:
                 print(f"- {item}")
+    return 0
+
+
+def cmd_train_route_model(args: argparse.Namespace) -> int:
+    """Train learned route model from traces and optional labels."""
+    try:
+        parsed_weights = RewardWeights.from_string(args.reward_weights) if args.reward_weights else RewardWeights.from_env()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    summary = train_route_model(
+        state_path=str(args.state),
+        traces_in=str(args.traces_in),
+        labels_in=str(args.labels_in) if args.labels_in else None,
+        out_path=str(args.out),
+        rank=max(1, int(args.rank)),
+        epochs=max(1, int(args.epochs)),
+        lr=float(args.lr),
+        label_temp=float(args.label_temp),
+        reward_weights=parsed_weights,
+    )
+
+    if args.json:
+        print(write_summary_json(summary))
+    else:
+        payload = summary.to_dict()
+        print(
+            f"train-route-model: points_used={payload['points_used']} "
+            f"initial_ce={payload['initial_ce_loss']:.6f} "
+            f"final_ce={payload['final_ce_loss']:.6f} "
+            f"out={payload['out_path']}"
+        )
     return 0
 
 
@@ -2572,6 +2730,7 @@ def main(argv: list[str] | None = None) -> int:
         "harvest": cmd_harvest,
         "health": cmd_health,
         "async-route-pg": cmd_async_route_pg,
+        "train-route-model": cmd_train_route_model,
         "journal": cmd_journal,
         "doctor": cmd_doctor,
         "info": cmd_info,

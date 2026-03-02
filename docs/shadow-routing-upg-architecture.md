@@ -84,3 +84,23 @@ Determinism contract:
 5. Apply PG updates using weighted reward scaling.
 
 This split decouples trajectory sampling from supervision so label policies can be rerun deterministically against fixed decision-point sets.
+
+## Mega rearchitecture addendum
+
+New modules and boundaries:
+- `openclawbrain.storage`: state/event persistence interfaces (`StateStore`, `EventStore`) with JSON implementations.
+- `openclawbrain.route_model`: low-rank learned policy scorer with NPZ save/load.
+- `openclawbrain.labels`: unified `LabelRecord` for teacher/human/self supervision.
+
+Runtime learned mode:
+- `route_mode=learned` uses `policy.make_learned_route_fn`.
+- Edge feature vector is `[edge_weight, edge_relevance, 1.0]`.
+- Route scoring is deterministic top-k via model logits with target-id tie-breaks.
+
+Trace/schema updates:
+- `RouteTrace` now supports optional `query_vector`.
+- `async-route-pg --include-query-vector` can emit query vectors into trace JSONL.
+
+Training CLI:
+- `openclawbrain train-route-model --state ... --traces-in ... --out ...`
+- Numpy-only SGD over cross-entropy against teacher/human/self label distributions.

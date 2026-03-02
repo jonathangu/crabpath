@@ -125,6 +125,7 @@ def test_run_async_route_pg_dry_run_traces_out_emits_expected_fields(tmp_path: P
         teacher="none",
         apply=False,
         traces_out=str(traces_path),
+        include_query_vector=True,
     )
 
     assert summary.updates_applied == 0
@@ -137,6 +138,7 @@ def test_run_async_route_pg_dry_run_traces_out_emits_expected_fields(tmp_path: P
     assert "traversal_config" in trace
     assert "route_policy" in trace
     assert isinstance(trace["decision_points"], list)
+    assert "query_vector" in trace
     if trace["decision_points"]:
         point = trace["decision_points"][0]
         assert "source_id" in point
