@@ -50,6 +50,8 @@ from .split import split_workspace
 from .hasher import HashEmbedder
 from .traverse import TraversalConfig, TraversalResult, traverse
 from .sync import DEFAULT_AUTHORITY_MAP, sync_workspace
+from .local_embedder import DEFAULT_LOCAL_MODEL, DEFAULT_LOCAL_MODEL_TAG, LocalEmbedder
+from .route_model import RouteModel
 from .full_learning import (
     _checkpoint_phase_offsets,
     collect_session_files,
@@ -226,7 +228,7 @@ def _build_parser() -> argparse.ArgumentParser:
     i.add_argument("--workspace", required=True)
     i.add_argument("--output", required=True)
     i.add_argument("--sessions")
-    i.add_argument("--embedder", choices=["hash", "openai", "auto"], default="auto")
+    i.add_argument("--embedder", choices=["hash", "local", "openai", "auto"], default="auto")
     i.add_argument("--llm", choices=["none", "openai", "auto"], default="auto")
     # LLM-splitting controls (default: use LLM only for larger/complex files)
     i.add_argument("--llm-split-min-chars", type=int, default=20000)
@@ -240,7 +242,7 @@ def _build_parser() -> argparse.ArgumentParser:
     q.add_argument("--index")
     q.add_argument("--top", type=int, default=10)
     q.add_argument("--query-vector-stdin", action="store_true")
-    q.add_argument("--embedder", choices=["hash", "openai"], default=None)
+    q.add_argument("--embedder", choices=["hash", "local", "openai"], default=None)
     q.add_argument("--max-context-chars", type=int, default=None)
     q.add_argument("--json", action="store_true")
 
@@ -278,7 +280,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-merges", type=int, default=5)
     p.add_argument("--prune-below", type=float, default=0.01)
     p.add_argument("--llm", choices=["none", "openai"], default="none")
-    p.add_argument("--embedder", choices=["hash", "openai"], default=None)
+    p.add_argument("--embedder", choices=["hash", "local", "openai"], default=None)
     p.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     p.add_argument("--json", action="store_true")
 
@@ -336,7 +338,7 @@ def _build_parser() -> argparse.ArgumentParser:
     x.add_argument("--summary")
     x.add_argument("--connect-top-k", type=int, default=3)
     x.add_argument("--connect-min-sim", type=float, default=None)
-    x.add_argument("--embedder", choices=["hash", "openai"], default=None)
+    x.add_argument("--embedder", choices=["hash", "local", "openai"], default=None)
     x.add_argument("--vector-stdin", action="store_true")
     x.add_argument("--json", action="store_true")
 
@@ -509,7 +511,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync")
     sync.add_argument("--state")
     sync.add_argument("--workspace", required=True)
-    sync.add_argument("--embedder", choices=["openai", "hash"], default=None)
+    sync.add_argument("--embedder", choices=["openai", "hash", "local"], default=None)
     sync.add_argument(
         "--authority-map",
         help="JSON object mapping file name -> authority level",
@@ -868,21 +870,32 @@ def _resolve_embedder(
 
     if args.embedder == "auto":
         try:
-            from .openai_embeddings import OpenAIEmbedder
-
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("no key")
-            embedder = OpenAIEmbedder()
+            embedder = LocalEmbedder()
+            return embedder.embed, embedder.embed_batch, embedder.name, embedder.dim
         except Exception:
-            print("warning: OpenAI not available, falling back to hash embedder", file=sys.stderr)
+            print("warning: local embedder not available, falling back to hash embedder", file=sys.stderr)
             embedder = HashEmbedder()
+            return embedder.embed, embedder.embed_batch, embedder.name, embedder.dim
+
+    if args.embedder == "local":
+        embedder = LocalEmbedder()
         return embedder.embed, embedder.embed_batch, embedder.name, embedder.dim
 
     use_openai = args.embedder == "openai" or (args.embedder is None and embedder_name == openai_name)
+    use_local = args.embedder is None and isinstance(embedder_name, str) and embedder_name.startswith("local:")
     if use_openai:
         from .openai_embeddings import OpenAIEmbedder
 
         embedder = OpenAIEmbedder()
+    elif use_local:
+        local_model = DEFAULT_LOCAL_MODEL
+        if isinstance(embedder_name, str):
+            local_tag = embedder_name.split(":", 1)[1]
+            if "/" in local_tag:
+                local_model = local_tag
+            elif local_tag == DEFAULT_LOCAL_MODEL_TAG:
+                local_model = DEFAULT_LOCAL_MODEL
+        embedder = LocalEmbedder(model_name=local_model)
     else:
         embedder = HashEmbedder()
 
@@ -1115,7 +1128,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             )
         print(f"Preserved {len(preserved_nodes)} injected nodes from previous state")
 
-    print("Phase 4/4: Saving state...", file=sys.stderr)
+    print("Phase 4/5: Saving state...", file=sys.stderr)
     graph_path = output_dir / "graph.json"
     text_path = output_dir / "texts.json"
     state_meta = _state_meta(prior_meta, fallback_name=embedder_name, fallback_dim=embedder_dim)
@@ -1137,9 +1150,18 @@ def cmd_init(args: argparse.Namespace) -> int:
         path=output_dir / "state.json",
         meta=state_meta,
     )
+    route_model_path = output_dir / "route_model.npz"
+    resolved_embedder_dim = state_meta.get("embedder_dim")
+    if not isinstance(resolved_embedder_dim, int):
+        resolved_embedder_dim = embedder_dim
+    if isinstance(resolved_embedder_dim, int) and resolved_embedder_dim > 0:
+        RouteModel.init_identity(d=resolved_embedder_dim, df=3).save_npz(route_model_path)
+    else:
+        raise SystemExit("could not determine embedder dimension for route_model initialization")
     index_path = output_dir / "index.json"
     index_path.write_text(json.dumps(index_vectors, indent=2), encoding="utf-8")
     text_path.write_text(json.dumps(texts, indent=2), encoding="utf-8")
+    print("Phase 5/5: Wrote default route_model.npz", file=sys.stderr)
 
     if args.json:
         print(json.dumps({"graph": str(graph_path), "texts": str(text_path)}))
@@ -2480,7 +2502,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         profile.policy.max_fired_nodes if profile is not None else None,
         30,
     )
-    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "off")
+    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "learned")
     route_top_k = _coalesce_int(
         args.route_top_k,
         profile.policy.route_top_k if profile is not None else None,
@@ -2543,7 +2565,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         profile.policy.max_fired_nodes if profile is not None else None,
         30,
     )
-    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "off")
+    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "learned")
     route_top_k = _coalesce_int(
         args.route_top_k,
         profile.policy.route_top_k if profile is not None else None,

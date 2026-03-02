@@ -5,9 +5,6 @@ from __future__ import annotations
 import os
 import sys
 
-import openai
-
-
 # Conservative limit: OpenAI allows 300K tokens per request.
 # ~4 chars per token, use 250K tokens (1M chars) as buffer.
 _MAX_CHARS_PER_CALL = 200_000  # ~50K tokens, well under OpenAI's 300K limit
@@ -23,7 +20,11 @@ class OpenAIEmbedder:
     def __init__(self) -> None:
         """  init  ."""
         api_key = os.environ.get("OPENAI_API_KEY")
-        self.client = openai.OpenAI(api_key=api_key)
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise ImportError("openai is not installed. Install with `pip install openclawbrain[openai]`.") from exc
+        self.client = OpenAI(api_key=api_key)
 
     def embed(self, text: str) -> list[float]:
         """embed."""

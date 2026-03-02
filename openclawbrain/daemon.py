@@ -20,6 +20,7 @@ from .graph import Graph, Node
 from .hasher import HashEmbedder
 from .index import VectorIndex
 from .learn import apply_outcome, apply_outcome_pg
+from .local_embedder import DEFAULT_LOCAL_MODEL, LocalEmbedder
 from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_correction, inject_node
 from .policy import RoutingPolicy, make_runtime_route_fn
@@ -53,7 +54,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embed-model", default="auto")
     parser.add_argument("--max-prompt-context-chars", type=int, default=30000)
     parser.add_argument("--max-fired-nodes", type=int, default=30)
-    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default="off")
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default="learned")
     parser.add_argument("--route-top-k", type=int, default=5)
     parser.add_argument("--route-alpha-sim", type=float, default=0.5)
     parser.add_argument("--route-use-relevance", choices=["true", "false"], default="true")
@@ -71,6 +72,11 @@ def _make_embed_fn(embed_model: str) -> Callable[[str], list[float]] | None:
     return lambda text: [float(v) for v in client.embeddings.create(model=embed_model, input=[text]).data[0].embedding]
 
 
+def _make_local_embed_fn(model_name: str = DEFAULT_LOCAL_MODEL) -> Callable[[str], list[float]]:
+    embedder = LocalEmbedder(model_name=model_name)
+    return embedder.embed
+
+
 def _resolve_embed_fn(embed_model: str, meta: dict[str, object]) -> Callable[[str], list[float]] | None:
     """Resolve daemon query embedder from CLI flag and state metadata."""
     model = str(embed_model or "").strip()
@@ -79,14 +85,23 @@ def _resolve_embed_fn(embed_model: str, meta: dict[str, object]) -> Callable[[st
     embedder_name_str = embedder_name.strip().lower() if isinstance(embedder_name, str) else ""
 
     if model_lower in {"auto", ""}:
+        if embedder_name_str.startswith("local:"):
+            return _make_local_embed_fn(DEFAULT_LOCAL_MODEL)
         if embedder_name_str == "hash-v1":
             return None
-        resolved_model = "text-embedding-3-small"
-        if "text-embedding-3-small" in embedder_name_str:
-            resolved_model = "text-embedding-3-small"
-        return _make_embed_fn(resolved_model)
+        return None
     if model_lower == "hash":
         return None
+    if model_lower == "local":
+        return _make_local_embed_fn(DEFAULT_LOCAL_MODEL)
+    if model_lower.startswith("local:"):
+        local_model = model.split(":", 1)[1].strip()
+        return _make_local_embed_fn(local_model or DEFAULT_LOCAL_MODEL)
+    if model_lower.startswith("openai:"):
+        openai_model = model.split(":", 1)[1].strip()
+        if not openai_model:
+            raise ValueError("openai embed-model must include a model name (e.g. openai:text-embedding-3-small)")
+        return _make_embed_fn(openai_model)
     return _make_embed_fn(model)
 
 
@@ -370,7 +385,7 @@ def _handle_query(
     traverse_start = time.perf_counter()
     seeds = index.search(query_vector, top_k=top_k)
     policy = RoutingPolicy(
-        route_mode=query.route_mode,
+        route_mode="edge+sim" if query.route_mode == "learned" and learned_model is None else query.route_mode,
         top_k=query.route_top_k,
         alpha_sim=query.route_alpha_sim,
         use_relevance=query.route_use_relevance,
@@ -932,7 +947,7 @@ class _DaemonState:
 class QueryDefaults:
     max_prompt_context_chars: int = 30000
     max_fired_nodes: int = 30
-    route_mode: str = "off"
+    route_mode: str = "learned"
     route_top_k: int = 5
     route_alpha_sim: float = 0.5
     route_use_relevance: bool = True
@@ -968,8 +983,13 @@ def main(argv: list[str] | None = None) -> int:
         route_model: RouteModel | None = None
         target_projections: dict[str, object] = {}
         if route_model_path.exists():
-            route_model = RouteModel.load_npz(route_model_path)
-            target_projections = route_model.precompute_target_projections(index)
+            try:
+                route_model = RouteModel.load_npz(route_model_path)
+                target_projections = route_model.precompute_target_projections(index)
+            except Exception as exc:  # noqa: BLE001
+                print(f"warning: failed to load route model at {route_model_path}: {exc}", file=sys.stderr)
+                route_model = None
+                target_projections = {}
         daemon_state = _DaemonState(
             graph=graph,
             index=index,
@@ -1005,6 +1025,15 @@ def main(argv: list[str] | None = None) -> int:
             ),
             route_use_relevance=str(args.route_use_relevance).strip().lower() == "true",
         )
+        if query_defaults.route_mode == "learned" and route_model is None:
+            query_defaults = QueryDefaults(
+                max_prompt_context_chars=query_defaults.max_prompt_context_chars,
+                max_fired_nodes=query_defaults.max_fired_nodes,
+                route_mode="edge+sim",
+                route_top_k=query_defaults.route_top_k,
+                route_alpha_sim=query_defaults.route_alpha_sim,
+                route_use_relevance=query_defaults.route_use_relevance,
+            )
         auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
 
         if hasattr(sys.stdout, "reconfigure"):

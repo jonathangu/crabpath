@@ -9,6 +9,7 @@ from .maintain import MaintenanceReport, run_maintenance, prune_edges, prune_orp
 from .learn import LearningConfig, apply_outcome, apply_outcome_pg, maybe_create_node
 from .inject import inject_batch, inject_correction, inject_node
 from .hasher import HashEmbedder, default_embed, default_embed_batch
+from .local_embedder import LocalEmbedder
 from .score import score_retrieval
 from .connect import apply_connections, suggest_connections
 from .merge import apply_merge, suggest_merges
@@ -29,6 +30,7 @@ __all__ = [
     "TraversalConfig",
     "TraversalResult",
     "HashEmbedder",
+    "LocalEmbedder",
     "default_embed",
     "default_embed_batch",
     "DecayConfig",

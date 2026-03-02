@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 import importlib
 
@@ -90,23 +91,36 @@ def test_resolve_embed_fn_auto_uses_hash_for_hash_state() -> None:
     assert resolved is None
 
 
-def test_resolve_embed_fn_auto_uses_openai_for_openai_state(monkeypatch) -> None:
-    fake_embed = lambda _text: [0.0]
-    seen_models: list[str] = []
-
-    def _fake_make_embed_fn(model: str):
-        seen_models.append(model)
-        return fake_embed
-
-    monkeypatch.setattr(daemon_module, "_make_embed_fn", _fake_make_embed_fn)
+def test_resolve_embed_fn_auto_does_not_use_openai_for_openai_state() -> None:
     resolved = daemon_module._resolve_embed_fn(
         "auto",
         {"embedder_name": "openai-text-embedding-3-small", "embedder_dim": 1536},
     )
+    assert resolved is None
 
+
+def test_resolve_embed_fn_auto_uses_local_for_local_state(monkeypatch) -> None:
+    fake_embed = lambda _text: [0.1, 0.2]
+    seen_models: list[str] = []
+
+    def _fake_make_local_embed_fn(model_name: str):
+        seen_models.append(model_name)
+        return fake_embed
+
+    monkeypatch.setattr(daemon_module, "_make_local_embed_fn", _fake_make_local_embed_fn)
+    resolved = daemon_module._resolve_embed_fn(
+        "auto",
+        {"embedder_name": "local:bge-small-en-v1.5", "embedder_dim": 384},
+    )
     assert callable(resolved)
     assert resolved is fake_embed
-    assert seen_models == ["text-embedding-3-small"]
+    assert seen_models == ["BAAI/bge-small-en-v1.5"]
+
+
+def test_daemon_parser_defaults_route_mode_learned() -> None:
+    parser = daemon_module._build_parser()
+    args = parser.parse_args(["--state", "/tmp/state.json"])
+    assert args.route_mode == "learned"
 
 
 def test_daemon_responds_to_health(tmp_path: Path) -> None:
@@ -241,6 +255,42 @@ def test_daemon_query_route_mode_edge_sim_selects_expected_habitual_target(tmp_p
             "route_use_relevance": True,
         },
         state_path=str(tmp_path / "state.json"),
+    )
+
+    assert "seed" in response["fired_nodes"]
+    assert "good" in response["fired_nodes"]
+    assert "bad" not in response["fired_nodes"]
+
+
+def test_daemon_query_route_mode_learned_falls_back_to_edge_sim_without_model(tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("seed", "seed content", metadata={"file": "seed.md"}))
+    graph.add_node(Node("good", "good answer", metadata={"file": "good.md"}))
+    graph.add_node(Node("bad", "bad answer", metadata={"file": "bad.md"}))
+    graph.add_edge(Edge("seed", "good", weight=0.4, metadata={"relevance": 0.0}))
+    graph.add_edge(Edge("seed", "bad", weight=0.4, metadata={"relevance": 0.0}))
+
+    index = VectorIndex()
+    index.upsert("seed", [1.0, 0.0])
+    index.upsert("good", [1.0, 0.0])
+    index.upsert("bad", [0.0, 1.0])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={
+            "query": "route learned fallback",
+            "top_k": 1,
+            "route_mode": "learned",
+            "route_top_k": 1,
+            "route_alpha_sim": 0.5,
+            "route_use_relevance": True,
+        },
+        state_path=str(tmp_path / "state.json"),
+        learned_model=None,
     )
 
     assert "seed" in response["fired_nodes"]
@@ -731,7 +781,11 @@ def test_query_brain_uses_state_embedder_for_embeddings(monkeypatch) -> None:
             def create(model: str, input: list[str]) -> FakeOpenAIResponse:
                 return FakeOpenAIResponse()
 
-    import openai as openai_mod
+    try:
+        import openai as openai_mod
+    except ImportError:
+        openai_mod = types.ModuleType("openai")
+        monkeypatch.setitem(sys.modules, "openai", openai_mod)
     monkeypatch.setattr(openai_mod, "OpenAI", FakeOpenAI)
     monkeypatch.setattr(query_module, "require_api_key", lambda: "test-key")
 

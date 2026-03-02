@@ -79,8 +79,8 @@ python3 -m openclawbrain.openclaw_adapter.query_brain \
 
 **OpenClawBrain learns from your agent feedback, so wrong answers get suppressed instead of resurfacing.** It builds a memory graph over your workspace, remembers what worked, and routes future answers through learned paths.
 
-- Pure Python 3.10+ core (no vector DB). The package currently installs the OpenAI SDK by default; hash-embedder mode runs offline.
-- Built-in hash embeddings for offline/testing; OpenAI embeddings are recommended for production.
+- Pure Python 3.10+ core (no vector DB). OOTB embeddings are local (`fastembed`, BGE-small), so OpenAI is not required.
+- Built-in local + hash embeddings for offline/default operation; OpenAI embeddings are optional.
 - Builds a **`state.json`** brain from your workspace.
 - Queries follow learned routes instead of only similarity matches.
 - Positive feedback (`+1`) uses the default policy-gradient learner `apply_outcome_pg()` (conserving probability mass across traversed nodes), while negative (`-1`) creates inhibitory edges.
@@ -399,9 +399,12 @@ openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
 Embedding mode defaults to `--embed-model auto`:
-- For `hash-v1` state metadata, daemon queries use hash embeddings (offline-safe).
-- For non-hash metadata, daemon queries use OpenAI embeddings (`text-embedding-3-small`).
-- Use `--embed-model hash` to force hash embeddings, or pass a model name to force OpenAI.
+- For `local:*` state metadata, daemon queries use local embeddings.
+- For `hash-v1` state metadata, daemon queries use hash embeddings.
+- For OpenAI-based states, `auto` does not call OpenAI; use `--embed-model openai:<model>` explicitly.
+- Use `--embed-model hash` or `--embed-model local` to force offline query embeddings.
+
+Routing mode defaults to `--route-mode learned`. `init` writes a default identity-like `route_model.npz` beside `state.json`; if that file is missing or unloadable, daemon query routing gracefully falls back to `edge+sim`.
 
 Protocol:
 
@@ -579,10 +582,10 @@ from openclawbrain import (
 
 ## Cost control
 
-- **Recommended:** OpenAI `text-embedding-3-small` (~$0.02/MB) + `gpt-5-mini` for optional offline teacher routing/scoring. Embeddings are generated at init and cached in `state.json`; normal query serving stays LLM-free.
-- **Auto-detection:** `openclawbrain init` tries OpenAI by default (`--embedder auto --llm auto`). If `OPENAI_API_KEY` is set, you get production-quality embeddings automatically. If not, it falls back to hash embeddings with no API calls.
+- **Default OOTB:** `openclawbrain init` uses local BGE-small embeddings (`--embedder auto` -> local -> hash fallback) and writes vectors to `state.json`.
+- **Optional OpenAI:** install `openclawbrain[openai]` and use `--embedder openai` (or OpenAI teacher labeling via `async-route-pg`) when you want API-backed labels/embeddings.
 - **Batch init:** `openclawbrain init` embeds all workspace files in one batch call. Subsequent queries reuse cached vectors.
-- **Explicit control:** use `--embedder openai` / `--embedder hash` to force a specific embedder. Use `--llm none` to skip LLM-assisted splitting.
+- **Explicit control:** use `--embedder local` / `--embedder hash` / `--embedder openai` to force a specific embedder. Use `--llm none` to skip LLM-assisted splitting.
 
 ## Warm start from sessions
 
@@ -752,6 +755,11 @@ Notes:
 ## Learned route model training
 
 OpenClawBrain now supports `route_mode=learned` at runtime with a trainable low-rank route model (`openclawbrain.route_model`).
+
+OOTB behavior:
+- `openclawbrain init` writes `/path/to/brain/route_model.npz` using an identity-like bilinear model.
+- Daemon defaults to `route_mode=learned`, so new brains use bilinear runtime routing immediately.
+- Retrain anytime with `openclawbrain train-route-model ... --out /path/to/brain/route_model.npz`.
 
 Storage boundary modules:
 - `openclawbrain.storage.state_store`: `StateStore` / `JsonStateStore`
