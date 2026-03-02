@@ -10,13 +10,6 @@ from pathlib import Path
 
 from openclawbrain.ops import harvest_secret_pointers
 
-DEFAULT_WORKSPACES: tuple[str, ...] = (
-    "~/.openclaw/workspace",
-    "~/.openclaw/workspace-pelican",
-    "~/.openclaw/workspace-bountiful",
-    "~/.openclaw/workspace-family",
-)
-
 
 @dataclass(frozen=True)
 class SymlinkAction:
@@ -62,7 +55,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--workspace",
         action="append",
         default=[],
-        help="Workspace root to receive docs symlinks (repeatable)",
+        help="Workspace root to receive docs symlinks (repeatable, overrides auto-discovery)",
     )
     parser.add_argument(
         "--openclaw-config",
@@ -74,10 +67,65 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_workspaces(raw_workspaces: list[str]) -> list[Path]:
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    seen: set[str] = set()
+    out: list[Path] = []
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _discover_from_openclaw_config(openclaw_config: Path) -> list[Path]:
+    if not openclaw_config.exists():
+        return []
+    try:
+        payload = json.loads(openclaw_config.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    agents = payload.get("agents")
+    if not isinstance(agents, dict):
+        return []
+    agent_list = agents.get("list")
+    if not isinstance(agent_list, list):
+        return []
+    discovered: list[Path] = []
+    for entry in agent_list:
+        if not isinstance(entry, dict):
+            continue
+        workspace = entry.get("workspace")
+        if isinstance(workspace, str) and workspace.strip():
+            discovered.append(Path(workspace).expanduser())
+    return _dedupe_paths(discovered)
+
+
+def _discover_from_glob() -> list[Path]:
+    root = Path.home() / ".openclaw"
+    discovered = sorted(
+        [path for path in root.glob("workspace*") if path.is_dir() or path.is_symlink()],
+        key=lambda path: str(path),
+    )
+    return _dedupe_paths(discovered)
+
+
+def _resolve_workspaces(raw_workspaces: list[str], openclaw_config: Path) -> list[Path]:
     if raw_workspaces:
-        return [Path(p).expanduser() for p in raw_workspaces]
-    return [Path(p).expanduser() for p in DEFAULT_WORKSPACES]
+        return _dedupe_paths([Path(p).expanduser() for p in raw_workspaces])
+
+    from_config = _discover_from_openclaw_config(openclaw_config)
+    if from_config:
+        return from_config
+
+    from_glob = _discover_from_glob()
+    if from_glob:
+        return from_glob
+
+    return [Path("~/.openclaw/workspace").expanduser()]
 
 
 def _choose_anchor_workspace(workspaces: list[Path]) -> Path:
@@ -269,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     env_dir = Path(args.env_dir).expanduser() if args.env_dir else credentials_dir / "env"
     registry_dir = Path(args.registry_dir).expanduser() if args.registry_dir else credentials_dir / "registry"
     openclaw_config = Path(args.openclaw_config).expanduser()
-    workspaces = _resolve_workspaces(args.workspace)
+    workspaces = _resolve_workspaces(args.workspace, openclaw_config=openclaw_config)
     anchor_workspace = _choose_anchor_workspace(workspaces)
     env_files = _iter_env_files(env_dir)
     env_hits = _resolve_env_hits(env_files)

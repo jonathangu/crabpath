@@ -159,6 +159,26 @@ Run:
 python3 -m openclawbrain.ops.sync_registry
 ```
 
+One-shot host bootstrap (defaults to dry-run):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --repo-root ~/.openclaw/workspace \
+  --repo-env-file ~/.openclaw/workspace/.env \
+  --workspace ~/.openclaw/workspace
+```
+
+Apply mode (writes centralized env/symlink changes, syncs registry, runs strict audit):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --apply \
+  --repo-root ~/.openclaw/workspace \
+  --repo-env-file ~/.openclaw/workspace/.env \
+  --workspace ~/.openclaw/workspace \
+  --json
+```
+
 What it does:
 
 - Regenerates host-level `secret-pointers.md` using `harvest_secret_pointers` (pointer-only output).
