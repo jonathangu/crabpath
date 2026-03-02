@@ -6,6 +6,8 @@ OpenClawBrain is the long-term memory layer for OpenClaw agents: it builds a lea
 ## New agent recipe
 Use the canonical bootstrap SOP when creating a brand-new OpenClaw profile-style setup (new workspace + dedicated brain + launchd + routing):
 - [docs/new-agent-sop.md](new-agent-sop.md)
+Use the one-page lifecycle reference for daily operations:
+- [docs/operator-quickstart.md](operator-quickstart.md)
 Use packaged adapter CLIs for agent hooks (no `~/openclawbrain` clone required):
 - `python3 -m openclawbrain.openclaw_adapter.query_brain ...`
 - `python3 -m openclawbrain.openclaw_adapter.capture_feedback ...`
@@ -22,6 +24,7 @@ What `serve` does:
 - Exposes a Unix socket at `~/.openclawbrain/main/daemon.sock` (for agent `main`).
 - Keeps the daemon hot in memory and restarts it if needed.
 - Uses daemon defaults `--embed-model auto` and `--route-mode learned`.
+- `openclawbrain daemon` remains available as a low-level NDJSON worker for custom integrations.
 
 Daemon embed-model auto behavior:
 - `local:*` states -> local query embeddings.

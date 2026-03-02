@@ -1,6 +1,13 @@
 ## Unreleased
 
-- No entries yet.
+### Operator lifecycle UX (Issue #60 part 1)
+- `openclawbrain serve` now supports lifecycle subcommands: `start`, `status`, and `stop`.
+- `serve status` validates socket presence and performs a live `health` ping over the Unix socket.
+- `serve stop` sends daemon `shutdown` over the socket, with launchd/systemd stop commands printed as fallback.
+- Added optional `serve start --launchd` / `--systemd` template output for quick service wiring.
+- Canonical socket-path convention is now documented as `~/.openclawbrain/<agent>/daemon.sock` (`<agent>` from `state.json` parent directory), and startup banner prints the resolved socket path.
+- Added one-page operator lifecycle guide: `docs/operator-quickstart.md` (linked from README).
+- Clarified docs/CLI wording that `serve` is the canonical operator entrypoint and `daemon` is low-level NDJSON worker plumbing.
 
 ## v12.2.6 (2026-03-02)
 

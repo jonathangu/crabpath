@@ -807,7 +807,7 @@ def test_serve_command_prints_banner_and_calls_socket_server(monkeypatch, capsys
     assert "OpenClawBrain socket service (foreground)" in err
     assert "socket path: /tmp/agent/daemon.sock" in err
     assert f"state path: {Path('~/agent/state.json').expanduser()}" in err
-    assert "query status: openclawbrain status --state" in err
+    assert "query status: openclawbrain serve status --state" in err
     assert "stop: Ctrl-C" in err
 
 
@@ -845,6 +845,127 @@ def test_serve_command_passes_explicit_socket_path(monkeypatch) -> None:
         "--route-use-relevance",
         "true",
     ]]
+
+
+def test_socket_health_status_missing_socket_returns_error(tmp_path) -> None:
+    """Socket health helper should fail fast when the socket path is missing."""
+    from openclawbrain import cli as cli_module
+
+    ok, health, error = cli_module._socket_health_status(str(tmp_path / "missing.sock"))
+    assert ok is False
+    assert health is None
+    assert isinstance(error, str) and "socket missing" in error
+
+
+def test_socket_health_status_uses_client_ping(monkeypatch, tmp_path) -> None:
+    """Socket health helper should return daemon health payload when ping succeeds."""
+    from openclawbrain import cli as cli_module
+
+    socket_path = tmp_path / "daemon.sock"
+    socket_path.write_text("", encoding="utf-8")
+
+    class FakeClient:
+        def __init__(self, socket_path: str, timeout: float = 30.0) -> None:
+            self.socket_path = socket_path
+            self.timeout = timeout
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def health(self) -> dict[str, object]:
+            return {"nodes": 2, "edges": 1}
+
+    import openclawbrain.socket_client as socket_client_module
+
+    monkeypatch.setattr(socket_client_module, "OCBClient", FakeClient)
+
+    ok, health, error = cli_module._socket_health_status(str(socket_path))
+    assert ok is True
+    assert health == {"nodes": 2, "edges": 1}
+    assert error is None
+
+
+def test_serve_status_payload_reports_ping_failure(monkeypatch, tmp_path) -> None:
+    """Serve status payload should include socket existence and ping error details."""
+    from openclawbrain import cli as cli_module
+
+    socket_path = tmp_path / "daemon.sock"
+    socket_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli_module,
+        "_socket_health_status",
+        lambda _path: (False, None, "boom"),
+    )
+
+    payload = cli_module._serve_status_payload(str(tmp_path / "state.json"), str(socket_path))
+    assert payload["socket_exists"] is True
+    assert payload["daemon_running"] is False
+    assert payload["health"] is None
+    assert payload["error"] == "boom"
+
+
+def test_serve_status_subcommand_uses_health_ping(monkeypatch, capsys) -> None:
+    """`serve status` should report running when socket ping succeeds."""
+    from openclawbrain import cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "_serve_status_payload",
+        lambda _state, _socket: {
+            "state_path": "/tmp/state.json",
+            "socket_path": "/tmp/daemon.sock",
+            "socket_exists": True,
+            "daemon_running": True,
+            "health": {"nodes": 4, "edges": 3, "dormant_pct": 0.1},
+            "error": None,
+        },
+    )
+
+    code = main(["serve", "status", "--state", "/tmp/state.json"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "serve status: running" in out
+    assert "nodes=4" in out
+    assert "edges=3" in out
+
+
+def test_serve_stop_subcommand_sends_shutdown(monkeypatch, capsys) -> None:
+    """`serve stop` should send daemon shutdown request over socket when reachable."""
+    from openclawbrain import cli as cli_module
+    import openclawbrain.socket_client as socket_client_module
+
+    monkeypatch.setattr(cli_module, "_socket_health_status", lambda _socket: (True, {"nodes": 1}, None))
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, socket_path: str, timeout: float = 30.0) -> None:
+            captured["socket_path"] = socket_path
+            captured["timeout"] = timeout
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def request(self, method: str, params: dict[str, object] | None = None) -> dict[str, object]:
+            captured["method"] = method
+            captured["params"] = dict(params or {})
+            return {"shutdown": True}
+
+    monkeypatch.setattr(socket_client_module, "OCBClient", FakeClient)
+
+    code = main(["serve", "stop", "--state", "/tmp/state.json", "--socket-path", "/tmp/d.sock"])
+    assert code == 0
+    assert captured["socket_path"] == "/tmp/d.sock"
+    assert captured["method"] == "shutdown"
+    assert captured["params"] == {}
+    out = capsys.readouterr().out
+    assert "Shutdown request sent to /tmp/d.sock" in out
 
 
 def test_daemon_profile_defaults_with_cli_override(monkeypatch, tmp_path) -> None:
