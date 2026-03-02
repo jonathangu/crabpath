@@ -72,6 +72,10 @@ def _load_query_via_socket(
     query_text: str,
     chat_id: str | None,
     top: int,
+    route_mode: str,
+    route_top_k: int,
+    route_alpha_sim: float,
+    route_use_relevance: bool,
     max_prompt_context_chars: int,
     exclude_files: list[str],
     exclude_file_prefixes: list[str],
@@ -84,6 +88,10 @@ def _load_query_via_socket(
         params: dict[str, Any] = {
             "query": query_text,
             "top_k": top,
+            "route_mode": route_mode,
+            "route_top_k": route_top_k,
+            "route_alpha_sim": route_alpha_sim,
+            "route_use_relevance": route_use_relevance,
             "max_prompt_context_chars": max_prompt_context_chars,
         }
         if chat_id is not None:
@@ -234,6 +242,37 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--socket", help="Unix socket path for daemon mode")
     parser.add_argument("--top", type=int, default=4, help="Top-k vector matches")
     parser.add_argument(
+        "--route-mode",
+        choices=["off", "edge", "edge+sim"],
+        default="off",
+        help="Runtime route policy for daemon query mode (local fallback ignores this)",
+    )
+    parser.add_argument(
+        "--route-top-k",
+        type=int,
+        default=5,
+        help="Top-k candidates for runtime route policy (daemon mode only)",
+    )
+    parser.add_argument(
+        "--route-alpha-sim",
+        type=float,
+        default=0.5,
+        help="Similarity blend weight for route_mode=edge+sim (daemon mode only)",
+    )
+    parser.add_argument(
+        "--route-use-relevance",
+        dest="route_use_relevance",
+        action="store_true",
+        default=True,
+        help="Apply relevance priors in runtime route policy (daemon mode only, default)",
+    )
+    parser.add_argument(
+        "--no-route-use-relevance",
+        dest="route_use_relevance",
+        action="store_false",
+        help="Disable relevance priors in runtime route policy (daemon mode only)",
+    )
+    parser.add_argument(
         "--max-prompt-context-chars",
         type=int,
         default=DEFAULT_MAX_PROMPT_CONTEXT_CHARS,
@@ -311,6 +350,10 @@ def main(argv: list[str] | None = None) -> None:
     state_path = Path(args.state_path)
     if args.top <= 0:
         raise SystemExit("--top must be >= 1")
+    if args.route_top_k <= 0:
+        raise SystemExit("--route-top-k must be >= 1")
+    if not 0.0 <= args.route_alpha_sim <= 1.0:
+        raise SystemExit("--route-alpha-sim must be between 0 and 1")
     if args.max_prompt_context_chars <= 0:
         raise SystemExit("--max-prompt-context-chars must be >= 1")
 
@@ -333,6 +376,10 @@ def main(argv: list[str] | None = None) -> None:
                 query_text,
                 args.chat_id,
                 args.top,
+                args.route_mode,
+                args.route_top_k,
+                args.route_alpha_sim,
+                args.route_use_relevance,
                 args.max_prompt_context_chars,
                 exclude_files,
                 [],

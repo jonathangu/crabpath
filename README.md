@@ -63,6 +63,20 @@ ExecStart=/usr/bin/env openclawbrain serve --state /home/YOUR_USER/.openclawbrai
 python3 -m openclawbrain.socket_client --socket ~/.openclawbrain/main/daemon.sock --method health --params "{}"
 ```
 
+OpenClaw adapter query example with runtime routing (`route_mode=edge+sim`):
+
+```bash
+python3 -m openclawbrain.openclaw_adapter.query_brain \
+  ~/.openclawbrain/main/state.json \
+  "summarize prior deploy failures" \
+  --chat-id "chat-123" \
+  --format prompt \
+  --route-mode edge+sim \
+  --route-top-k 5 \
+  --route-alpha-sim 0.5 \
+  --route-use-relevance
+```
+
 **OpenClawBrain learns from your agent feedback, so wrong answers get suppressed instead of resurfacing.** It builds a memory graph over your workspace, remembers what worked, and routes future answers through learned paths.
 
 - Pure Python 3.10+ core (no vector DB). The package currently installs the OpenAI SDK by default; hash-embedder mode runs offline.

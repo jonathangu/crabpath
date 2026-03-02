@@ -58,8 +58,24 @@ class OCBClient:
             return {"result": response["result"]}
         raise RuntimeError("daemon response missing result")
 
-    def query(self, query: str, chat_id: str | None = None, top_k: int = 4) -> dict[str, Any]:
-        params = {"query": query, "top_k": top_k}
+    def query(
+        self,
+        query: str,
+        chat_id: str | None = None,
+        top_k: int = 4,
+        route_mode: str = "off",
+        route_top_k: int = 5,
+        route_alpha_sim: float = 0.5,
+        route_use_relevance: bool = True,
+    ) -> dict[str, Any]:
+        params = {
+            "query": query,
+            "top_k": top_k,
+            "route_mode": route_mode,
+            "route_top_k": route_top_k,
+            "route_alpha_sim": route_alpha_sim,
+            "route_use_relevance": route_use_relevance,
+        }
         if chat_id is not None:
             params["chat_id"] = chat_id
         return self.request("query", params)
@@ -188,6 +204,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--method", required=True)
     parser.add_argument("--params", default="{}")
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default="off")
+    parser.add_argument("--route-top-k", type=int, default=5)
+    parser.add_argument("--route-alpha-sim", type=float, default=0.5)
+    parser.add_argument(
+        "--route-use-relevance",
+        dest="route_use_relevance",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--no-route-use-relevance",
+        dest="route_use_relevance",
+        action="store_false",
+    )
     return parser.parse_args(argv)
 
 
@@ -199,6 +229,11 @@ def _main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"invalid --params JSON: {exc}") from exc
     if not isinstance(params, dict):
         raise SystemExit("--params must be a JSON object")
+    if args.method == "query":
+        params["route_mode"] = args.route_mode
+        params["route_top_k"] = args.route_top_k
+        params["route_alpha_sim"] = args.route_alpha_sim
+        params["route_use_relevance"] = args.route_use_relevance
 
     with OCBClient(socket_path=args.socket, timeout=args.timeout) as client:
         result = client.request(args.method, params)
