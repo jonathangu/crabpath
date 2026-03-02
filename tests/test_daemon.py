@@ -82,6 +82,33 @@ def _load_query_brain_module():
     return importlib.import_module("openclawbrain.openclaw_adapter.query_brain")
 
 
+def test_resolve_embed_fn_auto_uses_hash_for_hash_state() -> None:
+    resolved = daemon_module._resolve_embed_fn(
+        "auto",
+        {"embedder_name": "hash-v1", "embedder_dim": 1024},
+    )
+    assert resolved is None
+
+
+def test_resolve_embed_fn_auto_uses_openai_for_openai_state(monkeypatch) -> None:
+    fake_embed = lambda _text: [0.0]
+    seen_models: list[str] = []
+
+    def _fake_make_embed_fn(model: str):
+        seen_models.append(model)
+        return fake_embed
+
+    monkeypatch.setattr(daemon_module, "_make_embed_fn", _fake_make_embed_fn)
+    resolved = daemon_module._resolve_embed_fn(
+        "auto",
+        {"embedder_name": "openai-text-embedding-3-small", "embedder_dim": 1536},
+    )
+
+    assert callable(resolved)
+    assert resolved is fake_embed
+    assert seen_models == ["text-embedding-3-small"]
+
+
 def test_daemon_responds_to_health(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     _write_state(state_path)
