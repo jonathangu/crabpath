@@ -984,7 +984,7 @@ def run_harvest(
 ) -> dict[str, Any]:
     """Run slow loop maintenance from learning events."""
     if tasks is None:
-        tasks = ["split", "merge", "prune", "connect", "scale"]
+        tasks = ["split", "merge", "soft_prune", "prune", "connect", "scale"]
 
     event_path = Path(events_path) if events_path is not None else learning_event_path(state_path)
     events = event_log_entries(event_path)
@@ -1040,6 +1040,7 @@ def run_harvest(
             "tasks_run": maintenance_report.tasks_run,
             "edges_before": maintenance_report.edges_before,
             "edges_after": maintenance_report.edges_after,
+            "soft_pruned_edges": maintenance_report.soft_pruned_edges,
             "pruned_edges": maintenance_report.pruned_edges,
             "pruned_nodes": maintenance_report.pruned_nodes,
             "merges_applied": maintenance_report.merges_applied,

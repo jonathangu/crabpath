@@ -6,7 +6,9 @@ from pathlib import Path
 from openclawbrain.graph import Edge, Graph, Node
 from openclawbrain.index import VectorIndex
 from openclawbrain.ops.async_route_pg import parse_teacher_route_labels, run_async_route_pg
+from openclawbrain.reward import RewardSource
 from openclawbrain.store import load_state, save_state
+from openclawbrain.trace import RouteCandidate, RouteDecisionPoint, RouteTrace, route_trace_to_json
 
 
 def _write_state(path: Path) -> None:
@@ -144,3 +146,55 @@ def test_run_async_route_pg_dry_run_traces_out_emits_expected_fields(tmp_path: P
         assert "source_id" in point
         assert "candidates" in point
         assert "reward_source" in point
+
+
+def test_run_async_route_pg_modulates_updates_by_router_confidence(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    journal_path = tmp_path / "journal.jsonl"
+    traces_path = tmp_path / "route_traces.jsonl"
+    _write_state(state_path)
+    _write_journal(journal_path)
+
+    trace = RouteTrace(
+        query_id="q-1",
+        ts=1.0,
+        query_text="alpha",
+        decision_points=[
+            RouteDecisionPoint(
+                query_text="alpha",
+                source_id="seed",
+                source_preview="seed",
+                chosen_target_id="target_a",
+                candidates=[RouteCandidate(target_id="target_a", edge_weight=0.35, edge_relevance=0.0)],
+                router_conf=1.0,
+                reward_source=RewardSource.TEACHER,
+            ),
+            RouteDecisionPoint(
+                query_text="alpha",
+                source_id="seed",
+                source_preview="seed",
+                chosen_target_id="target_b",
+                candidates=[RouteCandidate(target_id="target_b", edge_weight=0.30, edge_relevance=0.0)],
+                router_conf=0.0,
+                reward_source=RewardSource.TEACHER,
+            ),
+        ],
+    )
+    traces_path.write_text(route_trace_to_json(trace) + "\n", encoding="utf-8")
+
+    def _teacher(points):
+        return [{"target_a": 1.0}, {"target_b": 1.0}], []
+
+    run_async_route_pg(
+        state_path=str(state_path),
+        journal_path=str(journal_path),
+        traces_in=str(traces_path),
+        teacher="none",
+        apply=True,
+        teacher_labeler=_teacher,
+    )
+
+    graph_after, _, _ = load_state(str(state_path))
+    weight_a = graph_after._edges["seed"]["target_a"].weight
+    weight_b = graph_after._edges["seed"]["target_b"].weight
+    assert (weight_a - 0.35) > (weight_b - 0.30)

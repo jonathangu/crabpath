@@ -309,12 +309,15 @@ def _build_traces_from_journal(
                 continue
 
             candidates: list[RouteCandidate] = []
+            chosen_edge_meta: dict[str, object] | None = None
             for edge in ordered:
                 target_node = graph.get_node(edge.target)
                 if target_node is None:
                     continue
                 target_meta = target_node.metadata if isinstance(target_node.metadata, dict) else {}
                 edge_meta = edge.metadata if isinstance(edge.metadata, dict) else {}
+                if edge.target == step.to_node:
+                    chosen_edge_meta = edge_meta
                 raw_relevance = edge_meta.get("relevance", 0.0)
                 edge_relevance = float(raw_relevance) if isinstance(raw_relevance, (int, float)) else 0.0
                 candidates.append(
@@ -326,6 +329,13 @@ def _build_traces_from_journal(
                         target_preview=_preview(target_node.content),
                         target_file=str(target_meta["file"]) if target_meta.get("file") is not None else None,
                         target_authority=str(target_meta["authority"]) if target_meta.get("authority") is not None else None,
+                        graph_prior_score=float(edge_meta["graph_prior_score"])
+                        if isinstance(edge_meta.get("graph_prior_score"), (int, float))
+                        else None,
+                        router_score_raw=float(edge_meta["router_score_raw"])
+                        if isinstance(edge_meta.get("router_score_raw"), (int, float))
+                        else None,
+                        final_score=float(edge_meta["final_score"]) if isinstance(edge_meta.get("final_score"), (int, float)) else None,
                     )
                 )
             if not candidates:
@@ -340,6 +350,24 @@ def _build_traces_from_journal(
                     candidates=candidates,
                     teacher_choose=[],
                     teacher_scores={},
+                    router_entropy=float(chosen_edge_meta["router_entropy"])
+                    if isinstance((chosen_edge_meta or {}).get("router_entropy"), (int, float))
+                    else None,
+                    router_conf=float(chosen_edge_meta["router_conf"])
+                    if isinstance((chosen_edge_meta or {}).get("router_conf"), (int, float))
+                    else None,
+                    router_margin=float(chosen_edge_meta["router_margin"])
+                    if isinstance((chosen_edge_meta or {}).get("router_margin"), (int, float))
+                    else None,
+                    relevance_entropy=float(chosen_edge_meta["relevance_entropy"])
+                    if isinstance((chosen_edge_meta or {}).get("relevance_entropy"), (int, float))
+                    else None,
+                    relevance_conf=float(chosen_edge_meta["relevance_conf"])
+                    if isinstance((chosen_edge_meta or {}).get("relevance_conf"), (int, float))
+                    else None,
+                    policy_disagreement=float(chosen_edge_meta["policy_disagreement"])
+                    if isinstance((chosen_edge_meta or {}).get("policy_disagreement"), (int, float))
+                    else None,
                     ts=float(entry.get("ts", 0.0) or 0.0),
                     reward_source=reward_source,
                 )
@@ -411,6 +439,9 @@ def _flatten_traces(
                     "target_preview": candidate.target_preview,
                     "target_file": candidate.target_file,
                     "target_authority": candidate.target_authority,
+                    "graph_prior_score": candidate.graph_prior_score,
+                    "router_score_raw": candidate.router_score_raw,
+                    "final_score": candidate.final_score,
                 }
                 for candidate in point.sorted_candidates()
             ]
@@ -439,6 +470,14 @@ def _normalize_labels(
     padded = list(labels_by_point)
     padded.extend({} for _ in range(expected_len - len(padded)))
     return padded
+
+
+def _router_conf_multiplier(router_conf: float | None) -> float:
+    """Modulate reinforcement by router confidence when available."""
+    if router_conf is None:
+        return 1.0
+    clamped = max(0.0, min(1.0, float(router_conf)))
+    return 0.5 + (0.5 * clamped)
 
 
 def _teacher_labels_openai(
@@ -586,8 +625,9 @@ def run_async_route_pg(
             target_node = working_graph.get_node(target_id)
             if source_node is None or target_node is None:
                 continue
+            conf_multiplier = _router_conf_multiplier(point.router_conf)
             scaled_outcome = scale_reward(
-                outcome=score_scale * float(score),
+                outcome=score_scale * float(score) * conf_multiplier,
                 source=effective_source,
                 weights=effective_weights,
             )
@@ -609,6 +649,21 @@ def run_async_route_pg(
                 if edge is not None:
                     metadata = edge.metadata if isinstance(edge.metadata, dict) else {}
                     metadata["relevance"] = max(-1.0, min(1.0, float(score)))
+                    if point.relevance_conf is not None:
+                        metadata["relevance_conf"] = max(0.0, min(1.0, float(point.relevance_conf)))
+                    if point.router_conf is not None:
+                        metadata["router_conf"] = max(0.0, min(1.0, float(point.router_conf)))
+                    if point.policy_disagreement is not None:
+                        metadata["policy_disagreement"] = abs(float(point.policy_disagreement))
+                    score_count_raw = metadata.get("teacher_score_count", 0)
+                    score_count = int(score_count_raw) if isinstance(score_count_raw, (int, float)) else 0
+                    score_sum_raw = metadata.get("teacher_score_sum", 0.0)
+                    score_sum = float(score_sum_raw) if isinstance(score_sum_raw, (int, float)) else 0.0
+                    score_sum += float(score)
+                    score_count += 1
+                    metadata["teacher_score_sum"] = score_sum
+                    metadata["teacher_score_count"] = score_count
+                    metadata["teacher_score_mean"] = score_sum / max(1, score_count)
                     edge.metadata = metadata
                     working_graph._edges[point.source_id][target_id] = edge
 
