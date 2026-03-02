@@ -355,6 +355,7 @@ See `examples/openai_embedder/` for a complete example.
 | `inject` | Add CORRECTION/TEACHING/DIRECTIVE nodes |
 | `replay` | Replay session queries (defaults to full-learning; use `--edges-only` for cheap replay, `--fast-learning`/`--extract-learning-events` for LLM mining only, or `--full-learning`/`--full-pipeline` for the full pass) |
 | `harvest` | Apply slow-learning pass from `learning_events.jsonl` to current graph |
+| `async-route-pg` | Background teacher-shadow routing labels from recent query journal + PG edge updates |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
 | `serve` | `openclawbrain serve --state brain/state.json [--socket-path path] [--foreground]` starts the Unix socket service in the foreground |
@@ -546,9 +547,13 @@ from openclawbrain import (
 - **Embedder changes:** OpenClawBrain stores the embedder name + dimension in state metadata and hard-fails on mismatch — no silent corruption
 - **Maintenance:** use `openclawbrain maintain` (`decay` + `scale` + `split` + `merge` + `prune` + `connect`) to rebalance structure as the graph evolves
 
+## Core thesis (recommended reading)
+
+- **Shadow routing + Ultimate Policy Gradient:** `docs/core-thesis-ultimate-policy-gradient.md`
+
 ## Cost control
 
-- **Recommended:** OpenAI `text-embedding-3-small` (~$0.02/MB) + `gpt-5-mini` for routing/scoring. Embeddings are generated at init and cached in `state.json`; `gpt-5-mini` runs on query only.
+- **Recommended:** OpenAI `text-embedding-3-small` (~$0.02/MB) + `gpt-5-mini` for optional offline teacher routing/scoring. Embeddings are generated at init and cached in `state.json`; normal query serving stays LLM-free.
 - **Auto-detection:** `openclawbrain init` tries OpenAI by default (`--embedder auto --llm auto`). If `OPENAI_API_KEY` is set, you get production-quality embeddings automatically. If not, it falls back to hash embeddings with no API calls.
 - **Batch init:** `openclawbrain init` embeds all workspace files in one batch call. Subsequent queries reuse cached vectors.
 - **Explicit control:** use `--embedder openai` / `--embedder hash` to force a specific embedder. Use `--llm none` to skip LLM-assisted splitting.
@@ -681,6 +686,27 @@ the run, so long rebuilds survive file rotation.
 
 The fast-learning and harvest pipeline is sidecar-only to the core files:
 `learning_events.jsonl` is append-only, and `replay` updates `state.json` via the same graph mutation model as existing injection commands.
+
+## Async teacher routing (offline)
+
+`query` and daemon query stay LLM-free and fast. `async-route-pg` is a separate background loop that samples recent journaled queries, replays local traversal, asks a teacher model which candidate edges it would choose, then applies dense policy-gradient updates with `apply_outcome_pg`.
+
+```bash
+openclawbrain async-route-pg \
+  --state /tmp/brain/state.json \
+  --since-hours 24 \
+  --max-queries 200 \
+  --sample-rate 0.1 \
+  --teacher openai \
+  --teacher-model gpt-5-mini \
+  --apply \
+  --json
+```
+
+Notes:
+- Default is dry-run (no state write); add `--apply` to persist updates.
+- If `OPENAI_API_KEY` is missing (or `--teacher none`), it still runs but reports teacher unavailable and applies no updates.
+- The updates improve edge weights/metadata that downstream `maintain` (`split/merge/prune/connect`) already consumes.
 
 ## Production experience
 

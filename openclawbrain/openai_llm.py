@@ -62,12 +62,12 @@ def _get_client():
     return client
 
 
-def openai_llm_fn(system: str, user: str) -> str:
+def openai_llm_fn(system: str, user: str, *, model: str = "gpt-5-mini") -> str:
     """Run a single OpenAI chat request."""
     client = _get_client()
     try:
         response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -79,7 +79,7 @@ def openai_llm_fn(system: str, user: str) -> str:
         if not _is_timeout_kwarg_error(exc):
             raise
         response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -122,9 +122,10 @@ def openai_llm_batch_fn(requests: list[dict], *, max_workers: int = 8) -> list[d
     def _call(req: dict) -> dict:
         system = str(req.get("system", ""))
         user = str(req.get("user", ""))
+        model = str(req.get("model", "gpt-5-mini"))
         request_id = req.get("id")
         try:
-            response = openai_llm_fn(system, user)
+            response = openai_llm_fn(system, user, model=model)
         except Exception as exc:  # noqa: BLE001
             return {"id": request_id, "response": "", "error": str(exc)}
         return {"id": request_id, "response": response}

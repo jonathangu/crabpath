@@ -1,5 +1,17 @@
 ## Unreleased
 
+### Async teacher routing + policy-gradient updates (`async-route-pg`)
+- Added new CLI command: `openclawbrain async-route-pg` with dry-run/apply modes and JSON summary output.
+- Added background teacher-shadow routing loop over recent query journal events:
+  - replays local traversal with keyword seeding (no query-path LLM dependency)
+  - builds candidate sets from habitual edges, with reflex fallback
+  - batches teacher requests through OpenAI chat batch helper when available
+  - parses teacher JSON labels from `choose` and/or `scores`
+- Applies dense PG updates via `apply_outcome_pg([source, target], outcome=score_scale*score)` and optionally writes edge `metadata.relevance`.
+- Includes safety behavior for missing teacher credentials (`OPENAI_API_KEY`) and `--teacher none` (runs, reports unavailable, no updates).
+- Added tests for teacher-label parsing, relative weight improvement from positive labels, and dry-run no-write behavior.
+- Updated docs (`README.md`, `docs/architecture.md`, `docs/operator-guide.md`) for operator workflow and architecture placement.
+
 ### OpenClaw integration context dedupe + compact adapter output
 - Daemon `query` now accepts prompt-context-only exclusions:
   - `exclude_files` (exact `metadata.file` matches)
