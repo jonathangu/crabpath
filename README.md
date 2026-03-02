@@ -11,6 +11,7 @@
 ## Docs
 
 - Operator guide: [docs/operator-guide.md](docs/operator-guide.md)
+- Operator quickstart: [docs/operator-quickstart.md](docs/operator-quickstart.md)
 - OpenClaw integration: [docs/openclaw-integration.md](docs/openclaw-integration.md)
 - Setup guide: [docs/setup-guide.md](docs/setup-guide.md)
 - GitHub repo: https://github.com/jonathangu/openclawbrain
@@ -21,6 +22,7 @@
 OpenClawBrain is designed to be the memory layer for **OpenClaw agents**.
 
 - Canonical operator runbook: **[docs/operator-guide.md](docs/operator-guide.md)**
+- Canonical one-page quickstart: **[docs/operator-quickstart.md](docs/operator-quickstart.md)**
 - Guide: **[docs/openclaw-integration.md](docs/openclaw-integration.md)**
 
 Quickstart (OpenClaw users):
@@ -372,19 +374,20 @@ See `examples/openai_embedder/` for a complete example.
 | `async-route-pg` | Background teacher-shadow routing labels from recent query journal + PG edge updates |
 | `health` | Show graph health metrics |
 | `status` | `openclawbrain status --state brain/state.json [--json]` returns a one-command health overview: version, nodes, edges, tier distribution, daemon status, embedder, decay half-life |
-| `serve` | `openclawbrain serve --state brain/state.json [--socket-path path] [--foreground]` starts the Unix socket service in the foreground |
+| `serve` | `openclawbrain serve start|status|stop --state brain/state.json [--socket-path path]` canonical socket-service lifecycle |
 | `journal` | Show event journal |
 | `doctor` | Run diagnostic checks |
 | `info` | Show brain info (nodes, edges, embedder) |
-| `daemon` | Start persistent worker (JSON-RPC over stdio, state loaded once) |
+| `daemon` | Low-level NDJSON worker (stdio), typically run behind `serve` |
 
 ## State persistence
 
 State writes are atomic (`temp` + `fsync` + `rename`) with `.bak` backup. Crash-safe.
 
-## Persistent Worker (`openclawbrain daemon`)
+## Low-Level Worker (`openclawbrain daemon`)
 
-For production use, run OpenClawBrain as a long-lived daemon so the graph stays hot in memory and query paths avoid repeated startup+reload overhead.
+For production use, prefer `openclawbrain serve`, which manages the daemon worker and socket lifecycle.
+`openclawbrain daemon` is the low-level NDJSON stdio worker.
 
 Why this matters:
 

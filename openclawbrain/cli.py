@@ -294,7 +294,10 @@ def _build_parser() -> argparse.ArgumentParser:
     z.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     z.add_argument("--json", action="store_true")
 
-    d = sub.add_parser("daemon")
+    d = sub.add_parser(
+        "daemon",
+        help="Low-level NDJSON worker over stdio (typically run behind `openclawbrain serve`)",
+    )
     d.add_argument("--state")
     d.add_argument("--profile")
     d.add_argument("--embed-model", default=None)
@@ -307,7 +310,14 @@ def _build_parser() -> argparse.ArgumentParser:
     d.add_argument("--route-model", default=None)
     d.add_argument("--auto-save-interval", type=int, default=10)
 
-    serve = sub.add_parser("serve", help="Run the OpenClawBrain socket service in the foreground")
+    serve = sub.add_parser("serve", help="Canonical operator socket service lifecycle (`start|status|stop`)")
+    serve.add_argument(
+        "serve_action",
+        nargs="?",
+        choices=["start", "status", "stop"],
+        default="start",
+        help="Lifecycle action (default: start)",
+    )
     serve.add_argument("--state", help="Path to state.json")
     serve.add_argument("--profile")
     serve.add_argument("--socket-path", help="Override Unix socket path (default: ~/.openclawbrain/<agent>/daemon.sock)")
@@ -324,6 +334,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=True,
         help="Run in foreground mode (default: true)",
+    )
+    serve.add_argument(
+        "--launchd",
+        action="store_true",
+        help="Print a launchd plist template for this service and exit",
+    )
+    serve.add_argument(
+        "--systemd",
+        action="store_true",
+        help="Print a systemd unit template for this service and exit",
     )
 
     x = sub.add_parser("inject")
@@ -628,8 +648,9 @@ def _load_query_vector_from_stdin() -> list[float]:
 
 def _default_daemon_socket_path(state_path: str) -> str:
     """Resolve the default daemon socket path for a state file."""
-    agent = Path(state_path).expanduser().parent.name or "main"
-    return str(Path.home() / ".openclawbrain" / agent / "daemon.sock")
+    from .socket_server import _default_socket_path as _server_default_socket_path
+
+    return str(Path(_server_default_socket_path(state_path)).expanduser())
 
 
 def _daemon_socket_status(state_path: str) -> tuple[bool, str]:
@@ -648,6 +669,106 @@ def _daemon_socket_status(state_path: str) -> tuple[bool, str]:
         return False, str(test_path)
     finally:
         sock.close()
+
+
+def _socket_health_status(
+    socket_path: str,
+    *,
+    timeout: float = 1.0,
+) -> tuple[bool, dict[str, object] | None, str | None]:
+    """Check socket existence + daemon health call via socket protocol."""
+    resolved_socket = str(Path(socket_path).expanduser())
+    if not Path(resolved_socket).exists():
+        return False, None, f"socket missing: {resolved_socket}"
+
+    from .socket_client import OCBClient
+
+    try:
+        with OCBClient(resolved_socket, timeout=timeout) as client:
+            health = client.health()
+        return True, health, None
+    except Exception as exc:  # noqa: BLE001
+        return False, None, str(exc)
+
+
+def _serve_status_payload(state_path: str, socket_path: str) -> dict[str, object]:
+    """Build serve-status payload from socket path and ping health response."""
+    resolved_state = str(Path(state_path).expanduser())
+    resolved_socket = str(Path(socket_path).expanduser())
+    socket_exists = Path(resolved_socket).exists()
+    ping_ok, health, error = _socket_health_status(resolved_socket)
+    return {
+        "state_path": resolved_state,
+        "socket_path": resolved_socket,
+        "socket_exists": socket_exists,
+        "daemon_running": bool(ping_ok),
+        "health": health,
+        "error": error,
+    }
+
+
+def _render_launchd_plist(*, state_path: str, socket_path: str) -> str:
+    """Render a minimal launchd plist for `openclawbrain serve start`."""
+    state_parent = Path(state_path).expanduser().parent
+    label = f"com.openclawbrain.{state_parent.name or 'main'}"
+    stdout_path = state_parent / "daemon.stdout.log"
+    stderr_path = state_parent / "daemon.stderr.log"
+    return "\n".join(
+        [
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+            "<plist version=\"1.0\">",
+            "<dict>",
+            "  <key>Label</key>",
+            f"  <string>{label}</string>",
+            "  <key>ProgramArguments</key>",
+            "  <array>",
+            "    <string>/usr/bin/env</string>",
+            "    <string>openclawbrain</string>",
+            "    <string>serve</string>",
+            "    <string>start</string>",
+            "    <string>--state</string>",
+            f"    <string>{Path(state_path).expanduser()}</string>",
+            "    <string>--socket-path</string>",
+            f"    <string>{Path(socket_path).expanduser()}</string>",
+            "  </array>",
+            "  <key>RunAtLoad</key>",
+            "  <true/>",
+            "  <key>KeepAlive</key>",
+            "  <true/>",
+            "  <key>StandardOutPath</key>",
+            f"  <string>{stdout_path}</string>",
+            "  <key>StandardErrorPath</key>",
+            f"  <string>{stderr_path}</string>",
+            "</dict>",
+            "</plist>",
+        ]
+    )
+
+
+def _render_systemd_unit(*, state_path: str, socket_path: str) -> str:
+    """Render a minimal systemd unit for `openclawbrain serve start`."""
+    state_parent = Path(state_path).expanduser().parent
+    return "\n".join(
+        [
+            "[Unit]",
+            "Description=OpenClawBrain socket service",
+            "After=network.target",
+            "",
+            "[Service]",
+            "Type=simple",
+            f"WorkingDirectory={state_parent}",
+            (
+                "ExecStart=/usr/bin/env openclawbrain serve start "
+                f"--state {Path(state_path).expanduser()} --socket-path {Path(socket_path).expanduser()}"
+            ),
+            "Restart=always",
+            "RestartSec=2",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+        ]
+    )
 
 
 def _last_replayed_display(value: object) -> str:
@@ -2582,20 +2703,85 @@ def cmd_serve(args: argparse.Namespace) -> int:
         True,
     )
     route_model = args.route_model
-
-    from .socket_server import _default_socket_path as _server_default_socket_path
     from .socket_server import main as socket_server_main
 
     socket_path = (
         str(Path(args.socket_path).expanduser())
         if args.socket_path
-        else str(Path(_server_default_socket_path(state_path)).expanduser())
+        else _default_daemon_socket_path(state_path)
     )
+    action = getattr(args, "serve_action", "start")
+
+    if action == "status":
+        payload = _serve_status_payload(state_path, socket_path)
+        if payload["daemon_running"]:
+            health = payload["health"] if isinstance(payload.get("health"), dict) else {}
+            print(
+                "\n".join(
+                    [
+                        "OpenClawBrain serve status: running",
+                        f"State: {payload['state_path']}",
+                        f"Socket: {payload['socket_path']}",
+                        (
+                            "Health: "
+                            f"nodes={health.get('nodes', 'n/a')} "
+                            f"edges={health.get('edges', 'n/a')} "
+                            f"dormant_pct={health.get('dormant_pct', 'n/a')}"
+                        ),
+                    ]
+                )
+            )
+            return 0
+        print(
+            "\n".join(
+                [
+                    "OpenClawBrain serve status: not running",
+                    f"State: {payload['state_path']}",
+                    f"Socket: {payload['socket_path']}",
+                    f"Error: {payload['error']}",
+                ]
+            )
+        )
+        return 1
+
+    if action == "stop":
+        ping_ok, _, error = _socket_health_status(socket_path)
+        if ping_ok:
+            from .socket_client import OCBClient
+
+            try:
+                with OCBClient(socket_path, timeout=2.0) as client:
+                    client.request("shutdown", {})
+                print(f"Shutdown request sent to {socket_path}")
+                return 0
+            except Exception as exc:  # noqa: BLE001
+                error = str(exc)
+
+        print(
+            "\n".join(
+                [
+                    f"Could not stop via socket: {error}",
+                    "If service is managed by launchd:",
+                    "  launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.openclawbrain.daemon.plist",
+                    "If service is managed by systemd:",
+                    "  sudo systemctl stop openclawbrain-daemon.service",
+                ]
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.launchd:
+        print(_render_launchd_plist(state_path=state_path, socket_path=socket_path))
+        return 0
+    if args.systemd:
+        print(_render_systemd_unit(state_path=state_path, socket_path=socket_path))
+        return 0
 
     print("OpenClawBrain socket service (foreground)", file=sys.stderr)
     print(f"  socket path: {socket_path}", file=sys.stderr)
     print(f"  state path: {state_path}", file=sys.stderr)
-    print(f"  query status: openclawbrain status --state {state_path}", file=sys.stderr)
+    print(f"  query status: openclawbrain serve status --state {state_path}", file=sys.stderr)
     print("  stop: Ctrl-C", file=sys.stderr)
 
     server_argv = ["--state", state_path]
