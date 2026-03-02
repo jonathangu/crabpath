@@ -38,7 +38,11 @@ OpenClawBrain stores everything in a single portable file:
 
 - Python **3.10+**
 - `pip install openclawbrain`
-- OpenAI embeddings: `OPENAI_API_KEY` in the environment of whatever runs the daemon. Required for the recommended production setup; hash embeddings are the offline/testing fallback.
+- Daemon query embedding mode defaults to `--embed-model auto`:
+  - `hash-v1` states use hash query embeddings (offline, no OpenAI call).
+  - Non-hash states use OpenAI query embeddings with `text-embedding-3-small` (`OPENAI_API_KEY` required in daemon environment).
+  - Force hash mode: `--embed-model hash`.
+  - Force explicit model: `--embed-model text-embedding-3-small` (or another compatible model).
 
 Install:
 
@@ -262,6 +266,12 @@ The daemon speaks NDJSON over `stdin`/`stdout`.
 - Start-up cost is paid once (state loaded at process start); expected savings are 100-800ms on hot-path calls, with production measurement at ~504ms on Mac Mini M4 Pro.
 
 Supported methods: `query`, `learn`, `last_fired`, `learn_by_chat_id`, `capture_feedback`, `maintain`, `health`, `info`, `save`, `reload`, `shutdown`, `inject`, `correction`.
+
+Daemon embed-model default and overrides:
+- Default is `--embed-model auto`.
+- `hash-v1` state metadata => hash query embeddings (offline).
+- Non-hash state metadata => OpenAI query embeddings with `text-embedding-3-small`.
+- Force modes with `--embed-model hash` or `--embed-model <model>`.
 
 Example request and reply:
 
@@ -514,9 +524,12 @@ python3 -m pip show openclawbrain
 
 ### “Embedder mismatch / dimension mismatch”
 
-OpenClawBrain hard-fails when `state.json` embedder metadata doesn’t match.
+Dimension mismatch usually means query embedding dimensions do not match the vectors stored in `state.json` (often from forcing the wrong daemon embed model).
 
-Fix: rebuild the brain with the embedder you intend to use.
+Fixes:
+- Run daemon in default auto mode (`--embed-model auto`), which follows state metadata safely.
+- Rebuild state if needed with the embedder you intend to keep.
+- Only force `--embed-model hash` or `--embed-model <model>` when you intentionally want that behavior and dimensions are known to match.
 
 ```bash
 openclawbrain init --workspace ~/.openclaw/workspace --output ~/.openclawbrain/main

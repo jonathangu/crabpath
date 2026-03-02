@@ -21,6 +21,13 @@ What `serve` does:
 - Starts the long-lived `openclawbrain daemon` worker.
 - Exposes a Unix socket at `~/.openclawbrain/main/daemon.sock` (for agent `main`).
 - Keeps the daemon hot in memory and restarts it if needed.
+- Uses daemon default `--embed-model auto` for query embeddings.
+
+Daemon embed-model auto behavior:
+- `hash-v1` states -> hash query embeddings (offline).
+- Non-hash states -> OpenAI query embeddings (`text-embedding-3-small`).
+- Force offline mode: `--embed-model hash`.
+- Force explicit model: `--embed-model <model>` (for example `text-embedding-3-small`).
 
 ## 3) Confirm it's ON
 
@@ -163,6 +170,13 @@ echo '{"id":"op-q1","method":"query","params":{"query":"incident deploy rollback
   | openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
+Force query embed-model when needed:
+
+```bash
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model hash
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model text-embedding-3-small
+```
+
 Operational notes:
 - Default is dry-run. Add `--apply` to persist updates.
 - If `OPENAI_API_KEY` is missing (or `--teacher none`), it reports teacher unavailable and writes no updates.
@@ -174,6 +188,7 @@ Operational notes:
 |---|---|---|
 | `status` says `Daemon: not running` | service not started, crashed, or wrong state path | `openclawbrain serve --state ~/.openclawbrain/main/state.json` then `openclawbrain status --state ~/.openclawbrain/main/state.json` |
 | `daemon.sock` missing | service never started or wrong agent/state directory | `ls -la ~/.openclawbrain/main` and restart `openclawbrain serve` with the same `--state` |
+| embedder/dimension mismatch on daemon query | forced wrong `--embed-model` for this state | remove override and use auto; for direct daemon run use `openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model auto` |
 | Replay fails with lock/single-writer message | another process holds `state.json.lock` | stop the other writer, use `examples/ops/rebuild_then_cutover.sh ...`, or expert override with `--force` / `OPENCLAWBRAIN_STATE_LOCK_FORCE=1` |
 | Replay restarts from old work | checkpoint not used, wrong path, or intentionally ignored | run with `--resume --checkpoint ~/.openclawbrain/main/replay_checkpoint.json`; inspect with `openclawbrain replay --state ~/.openclawbrain/main/state.json --show-checkpoint --resume` |
 | `LLM required for fast-learning` | no OpenAI client/key configured for fast-learning mining | set `OPENAI_API_KEY` or run `--edges-only` replay path |
