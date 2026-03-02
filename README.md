@@ -749,6 +749,50 @@ Notes:
 - If `OPENAI_API_KEY` is missing (or `--teacher none`), it still runs but reports teacher unavailable and applies no updates.
 - The updates improve edge weights/metadata that downstream `maintain` (`split/merge/prune/connect`) already consumes.
 
+## Learned route model training
+
+OpenClawBrain now supports `route_mode=learned` at runtime with a trainable low-rank route model (`openclawbrain.route_model`).
+
+Storage boundary modules:
+- `openclawbrain.storage.state_store`: `StateStore` / `JsonStateStore`
+- `openclawbrain.storage.event_store`: `EventStore` / `JsonlEventStore`
+
+Unified label schema:
+- `openclawbrain.labels.LabelRecord` with `reward_source` + `weight`
+- works across teacher labels, human corrections, and self-learning events
+
+Training flow:
+
+```bash
+# 1) Build traces (optionally include query vectors)
+openclawbrain async-route-pg \
+  --state /tmp/brain/state.json \
+  --traces-out /tmp/brain/route_traces.jsonl \
+  --include-query-vector \
+  --teacher none
+
+# 2) Train route model
+openclawbrain train-route-model \
+  --state /tmp/brain/state.json \
+  --traces-in /tmp/brain/route_traces.jsonl \
+  --out /tmp/brain/route_model.npz \
+  --rank 16 \
+  --epochs 3 \
+  --lr 0.01 \
+  --label-temp 0.5 \
+  --json
+
+# 3) Run daemon with learned route mode
+openclawbrain daemon \
+  --state /tmp/brain/state.json \
+  --route-mode learned \
+  --route-model /tmp/brain/route_model.npz
+```
+
+Replay/harvest now optionally emit route traces + labels:
+- `openclawbrain replay --traces-out ... --labels-out ...`
+- `openclawbrain harvest --traces-out ... --labels-out ...`
+
 ## Production experience
 
 Three brains run in production on a Mac Mini M4 Pro:

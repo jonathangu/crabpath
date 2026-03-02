@@ -46,6 +46,11 @@ def test_query_params_max_context_defaults_to_prompt_chars() -> None:
     assert params.max_context_chars == 777
 
 
+def test_query_params_accepts_learned_route_mode() -> None:
+    params = QueryParams.from_dict({"query": "alpha", "route_mode": "learned"})
+    assert params.route_mode == "learned"
+
+
 def test_query_params_validation_errors() -> None:
     with pytest.raises(ValueError, match="query must be a non-empty string"):
         QueryParams.from_dict({"query": ""})
@@ -53,7 +58,7 @@ def test_query_params_validation_errors() -> None:
     with pytest.raises(ValueError, match="top_k must be an integer"):
         QueryParams.from_dict({"query": "x", "top_k": "2"})
 
-    with pytest.raises(ValueError, match=r"route_mode must be one of: off, edge, edge\+sim"):
+    with pytest.raises(ValueError, match=r"route_mode must be one of: off, edge, edge\+sim, learned"):
         QueryParams.from_dict({"query": "x", "route_mode": "bad"})
 
     with pytest.raises(ValueError, match="route_use_relevance must be a boolean"):

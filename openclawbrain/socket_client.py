@@ -204,7 +204,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--method", required=True)
     parser.add_argument("--params", default="{}")
     parser.add_argument("--timeout", type=float, default=30.0)
-    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default="off")
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default="off")
     parser.add_argument("--route-top-k", type=int, default=5)
     parser.add_argument("--route-alpha-sim", type=float, default=0.5)
     parser.add_argument(

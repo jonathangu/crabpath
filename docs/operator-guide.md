@@ -408,3 +408,43 @@ Why this avoids drift:
 - `sync_registry` writes one canonical registry under `~/.openclaw/credentials/registry`.
 - Each workspace `docs/secret-pointers.md` and `docs/capabilities.md` becomes a symlink to that canonical file.
 - Any refresh updates all workspaces at once because they all reference the same target.
+
+## 17) Learned route model recipe
+
+Generate traces with query vectors:
+
+```bash
+openclawbrain async-route-pg \
+  --state ~/.openclawbrain/main/state.json \
+  --teacher none \
+  --traces-out ~/.openclawbrain/main/route_traces.jsonl \
+  --include-query-vector
+```
+
+Train and save model:
+
+```bash
+openclawbrain train-route-model \
+  --state ~/.openclawbrain/main/state.json \
+  --traces-in ~/.openclawbrain/main/route_traces.jsonl \
+  --labels-in ~/.openclawbrain/main/route_labels.jsonl \
+  --out ~/.openclawbrain/main/route_model.npz \
+  --rank 16 \
+  --epochs 3 \
+  --lr 0.01 \
+  --label-temp 0.5 \
+  --json
+```
+
+Enable at runtime:
+
+```bash
+openclawbrain daemon \
+  --state ~/.openclawbrain/main/state.json \
+  --route-mode learned \
+  --route-model ~/.openclawbrain/main/route_model.npz
+```
+
+Optional exports during replay/harvest:
+- `openclawbrain replay --traces-out ... --labels-out ...`
+- `openclawbrain harvest --traces-out ... --labels-out ...`

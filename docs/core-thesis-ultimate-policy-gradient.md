@@ -140,8 +140,13 @@ The new async teacher + PG loop makes these mechanisms smarter by producing:
 ### Milestone 1 (shipped)
 - `route_mode=edge+sim`: runtime query-conditioned routing based on embeddings + learned weights + relevance
 
+### Milestone 2 (shipped)
+- Explicit reward-source weighting (`openclawbrain.reward.RewardWeights`) across human/self/harvester/teacher.
+- Replayable route traces in `openclawbrain.trace` + unified labels in `openclawbrain.labels`.
+- Learned runtime route policy in `openclawbrain.route_model` + `route_mode=learned`.
+- Storage boundary interfaces in `openclawbrain.storage` for state/event persistence.
+
 ### Next milestones
-- Add explicit reward-source weighting (human/self/harvester/teacher) as first-class inputs.
 - Add an eval harness that measures: token count, turn count, and retrieval correctness.
 - Add shortcut/pointer edge creation offline (teacher-assisted connect during maintain).
 
@@ -150,7 +155,7 @@ The new async teacher + PG loop makes these mechanisms smarter by producing:
 ## How to run (operator sketch)
 1) Run `async-route-pg` in dry-run and inspect JSON deltas.
 2) Apply to a copied state first.
-3) Enable runtime `route_mode=edge+sim` and compare context size + turn count.
+3) Train `route_model.npz` from traces/labels and enable runtime `route_mode=learned`.
 
 ---
 

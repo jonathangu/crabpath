@@ -125,6 +125,7 @@ class RouteTrace:
     traversal_config: dict[str, Any] = field(default_factory=dict)
     route_policy: dict[str, Any] = field(default_factory=dict)
     chat_id: str | None = None
+    query_vector: list[float] | None = None
     decision_points: list[RouteDecisionPoint] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -137,6 +138,7 @@ class RouteTrace:
             "fired_nodes": list(self.fired_nodes),
             "traversal_config": dict(self.traversal_config),
             "route_policy": dict(self.route_policy),
+            "query_vector": list(self.query_vector) if self.query_vector is not None else None,
             "decision_points": [item.to_dict() for item in self.decision_points],
         }
 
@@ -159,6 +161,9 @@ class RouteTrace:
             fired_nodes=[str(item) for item in payload.get("fired_nodes", [])] if isinstance(payload.get("fired_nodes"), list) else [],
             traversal_config=dict(payload.get("traversal_config", {})) if isinstance(payload.get("traversal_config"), dict) else {},
             route_policy=dict(payload.get("route_policy", {})) if isinstance(payload.get("route_policy"), dict) else {},
+            query_vector=[float(item) for item in payload.get("query_vector", [])]
+            if isinstance(payload.get("query_vector"), list)
+            else None,
             decision_points=decision_points,
         )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-ROUTE_MODES = {"off", "edge", "edge+sim"}
+ROUTE_MODES = {"off", "edge", "edge+sim", "learned"}
 PROTOCOL_VERSION = "v1"
 
 
@@ -52,10 +52,10 @@ def parse_route_mode(value: object) -> str:
     if value is None:
         return "off"
     if not isinstance(value, str):
-        raise ValueError("route_mode must be one of: off, edge, edge+sim")
+        raise ValueError("route_mode must be one of: off, edge, edge+sim, learned")
     mode = value.strip().lower()
     if mode not in ROUTE_MODES:
-        raise ValueError("route_mode must be one of: off, edge, edge+sim")
+        raise ValueError("route_mode must be one of: off, edge, edge+sim, learned")
     return mode
 
 

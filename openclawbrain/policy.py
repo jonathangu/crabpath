@@ -7,6 +7,7 @@ from typing import Callable
 
 from .index import VectorIndex
 from .protocol import parse_float, parse_int, parse_route_mode
+from .route_model import RouteModel
 
 
 @dataclass(frozen=True)
@@ -49,10 +50,22 @@ def make_runtime_route_fn(
     policy: RoutingPolicy,
     query_vector: list[float],
     index: VectorIndex,
+    learned_model: RouteModel | None = None,
+    target_projections: dict[str, object] | None = None,
 ) -> Callable[[str | None, list[object], str], list[str]] | None:
     """Build deterministic local route policy for habitual candidates."""
     if policy.route_mode == "off":
         return None
+    if policy.route_mode == "learned":
+        if learned_model is None:
+            return None
+        return make_learned_route_fn(
+            model=learned_model,
+            target_projections=target_projections or {},
+            index=index,
+            config=policy,
+            query_vector=query_vector,
+        )
 
     use_similarity = policy.route_mode == "edge+sim"
 
@@ -82,5 +95,50 @@ def make_runtime_route_fn(
             key=lambda item: (-item[1], item[0]),
         )
         return [target_id for target_id, _score_value in ranked[: policy.top_k] if target_id]
+
+    return _route_fn
+
+
+def make_learned_route_fn(
+    model: RouteModel,
+    target_projections: dict[str, object],
+    index: VectorIndex,
+    config: RoutingPolicy,
+    query_vector: list[float],
+) -> Callable[[str | None, list[object], str], list[str]]:
+    """Build deterministic learned route function using low-rank scoring."""
+    q_proj = model.project_query(query_vector)
+
+    def _target_proj(target_id: str):
+        cached = target_projections.get(target_id)
+        if cached is not None:
+            return cached
+        raw = index._vectors.get(target_id)
+        if raw is None:
+            return None
+        projected = model.project_target(raw)
+        target_projections[target_id] = projected
+        return projected
+
+    def _route_fn(_source_id: str | None, candidates: list[object], _query_text: str) -> list[str]:
+        ranked: list[tuple[str, float]] = []
+        for edge in candidates:
+            target_id = str(getattr(edge, "target", ""))
+            if not target_id:
+                continue
+            t_proj = _target_proj(target_id)
+            if t_proj is None:
+                continue
+            metadata = getattr(edge, "metadata", None)
+            relevance = 0.0
+            if isinstance(metadata, dict):
+                raw_relevance = metadata.get("relevance", 0.0)
+                if isinstance(raw_relevance, (int, float)):
+                    relevance = float(raw_relevance)
+            features = [float(getattr(edge, "weight", 0.0)), relevance, 1.0]
+            score = model.score_projected(q_proj, t_proj, features)
+            ranked.append((target_id, score))
+        ranked.sort(key=lambda item: (-item[1], item[0]))
+        return [target_id for target_id, _ in ranked[: config.top_k]]
 
     return _route_fn
