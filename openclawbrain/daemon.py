@@ -19,8 +19,7 @@ from .autotune import measure_health
 from .graph import Graph, Node
 from .hasher import HashEmbedder
 from .index import VectorIndex
-from .journal import log_health, log_learn, log_query
-from .learn import apply_outcome, apply_outcome_pg
+from .learn import apply_outcome_pg
 from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_correction, inject_node
 from .policy import RoutingPolicy, make_runtime_route_fn
@@ -34,7 +33,7 @@ from .protocol import (
     parse_str_list,
 )
 from .state_lock import state_write_lock
-from .store import load_state, save_state
+from .storage import EventStore, JsonStateStore, JsonlEventStore, StateStore
 from .traverse import TraversalConfig, traverse
 from .prompt_context import build_prompt_context_ranked_with_stats
 
@@ -96,6 +95,51 @@ def _fired_log_path(state_path: str) -> str:
 def _injected_feedback_log_path(state_path: str) -> str:
     """Resolve injected_feedback.jsonl path for deduped feedback events."""
     return str(Path(state_path).expanduser().parent / INJECTED_FEEDBACK_LOG_FILE)
+
+
+def _append_query_event(
+    event_store: EventStore,
+    *,
+    query_text: str,
+    fired_ids: list[str],
+    node_count: int,
+    metadata: dict[str, object],
+) -> None:
+    event_store.append(
+        {
+            "type": "query",
+            "query": query_text,
+            "fired": fired_ids,
+            "fired_count": len(fired_ids),
+            "node_count": node_count,
+            "metadata": metadata,
+        }
+    )
+
+
+def _append_learn_event(
+    event_store: EventStore,
+    *,
+    fired_ids: list[str],
+    outcome: float,
+    metadata: dict[str, object] | None = None,
+) -> None:
+    event_store.append(
+        {
+            "type": "learn",
+            "fired": fired_ids,
+            "outcome": outcome,
+            "metadata": metadata,
+        }
+    )
+
+
+def _resolve_event_store(event_store: EventStore | None, state_path: str | None) -> EventStore:
+    if event_store is not None:
+        return event_store
+    if state_path is None:
+        raise ValueError("state_path is required when event_store is not provided")
+    return JsonlEventStore(_journal_path(state_path))
 
 
 def _ms(start: float, end: float) -> float:
@@ -282,12 +326,14 @@ def _handle_query(
     meta: dict[str, object],
     embed_fn: Callable[[str], list[float]] | None,
     params: dict[str, object],
-    state_path: str,
+    event_store: EventStore | None = None,
+    state_path: str | None = None,
 ) -> dict[str, object]:
     """Handle query requests with embed + traversal timings.
 
     Includes a deterministic `prompt_context` block suitable for prompt caching.
     """
+    resolved_event_store = _resolve_event_store(event_store, state_path)
     query = QueryParams.from_dict(params)
     query_text = query.query
     top_k = query.top_k
@@ -362,11 +408,11 @@ def _handle_query(
     )
     prompt_context_stats["prompt_context_excluded_files_count"] = len(excluded_files)
     prompt_context_stats["prompt_context_excluded_node_ids_count"] = len(excluded_node_ids)
-    log_query(
+    _append_query_event(
+        event_store=resolved_event_store,
         query_text=query_text,
         fired_ids=result.fired,
         node_count=graph.node_count(),
-        journal_path=_journal_path(state_path),
         metadata={"chat_id": query.chat_id, "max_fired_nodes": max_fired_nodes, **prompt_context_stats},
     )
 
@@ -432,7 +478,8 @@ def _do_learn(
     graph: Graph,
     index: VectorIndex,
     embed_fn: Callable[[str], list[float]] | None,
-    state_path: str,
+    event_store: EventStore | None,
+    state_path: str | None,
     *,
     fired_ids: list[str],
     outcome: float,
@@ -447,6 +494,7 @@ def _do_learn(
     """
     should_write = False
     edges_updated = 0
+    resolved_event_store = _resolve_event_store(event_store, state_path)
 
     # 1. Apply outcome to fired path
     if fired_ids and outcome != 0:
@@ -457,10 +505,10 @@ def _do_learn(
         edges_updated = _real_graph_updates(updates)
         if edges_updated:
             should_write = True
-        log_learn(
+        _append_learn_event(
+            event_store=resolved_event_store,
             fired_ids=fired_ids,
             outcome=outcome,
-            journal_path=_journal_path(state_path),
             metadata=log_metadata,
         )
 
@@ -514,8 +562,9 @@ def _handle_correction(
     graph: Graph,
     index: VectorIndex,
     embed_fn: Callable[[str], list[float]] | None,
-    state_path: str,
     params: dict[str, object],
+    event_store: EventStore | None = None,
+    state_path: str | None = None,
 ) -> tuple[dict[str, object], bool]:
     """Human-initiated correction via chat_id lookback."""
     chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
@@ -526,7 +575,7 @@ def _handle_correction(
     fired_ids = _recent_fired_nodes(daemon_state, chat_id, lookback)
 
     payload, should_write = _do_learn(
-        graph, index, embed_fn, state_path,
+        graph, index, embed_fn, event_store, state_path,
         fired_ids=fired_ids,
         outcome=outcome,
         content=content,
@@ -558,8 +607,9 @@ def _handle_learn_by_chat_id(
     graph: Graph,
     index: VectorIndex,
     embed_fn: Callable[[str], list[float]] | None,
-    state_path: str,
     params: dict[str, object],
+    event_store: EventStore | None = None,
+    state_path: str | None = None,
 ) -> tuple[dict[str, object], bool]:
     """Learn by chat_id lookback using in-memory fired history only."""
     chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
@@ -570,6 +620,7 @@ def _handle_learn_by_chat_id(
         graph,
         index,
         embed_fn,
+        event_store,
         state_path,
         fired_ids=fired_ids,
         outcome=outcome,
@@ -582,8 +633,9 @@ def _handle_self_learn(
     graph: Graph,
     index: VectorIndex,
     embed_fn: Callable[[str], list[float]] | None,
-    state_path: str,
     params: dict[str, object],
+    event_store: EventStore | None = None,
+    state_path: str | None = None,
 ) -> tuple[dict[str, object], bool]:
     """Agent-initiated learning — corrections and positive reinforcement."""
     raw_content = params.get("content")
@@ -602,7 +654,7 @@ def _handle_self_learn(
         raise ValueError("node_type must be one of: CORRECTION, TEACHING")
 
     return _do_learn(
-        graph, index, embed_fn, state_path,
+        graph, index, embed_fn, event_store, state_path,
         fired_ids=fired_ids,
         outcome=outcome,
         content=raw_content.strip(),
@@ -620,8 +672,10 @@ def _handle_capture_feedback(
     embed_fn: Callable[[str], list[float]] | None,
     state_path: str,
     params: dict[str, object],
+    event_store: EventStore | None = None,
 ) -> tuple[dict[str, object], bool]:
     """Capture real-time correction/teaching/directive with optional learning + dedup."""
+    resolved_event_store = _resolve_event_store(event_store, state_path)
     chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
     lookback = parse_int(params.get("lookback"), "lookback", default=1)
 
@@ -714,10 +768,10 @@ def _handle_capture_feedback(
         edges_updated = _real_graph_updates(updates)
         if edges_updated:
             should_write = True
-        log_learn(
+        _append_learn_event(
+            event_store=resolved_event_store,
             fired_ids=fired_ids,
             outcome=outcome_used,
-            journal_path=_journal_path(state_path),
             metadata={"chat_id": chat_id, "source": "capture_feedback", "kind": kind},
         )
 
@@ -749,13 +803,14 @@ def _handle_capture_feedback(
 
 
 def _handle_learn(graph: Graph, index: VectorIndex, embed_fn: Callable[[str], list[float]] | None,
-                   state_path: str, params: dict[str, object]) -> tuple[dict[str, object], bool]:
+                   event_store: EventStore | None, state_path: str | None,
+                   params: dict[str, object]) -> tuple[dict[str, object], bool]:
     """Bare learning — just outcome on fired nodes, no injection."""
     fired_nodes = parse_str_list(params.get("fired_nodes"), "fired_nodes")
     outcome = parse_float(params.get("outcome"), "outcome", required=True)
 
     return _do_learn(
-        graph, index, embed_fn, state_path,
+        graph, index, embed_fn, event_store, state_path,
         fired_ids=fired_nodes,
         outcome=outcome,
     )
@@ -766,6 +821,7 @@ def _handle_maintain(
     params: dict[str, object],
     embed_fn: Callable[[str], list[float]] | None,
     state_path: str,
+    state_store: StateStore,
 ) -> tuple[dict[str, object], bool]:
     """Handle maintenance request by delegating to shared maintenance workflow."""
     raw_tasks = params.get("tasks")
@@ -797,7 +853,7 @@ def _handle_maintain(
     )
     should_write = False
     if not dry_run and any(task in report.tasks_run for task in ("decay", "scale", "split", "prune", "merge", "connect")):
-        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
+        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_store)
         should_write = True
 
     return asdict(report), should_write
@@ -817,9 +873,9 @@ def _handle_info(graph: Graph, meta: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _load_new_state(state_path: str) -> tuple[Graph, VectorIndex, dict[str, object]]:
+def _load_new_state(state_store: StateStore) -> tuple[Graph, VectorIndex, dict[str, object]]:
     """Reload state.json from disk."""
-    graph, index, meta = load_state(state_path)
+    graph, index, meta = state_store.load()
     return graph, index, dict(meta)
 
 
@@ -839,7 +895,9 @@ def main(argv: list[str] | None = None) -> int:
     state_path = str(Path(args.state).expanduser())
     lock_cm = state_write_lock(state_path, force=args.force, command_hint="openclawbrain daemon")
     with lock_cm if state_path else nullcontext():
-        graph, index, meta = load_state(state_path)
+        state_store = JsonStateStore(state_path)
+        event_store = JsonlEventStore(_journal_path(state_path))
+        graph, index, meta = state_store.load()
         daemon_state = _DaemonState(
             graph=graph,
             index=index,
@@ -893,7 +951,7 @@ def main(argv: list[str] | None = None) -> int:
                             meta=daemon_state.meta,
                             embed_fn=embed_fn,
                             params=params,
-                            state_path=state_path,
+                            event_store=event_store,
                         )
                         query_chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=False)
                         if query_chat_id is not None:
@@ -923,7 +981,7 @@ def main(argv: list[str] | None = None) -> int:
                     elif method == "learn":
                         payload, should_write = _handle_learn(
                             daemon_state.graph, daemon_state.index, embed_fn,
-                            state_path, params,
+                            event_store, state_path, params,
                         )
                     elif method == "inject":
                         payload, should_write = _handle_inject(
@@ -939,22 +997,18 @@ def main(argv: list[str] | None = None) -> int:
                             params,
                             embed_fn,
                             state_path,
+                            state_store,
                         )
                     elif method == "health":
                         payload = _handle_health(daemon_state.graph)
                     elif method == "info":
                         payload = _handle_info(daemon_state.graph, daemon_state.meta)
                     elif method == "save":
-                        save_state(
-                            graph=daemon_state.graph,
-                            index=daemon_state.index,
-                            path=state_path,
-                            meta=daemon_state.meta,
-                        )
+                        state_store.save(daemon_state.graph, daemon_state.index, daemon_state.meta)
                         daemon_state.write_count = 0
                         payload = {"saved": True}
                     elif method == "reload":
-                        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
+                        daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_store)
                         embed_fn = _resolve_embed_fn(args.embed_model, daemon_state.meta)
                         daemon_state.write_count = 0
                         payload = {"reloaded": True}
@@ -964,7 +1018,7 @@ def main(argv: list[str] | None = None) -> int:
                             graph=daemon_state.graph,
                             index=daemon_state.index,
                             embed_fn=embed_fn,
-                            state_path=state_path,
+                            event_store=event_store,
                             params=params,
                         )
                     elif method == "last_fired":
@@ -978,7 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
                             graph=daemon_state.graph,
                             index=daemon_state.index,
                             embed_fn=embed_fn,
-                            state_path=state_path,
+                            event_store=event_store,
                             params=params,
                         )
                     elif method == "capture_feedback":
@@ -989,6 +1043,7 @@ def main(argv: list[str] | None = None) -> int:
                             meta=daemon_state.meta,
                             embed_fn=embed_fn,
                             state_path=state_path,
+                            event_store=event_store,
                             params=params,
                         )
                     elif method in ("self_learn", "self_correct"):
@@ -997,17 +1052,12 @@ def main(argv: list[str] | None = None) -> int:
                             graph=daemon_state.graph,
                             index=daemon_state.index,
                             embed_fn=embed_fn,
-                            state_path=state_path,
+                            event_store=event_store,
                             params=params,
                         )
                     elif method == "shutdown":
                         if daemon_state.write_count > 0:
-                            save_state(
-                                graph=daemon_state.graph,
-                                index=daemon_state.index,
-                                path=state_path,
-                                meta=daemon_state.meta,
-                            )
+                            state_store.save(daemon_state.graph, daemon_state.index, daemon_state.meta)
                         _emit_response(req_id, {"shutdown": True})
                         break
                     else:
@@ -1017,12 +1067,7 @@ def main(argv: list[str] | None = None) -> int:
                     if should_write:
                         daemon_state.write_count += 1
                         if auto_save_interval and daemon_state.write_count % auto_save_interval == 0:
-                            save_state(
-                                graph=daemon_state.graph,
-                                index=daemon_state.index,
-                                path=state_path,
-                                meta=daemon_state.meta,
-                            )
+                            state_store.save(daemon_state.graph, daemon_state.index, daemon_state.meta)
 
                     _emit_response(req_id, payload)
                 except Exception as exc:  # noqa: BLE001
@@ -1032,12 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
         finally:
             if stop_requested and daemon_state.write_count > 0:
-                save_state(
-                    graph=daemon_state.graph,
-                    index=daemon_state.index,
-                    path=state_path,
-                    meta=daemon_state.meta,
-                )
+                state_store.save(daemon_state.graph, daemon_state.index, daemon_state.meta)
             signal.signal(signal.SIGINT, prev_handlers[signal.SIGINT])
             signal.signal(signal.SIGTERM, prev_handlers[signal.SIGTERM])
 

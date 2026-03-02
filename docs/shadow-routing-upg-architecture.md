@@ -40,5 +40,6 @@ This split keeps daemon focused on orchestration, while protocol and policy rema
   - Separate reward channels (user correction, task success, explicit directives) with configurable weighting.
 - Traces and decision-point schema:
   - Add structured trace artifacts for route decisions and teacher supervision.
-- Storage boundary:
-  - Introduce clearer persistence interfaces so runtime state and async training state can evolve independently.
+- Storage boundary (in progress):
+  - Introduced minimal `StateStore`/`EventStore` interfaces with JSON-backed implementations.
+  - This matters for replay and teacher runs because those flows can now consume the same event/state contracts as runtime, enabling safer experimentation (alternate backends, snapshots, and deterministic replays) without changing daemon or CLI behavior.

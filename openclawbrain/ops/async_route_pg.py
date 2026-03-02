@@ -11,10 +11,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..graph import Edge, Graph
-from ..journal import read_journal
 from ..learn import apply_outcome_pg
 from ..replay import default_keyword_seed_fn
-from ..store import load_state, save_state
+from ..storage import EventStore, JsonStateStore, JsonlEventStore, StateStore
 from ..traverse import TraversalConfig, traverse
 from .._util import _extract_json
 
@@ -204,23 +203,19 @@ def _decision_points_for_query(
 
 
 def _sample_queries(
-    journal_path: str,
+    event_store: EventStore,
     *,
     since_hours: float,
     max_queries: int,
     sample_rate: float,
 ) -> list[str]:
-    entries = read_journal(journal_path=journal_path)
     cutoff = time.time() - max(0.0, since_hours) * 3600.0
     raw_queries: list[str] = []
-    for entry in entries:
+    for entry in event_store.iter_since(cutoff):
         if entry.get("type") != "query":
             continue
         query = entry.get("query")
         if not isinstance(query, str) or not query.strip():
-            continue
-        ts = entry.get("ts")
-        if isinstance(ts, (int, float)) and float(ts) < cutoff:
             continue
         raw_queries.append(query.strip())
 
@@ -296,11 +291,15 @@ def run_async_route_pg(
     write_relevance_metadata: bool = True,
     score_scale: float = 0.3,
     teacher_labeler: Callable[[list[DecisionPoint]], tuple[list[dict[str, float]], list[str]]] | None = None,
+    state_store: StateStore | None = None,
+    event_store: EventStore | None = None,
 ) -> AsyncRoutePgSummary:
     """Run teacher-shadow routing updates over recent query events."""
-    graph, index, meta = load_state(state_path)
+    resolved_state_store = state_store or JsonStateStore(state_path)
+    resolved_event_store = event_store or JsonlEventStore(journal_path)
+    graph, index, meta = resolved_state_store.load()
     sampled_queries = _sample_queries(
-        journal_path=journal_path,
+        event_store=resolved_event_store,
         since_hours=since_hours,
         max_queries=max_queries,
         sample_rate=sample_rate,
@@ -385,7 +384,7 @@ def run_async_route_pg(
                     working_graph._edges[point.source_id][target_id] = edge
 
     if apply and teacher_available and updates_applied > 0:
-        save_state(graph=working_graph, index=index, path=state_path, meta=meta)
+        resolved_state_store.save(graph=working_graph, index=index, meta=meta)
 
     return AsyncRoutePgSummary(
         teacher_requested=teacher,

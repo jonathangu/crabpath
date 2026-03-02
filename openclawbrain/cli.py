@@ -64,6 +64,7 @@ from .full_learning import (
 from ._util import _tokenize
 from .maintain import run_maintenance
 from .state_lock import StateLockError, state_write_lock
+from .storage import JsonStateStore, JsonlEventStore
 from .store import load_state, save_state, resolve_default_state_path
 from .ops.async_route_pg import run_async_route_pg
 from . import __version__
@@ -2344,6 +2345,8 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
     journal_path = _resolve_journal_path(args, allow_default_state=False)
     if journal_path is None:
         raise SystemExit("unable to resolve journal path")
+    state_store = JsonStateStore(state_path)
+    event_store = JsonlEventStore(journal_path)
 
     summary = run_async_route_pg(
         state_path=state_path,
@@ -2358,6 +2361,8 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
         apply=bool(args.apply),
         write_relevance_metadata=bool(args.write_relevance_metadata),
         score_scale=float(args.score_scale),
+        state_store=state_store,
+        event_store=event_store,
     )
     payload = summary.to_dict()
     if args.json:
