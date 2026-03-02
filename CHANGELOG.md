@@ -14,6 +14,10 @@
 - Habitual-edge selection now combines learned edge weights, optional edge relevance metadata, and query-to-target cosine similarity with deterministic ranking.
 - Query serving remains local/LLM-free while benefiting from updated routing priors.
 
+### Daemon: embed-model auto-detect (hash vs OpenAI)
+- `openclawbrain daemon` now defaults to `--embed-model auto`, which resolves the query embedder from `state.json` metadata.
+- Fixes OOTB daemon queries for hash-based states (prevents 1024 vs 1536 dimension mismatch).
+
 ### Docs: new core thesis (`Ultimate Policy Gradient`)
 - Added `docs/core-thesis-ultimate-policy-gradient.md` as the canonical thesis/reference doc.
 - Documents the shadow-routing-to-runtime loop and operational rollout guidance.
