@@ -147,6 +147,61 @@ def _parse_bool(value: object, label: str, *, default: bool) -> bool:
     return value
 
 
+def _parse_route_mode(value: object) -> str:
+    """Validate route mode."""
+    if value is None:
+        return "off"
+    if not isinstance(value, str):
+        raise ValueError("route_mode must be one of: off, edge, edge+sim")
+    mode = value.strip().lower()
+    if mode not in {"off", "edge", "edge+sim"}:
+        raise ValueError("route_mode must be one of: off, edge, edge+sim")
+    return mode
+
+
+def _build_query_route_fn(
+    *,
+    route_mode: str,
+    route_top_k: int,
+    route_alpha_sim: float,
+    route_use_relevance: bool,
+    query_vector: list[float],
+    index: VectorIndex,
+) -> Callable[[str | None, list[object], str], list[str]] | None:
+    """Build deterministic local route policy for habitual candidates."""
+    if route_mode == "off":
+        return None
+
+    use_similarity = route_mode == "edge+sim"
+
+    def _score(edge: object) -> float:
+        # `traverse` passes graph.Edge values; keep this function generic for tests.
+        weight = float(getattr(edge, "weight", 0.0))
+        relevance = 0.0
+        if route_use_relevance:
+            metadata = getattr(edge, "metadata", None)
+            if isinstance(metadata, dict):
+                raw_relevance = metadata.get("relevance", 0.0)
+                if isinstance(raw_relevance, (int, float)):
+                    relevance = float(raw_relevance)
+        similarity = 0.0
+        if use_similarity:
+            target_id = str(getattr(edge, "target", ""))
+            target_vector = index._vectors.get(target_id)
+            if target_vector is not None:
+                similarity = VectorIndex.cosine(query_vector, target_vector)
+        return weight + relevance + (route_alpha_sim * similarity)
+
+    def _route_fn(_source_id: str | None, candidates: list[object], _query_text: str) -> list[str]:
+        ranked = sorted(
+            ((str(getattr(edge, "target", "")), _score(edge)) for edge in candidates),
+            key=lambda item: (-item[1], item[0]),
+        )
+        return [target_id for target_id, _score_value in ranked[:route_top_k] if target_id]
+
+    return _route_fn
+
+
 def _parse_str_list(value: object, label: str, required: bool = True) -> list[str]:
     """Parse a JSON list of non-empty strings."""
     if value is None:
@@ -329,6 +384,10 @@ def _handle_query(
         max_context_chars = max_prompt_chars
 
     max_fired_nodes = _parse_int(params.get("max_fired_nodes"), "max_fired_nodes", default=30)
+    route_mode = _parse_route_mode(params.get("route_mode"))
+    route_top_k = _parse_int(params.get("route_top_k"), "route_top_k", default=5)
+    route_alpha_sim = _parse_float(params.get("route_alpha_sim"), "route_alpha_sim", default=0.5)
+    route_use_relevance = _parse_bool(params.get("route_use_relevance"), "route_use_relevance", default=True)
     prompt_context_include_node_ids = _parse_bool(
         params.get("prompt_context_include_node_ids"),
         "prompt_context_include_node_ids",
@@ -352,11 +411,20 @@ def _handle_query(
 
     traverse_start = time.perf_counter()
     seeds = index.search(query_vector, top_k=top_k)
+    route_fn = _build_query_route_fn(
+        route_mode=route_mode,
+        route_top_k=route_top_k,
+        route_alpha_sim=route_alpha_sim,
+        route_use_relevance=route_use_relevance,
+        query_vector=query_vector,
+        index=index,
+    )
     result = traverse(
         graph=graph,
         seeds=seeds,
         config=TraversalConfig(max_hops=15, max_context_chars=max_context_chars, max_fired_nodes=max_fired_nodes),
         query_text=query_text,
+        route_fn=route_fn,
     )
     traverse_stop = time.perf_counter()
     total_stop = time.perf_counter()
