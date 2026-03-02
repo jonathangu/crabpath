@@ -65,6 +65,7 @@ from ._util import _tokenize
 from .maintain import run_maintenance
 from .state_lock import StateLockError, state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
+from .ops.async_route_pg import run_async_route_pg
 from . import __version__
 
 DEFAULT_STATE_PROFILE = "main"
@@ -153,6 +154,7 @@ def _state_lock_context_for_command(args: argparse.Namespace):
         "replay": True,
         "harvest": False,
         "sync": True,
+        "async-route-pg": False,
     }
     if command in allow_default_state_map:
         return _command_state_write_lock(
@@ -372,6 +374,20 @@ def _build_parser() -> argparse.ArgumentParser:
     h.add_argument("--state")
     h.add_argument("--graph")
     h.add_argument("--json", action="store_true")
+
+    ar = sub.add_parser("async-route-pg")
+    ar.add_argument("--state", required=True)
+    ar.add_argument("--since-hours", type=float, default=24.0)
+    ar.add_argument("--max-queries", type=int, default=200)
+    ar.add_argument("--sample-rate", type=float, default=0.1)
+    ar.add_argument("--max-candidates-per-node", type=int, default=12)
+    ar.add_argument("--teacher", choices=["openai", "none"], default="openai")
+    ar.add_argument("--teacher-model", default="gpt-5-mini")
+    ar.add_argument("--apply", action="store_true")
+    ar.add_argument("--json", action="store_true")
+    ar.add_argument("--write-relevance-metadata", action=argparse.BooleanOptionalAction, default=True)
+    ar.add_argument("--score-scale", type=float, default=0.3)
+    ar.add_argument("--max-decision-points", type=int, default=500)
 
     j = sub.add_parser("journal")
     j.add_argument("--state")
@@ -2320,6 +2336,49 @@ def cmd_journal(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_async_route_pg(args: argparse.Namespace) -> int:
+    """Run teacher-shadow async routing updates with PG."""
+    state_path = _resolve_state_path(args.state, allow_default=False)
+    if state_path is None:
+        raise SystemExit("--state is required")
+    journal_path = _resolve_journal_path(args, allow_default_state=False)
+    if journal_path is None:
+        raise SystemExit("unable to resolve journal path")
+
+    summary = run_async_route_pg(
+        state_path=state_path,
+        journal_path=journal_path,
+        since_hours=float(args.since_hours),
+        max_queries=max(1, int(args.max_queries)),
+        sample_rate=max(0.0, min(1.0, float(args.sample_rate))),
+        max_candidates_per_node=max(1, int(args.max_candidates_per_node)),
+        max_decision_points=max(1, int(args.max_decision_points)),
+        teacher=str(args.teacher),
+        teacher_model=str(args.teacher_model),
+        apply=bool(args.apply),
+        write_relevance_metadata=bool(args.write_relevance_metadata),
+        score_scale=float(args.score_scale),
+    )
+    payload = summary.to_dict()
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"async-route-pg: sampled_queries={payload['sampled_queries']} "
+            f"decision_points={payload['decision_points_total']} "
+            f"labeled={payload['decision_points_labeled']} "
+            f"updates={payload['updates_applied']} "
+            f"total_abs_delta={payload['total_abs_weight_delta']:.6f} "
+            f"max_abs_delta={payload['max_abs_weight_delta']:.6f} "
+            f"dry_run={payload['dry_run']}"
+        )
+        if payload["errors"]:
+            print("errors:")
+            for item in payload["errors"]:
+                print(f"- {item}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """main."""
     args = _build_parser().parse_args(argv)
@@ -2341,6 +2400,7 @@ def main(argv: list[str] | None = None) -> int:
         "self-correct": cmd_self_correct,
         "harvest": cmd_harvest,
         "health": cmd_health,
+        "async-route-pg": cmd_async_route_pg,
         "journal": cmd_journal,
         "doctor": cmd_doctor,
         "info": cmd_info,

@@ -11,6 +11,7 @@ It separates:
 
 - **Online learning (fast loop)**: cheap updates while serving queries.
 - **Maintenance (slow loop)**: periodic structural operations to keep the graph healthy.
+- **Offline teacher routing loop (background)**: optional `async-route-pg` supervision pass over recent queries.
 
 The core library is pure and does not assume any scheduler.
 
@@ -125,6 +126,19 @@ health -> decay -> scale -> split -> merge -> prune -> connect
 - or directly: `measure_health()`, `apply_decay()`, `apply_synaptic_scaling()`, `suggest_splits()`, `split_node()`, `suggest_merges()`, `apply_merge()`, `prune_edges()`, `prune_orphan_nodes()`, `connect_learning_nodes()`
 
 Split and merge form a balancing pair: split raises topic granularity when nodes become overloaded, while merge later recombines co-firing fragments when redundancy and similarity make them better represented as one node.
+
+## 3-b) Async Teacher Routing (background loop)
+
+`openclawbrain async-route-pg` runs outside the request path:
+
+1. Reads recent `type=query` events from `journal.jsonl`.
+2. Replays local traversal with keyword seeding (same no-LLM traversal policy used for replay/query routing).
+3. Builds decision points from visited nodes with habitual candidates first (`0.15 <= w < 0.6`), then reflex fallback.
+4. Calls teacher LLM in batch (`gpt-5-mini` by default) for labels (`choose` and/or `scores` JSON).
+5. Applies dense updates via `apply_outcome_pg(graph, [source, target], outcome=score_scale*score)`.
+6. Optionally writes edge metadata (`relevance`) for downstream structural tasks.
+
+This preserves fast query behavior (LLM-free daemon query path) while feeding better edge priors into split/merge/prune/connect decisions over time.
 
 ## Self-Regulation
 
@@ -333,6 +347,7 @@ jobs:
 - **Maintenance command**: `openclawbrain maintain ...`
 - **Health metrics**: `measure_health()` and `log_health()`
 - **Topology updates**: decay, split, merge, prune, connect
+- **Teacher-shadow updates**: `openclawbrain async-route-pg ...` (optional, offline)
 
 ## 9) ASCII diagram
 

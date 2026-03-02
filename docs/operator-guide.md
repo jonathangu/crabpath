@@ -125,7 +125,28 @@ If a lock is active and you still need to proceed, override only when you are ce
 
 Recommended production path: use `examples/ops/rebuild_then_cutover.sh` so rebuild/replay happens on a fresh state and cutover is atomic.
 
-## 8) Troubleshooting
+## 8) Optional async teacher routing pass
+
+Run this off the hot path (cron/manual). Query serving remains LLM-free.
+
+```bash
+openclawbrain async-route-pg \
+  --state ~/.openclawbrain/main/state.json \
+  --since-hours 24 \
+  --max-queries 200 \
+  --sample-rate 0.1 \
+  --teacher openai \
+  --teacher-model gpt-5-mini \
+  --apply \
+  --json
+```
+
+Operational notes:
+- Default is dry-run. Add `--apply` to persist updates.
+- If `OPENAI_API_KEY` is missing (or `--teacher none`), it reports teacher unavailable and writes no updates.
+- Keep this under single-writer discipline like replay/maintain.
+
+## 9) Troubleshooting
 
 | Symptom | Likely cause | Commands |
 |---|---|---|
@@ -136,7 +157,7 @@ Recommended production path: use `examples/ops/rebuild_then_cutover.sh` so rebui
 | `LLM required for fast-learning` | no OpenAI client/key configured for fast-learning mining | set `OPENAI_API_KEY` or run `--edges-only` replay path |
 | CLI says invalid sessions path | wrong sessions directory/file path | `ls -la ~/.openclaw/agents/main/sessions` and pass existing dir/files to `--sessions` |
 
-## 9) Prompt-context trim eval (offline)
+## 10) Prompt-context trim eval (offline)
 Use the lightweight harness to measure trim rate and dropped-authority distribution at common caps (`20k`/`30k`) directly from `state.json`:
 
 ```bash
@@ -147,7 +168,7 @@ python examples/eval/prompt_context_eval.py \
 
 If no `--queries-file` is provided, a small built-in sample query set is used.
 
-## 10) Defaults that matter (v12.2.5+)
+## 11) Defaults that matter (v12.2.5+)
 - `max_prompt_context_chars` default: **30000** (daemon)
 - `max_fired_nodes` default: **30** (daemon)
 - prompt context is ordered deterministically but importance-first: **authority → score → stable source order**.
@@ -158,7 +179,7 @@ Useful telemetry fields (daemon `query` response + journal metadata):
 - `prompt_context_dropped_node_ids` (capped) + `prompt_context_dropped_count`
 - `prompt_context_dropped_authority_counts`
 
-## 11) OpenClaw adapter defaults for context efficiency
+## 12) OpenClaw adapter defaults for context efficiency
 For OpenClaw integration, keep prompts token-tight and avoid re-sending files OpenClaw already loads:
 
 - Use `python3 -m openclawbrain.openclaw_adapter.query_brain ... --format prompt`.
@@ -178,7 +199,7 @@ Why this matters:
 - Same-turn `capture_feedback` injects correction/teaching/directive immediately and can reinforce/penalize the just-fired route for that `chat_id`.
 - `--dedup-key` (or `--message-id`) makes harvest/replay retries idempotent so feedback is not double-injected.
 
-## 12) Bootstrap files + memory notes are always indexed (v12.2.5+)
+## 13) Bootstrap files + memory notes are always indexed (v12.2.5+)
 Even if your OpenClaw workspace `.gitignore` excludes local operator files (common), OpenClawBrain will still index:
 - `SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`, `IDENTITY.md`, `HEARTBEAT.md`
 - `active-tasks.md`, `WORKFLOW_AUTO.md`
@@ -186,7 +207,7 @@ Even if your OpenClaw workspace `.gitignore` excludes local operator files (comm
 
 This is intentional: these files are the “constitution + history” of your agent.
 
-## 13) OpenClaw media understanding (audio/image) → better memory
+## 14) OpenClaw media understanding (audio/image) → better memory
 OpenClaw has a built-in **media-understanding** pipeline that can:
 - transcribe audio/voice notes
 - describe images
@@ -196,7 +217,7 @@ When enabled in OpenClaw config, it will set `ctx.Transcript` and/or append extr
 
 If you rely on toolResult-only transcripts/OCR, keep `openclawbrain replay --include-tool-results` enabled (default).
 
-## 14) Correction wiring: what exists vs what you still need
+## 15) Correction wiring: what exists vs what you still need
 OpenClawBrain supports `correction(chat_id, lookback=N)` (it remembers recent fired paths per `chat_id`). To get *automatic* corrections in live chat, OpenClaw must:
 1) pass a stable `chat_id` into each brain query
 2) detect correction messages
@@ -204,7 +225,7 @@ OpenClawBrain supports `correction(chat_id, lookback=N)` (it remembers recent fi
 
 If you don't have that OpenClaw integration yet, you can still apply corrections manually via `openclawbrain self-learn` (offline) or daemon `correction` calls.
 
-## 15) Operator audit: detect path leaks & config drift
+## 16) Operator audit: detect path leaks & config drift
 Run this first (safe: does not print env var values or full file contents):
 
 ```bash
