@@ -23,6 +23,16 @@ from .journal import log_health, log_learn, log_query
 from .learn import apply_outcome, apply_outcome_pg
 from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_correction, inject_node
+from .policy import RoutingPolicy, make_runtime_route_fn
+from .protocol import QueryParams, QueryRequest, QueryResponse
+from .protocol import (
+    parse_bool,
+    parse_chat_id,
+    parse_float,
+    parse_int,
+    parse_route_mode,
+    parse_str_list,
+)
 from .state_lock import state_write_lock
 from .store import load_state, save_state
 from .traverse import TraversalConfig, traverse
@@ -122,56 +132,9 @@ def _health_payload(graph: Graph) -> dict[str, object]:
 def _emit_response(req_id: object, payload: object, error: dict[str, object] | None = None) -> None:
     """Emit one NDJSON object."""
     if error is None:
-        print(json.dumps({"id": req_id, "result": payload}), flush=True)
+        print(json.dumps(QueryResponse(id=req_id, result=payload).to_dict()), flush=True)
     else:
-        print(json.dumps({"id": req_id, "error": error}), flush=True)
-
-
-def _parse_int(value: object, label: str, default: int | None = None, min_value: int = 1) -> int:
-    """Validate integer input."""
-    if value is None:
-        if default is None:
-            raise ValueError(f"{label} is required")
-        return default
-    if not isinstance(value, int):
-        raise ValueError(f"{label} must be an integer")
-    if value < min_value:
-        raise ValueError(f"{label} must be >= {min_value}")
-    return value
-
-
-def _parse_float(value: object, label: str, required: bool = False, default: float | None = None) -> float:
-    """Validate float input."""
-    if value is None:
-        if not required:
-            if default is None:
-                raise ValueError(f"{label} is required")
-            return default
-        raise ValueError(f"{label} is required")
-    if not isinstance(value, (int, float)):
-        raise ValueError(f"{label} must be a number")
-    return float(value)
-
-
-def _parse_bool(value: object, label: str, *, default: bool) -> bool:
-    """Validate boolean input with a default."""
-    if value is None:
-        return default
-    if not isinstance(value, bool):
-        raise ValueError(f"{label} must be a boolean")
-    return value
-
-
-def _parse_route_mode(value: object) -> str:
-    """Validate route mode."""
-    if value is None:
-        return "off"
-    if not isinstance(value, str):
-        raise ValueError("route_mode must be one of: off, edge, edge+sim")
-    mode = value.strip().lower()
-    if mode not in {"off", "edge", "edge+sim"}:
-        raise ValueError("route_mode must be one of: off, edge, edge+sim")
-    return mode
+        print(json.dumps(QueryResponse(id=req_id, error=error).to_dict()), flush=True)
 
 
 def _build_query_route_fn(
@@ -183,70 +146,14 @@ def _build_query_route_fn(
     query_vector: list[float],
     index: VectorIndex,
 ) -> Callable[[str | None, list[object], str], list[str]] | None:
-    """Build deterministic local route policy for habitual candidates."""
-    if route_mode == "off":
-        return None
-
-    use_similarity = route_mode == "edge+sim"
-
-    def _score(edge: object) -> float:
-        # `traverse` passes graph.Edge values; keep this function generic for tests.
-        weight = float(getattr(edge, "weight", 0.0))
-        relevance = 0.0
-        if route_use_relevance:
-            metadata = getattr(edge, "metadata", None)
-            if isinstance(metadata, dict):
-                raw_relevance = metadata.get("relevance", 0.0)
-                if isinstance(raw_relevance, (int, float)):
-                    relevance = float(raw_relevance)
-        similarity = 0.0
-        if use_similarity:
-            target_id = str(getattr(edge, "target", ""))
-            target_vector = index._vectors.get(target_id)
-            if target_vector is not None:
-                similarity = VectorIndex.cosine(query_vector, target_vector)
-        return weight + relevance + (route_alpha_sim * similarity)
-
-    def _route_fn(_source_id: str | None, candidates: list[object], _query_text: str) -> list[str]:
-        ranked = sorted(
-            ((str(getattr(edge, "target", "")), _score(edge)) for edge in candidates),
-            key=lambda item: (-item[1], item[0]),
-        )
-        return [target_id for target_id, _score_value in ranked[:route_top_k] if target_id]
-
-    return _route_fn
-
-
-def _parse_str_list(value: object, label: str, required: bool = True) -> list[str]:
-    """Parse a JSON list of non-empty strings."""
-    if value is None:
-        if required:
-            raise ValueError(f"{label} is required")
-        return []
-    if not isinstance(value, list):
-        raise ValueError(f"{label} must be a list")
-    entries: list[str] = []
-    for item in value:
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"{label} must only contain non-empty strings")
-        entries.append(item)
-    if not entries and required:
-        raise ValueError(f"{label} must not be empty")
-    return entries
-
-
-def _parse_chat_id(value: object, label: str, required: bool = True) -> str | None:
-    """Parse optional chat_id with non-empty normalization."""
-    if value is None:
-        if required:
-            raise ValueError(f"{label} is required")
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{label} must be a string")
-    value = value.strip()
-    if required and not value:
-        raise ValueError(f"{label} is required")
-    return value if value else None
+    """Backwards-compatible wrapper around policy runtime route fn builder."""
+    policy = RoutingPolicy(
+        route_mode=parse_route_mode(route_mode),
+        top_k=parse_int(route_top_k, "route_top_k", default=5),
+        alpha_sim=parse_float(route_alpha_sim, "route_alpha_sim", default=0.5),
+        use_relevance=parse_bool(route_use_relevance, "route_use_relevance", default=True),
+    )
+    return make_runtime_route_fn(policy=policy, query_vector=query_vector, index=index)
 
 
 def _append_fired_log(state_path: str, entry: dict[str, object]) -> None:
@@ -381,35 +288,15 @@ def _handle_query(
 
     Includes a deterministic `prompt_context` block suitable for prompt caching.
     """
-    query_text = params.get("query")
-    if not isinstance(query_text, str) or not query_text.strip():
-        raise ValueError("query must be a non-empty string")
-
-    top_k = _parse_int(params.get("top_k"), "top_k", default=4)
-
-    # Prompt caching appendix (deterministic) size.
-    max_prompt_chars = params.get("max_prompt_context_chars")
-    if not isinstance(max_prompt_chars, int):
-        max_prompt_chars = 30000
-
-    # Returned `context` size (human-readable, non-deterministic ordering). If not set, default
-    # to the prompt appendix size so operators can bound output in one knob.
-    max_context_chars = params.get("max_context_chars")
-    if not isinstance(max_context_chars, int):
-        max_context_chars = max_prompt_chars
-
-    max_fired_nodes = _parse_int(params.get("max_fired_nodes"), "max_fired_nodes", default=30)
-    route_mode = _parse_route_mode(params.get("route_mode"))
-    route_top_k = _parse_int(params.get("route_top_k"), "route_top_k", default=5)
-    route_alpha_sim = _parse_float(params.get("route_alpha_sim"), "route_alpha_sim", default=0.5)
-    route_use_relevance = _parse_bool(params.get("route_use_relevance"), "route_use_relevance", default=True)
-    prompt_context_include_node_ids = _parse_bool(
-        params.get("prompt_context_include_node_ids"),
-        "prompt_context_include_node_ids",
-        default=True,
-    )
-    exclude_files = set(_parse_str_list(params.get("exclude_files"), "exclude_files", required=False))
-    exclude_file_prefixes = _parse_str_list(params.get("exclude_file_prefixes"), "exclude_file_prefixes", required=False)
+    query = QueryParams.from_dict(params)
+    query_text = query.query
+    top_k = query.top_k
+    max_prompt_chars = query.max_prompt_context_chars
+    max_context_chars = query.max_context_chars
+    max_fired_nodes = query.max_fired_nodes
+    prompt_context_include_node_ids = query.prompt_context_include_node_ids
+    exclude_files = set(query.exclude_files)
+    exclude_file_prefixes = list(query.exclude_file_prefixes)
 
     total_start = time.perf_counter()
     resolved_embed = embed_fn or HashEmbedder().embed
@@ -426,11 +313,14 @@ def _handle_query(
 
     traverse_start = time.perf_counter()
     seeds = index.search(query_vector, top_k=top_k)
-    route_fn = _build_query_route_fn(
-        route_mode=route_mode,
-        route_top_k=route_top_k,
-        route_alpha_sim=route_alpha_sim,
-        route_use_relevance=route_use_relevance,
+    policy = RoutingPolicy(
+        route_mode=query.route_mode,
+        top_k=query.route_top_k,
+        alpha_sim=query.route_alpha_sim,
+        use_relevance=query.route_use_relevance,
+    )
+    route_fn = make_runtime_route_fn(
+        policy=policy,
         query_vector=query_vector,
         index=index,
     )
@@ -477,7 +367,7 @@ def _handle_query(
         fired_ids=result.fired,
         node_count=graph.node_count(),
         journal_path=_journal_path(state_path),
-        metadata={"chat_id": params.get("chat_id"), "max_fired_nodes": max_fired_nodes, **prompt_context_stats},
+        metadata={"chat_id": query.chat_id, "max_fired_nodes": max_fired_nodes, **prompt_context_stats},
     )
 
     return {
@@ -628,9 +518,9 @@ def _handle_correction(
     params: dict[str, object],
 ) -> tuple[dict[str, object], bool]:
     """Human-initiated correction via chat_id lookback."""
-    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
-    outcome = _parse_float(params.get("outcome"), "outcome", required=True)
-    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    outcome = parse_float(params.get("outcome"), "outcome", required=True)
+    lookback = parse_int(params.get("lookback"), "lookback", default=1)
     raw_content = params.get("content")
     content = raw_content.strip() if isinstance(raw_content, str) else ""
     fired_ids = _recent_fired_nodes(daemon_state, chat_id, lookback)
@@ -654,8 +544,8 @@ def _handle_last_fired(
     params: dict[str, object],
 ) -> dict[str, object]:
     """Return recent fired node ids for a chat_id."""
-    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
-    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    lookback = parse_int(params.get("lookback"), "lookback", default=1)
     return {
         "chat_id": chat_id,
         "lookback": lookback,
@@ -672,9 +562,9 @@ def _handle_learn_by_chat_id(
     params: dict[str, object],
 ) -> tuple[dict[str, object], bool]:
     """Learn by chat_id lookback using in-memory fired history only."""
-    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
-    outcome = _parse_float(params.get("outcome"), "outcome", required=True)
-    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    outcome = parse_float(params.get("outcome"), "outcome", required=True)
+    lookback = parse_int(params.get("lookback"), "lookback", default=1)
     fired_ids = _recent_fired_nodes(daemon_state, chat_id, lookback)
     return _do_learn(
         graph,
@@ -700,8 +590,8 @@ def _handle_self_learn(
     if not isinstance(raw_content, str) or not raw_content.strip():
         raise ValueError("content is required")
 
-    fired_ids = _parse_str_list(params.get("fired_ids"), "fired_ids", required=False)
-    outcome = _parse_float(params.get("outcome"), "outcome", required=False, default=-1.0)
+    fired_ids = parse_str_list(params.get("fired_ids"), "fired_ids", required=False)
+    outcome = parse_float(params.get("outcome"), "outcome", required=False, default=-1.0)
 
     raw_node_type = params.get("node_type")
     if raw_node_type is None:
@@ -732,8 +622,8 @@ def _handle_capture_feedback(
     params: dict[str, object],
 ) -> tuple[dict[str, object], bool]:
     """Capture real-time correction/teaching/directive with optional learning + dedup."""
-    chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=True)
-    lookback = _parse_int(params.get("lookback"), "lookback", default=1)
+    chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=True)
+    lookback = parse_int(params.get("lookback"), "lookback", default=1)
 
     kind = params.get("kind")
     if kind not in {"CORRECTION", "TEACHING", "DIRECTIVE"}:
@@ -773,7 +663,7 @@ def _handle_capture_feedback(
 
     outcome_used: float | None = None
     if params.get("outcome") is not None:
-        outcome_used = _parse_float(params.get("outcome"), "outcome", required=True)
+        outcome_used = parse_float(params.get("outcome"), "outcome", required=True)
     elif kind == "CORRECTION":
         outcome_used = -1.0
 
@@ -861,8 +751,8 @@ def _handle_capture_feedback(
 def _handle_learn(graph: Graph, index: VectorIndex, embed_fn: Callable[[str], list[float]] | None,
                    state_path: str, params: dict[str, object]) -> tuple[dict[str, object], bool]:
     """Bare learning — just outcome on fired nodes, no injection."""
-    fired_nodes = _parse_str_list(params.get("fired_nodes"), "fired_nodes")
-    outcome = _parse_float(params.get("outcome"), "outcome", required=True)
+    fired_nodes = parse_str_list(params.get("fired_nodes"), "fired_nodes")
+    outcome = parse_float(params.get("outcome"), "outcome", required=True)
 
     return _do_learn(
         graph, index, embed_fn, state_path,
@@ -893,8 +783,8 @@ def _handle_maintain(
     if not isinstance(dry_run, bool):
         raise ValueError("dry_run must be a boolean")
 
-    max_merges = _parse_int(params.get("max_merges"), "max_merges", default=5)
-    prune_below = _parse_float(params.get("prune_below"), "prune_below", required=False, default=0.01)
+    max_merges = parse_int(params.get("max_merges"), "max_merges", default=5)
+    prune_below = parse_float(params.get("prune_below"), "prune_below", required=False, default=0.01)
     report = run_maintenance(
         state_path=state_path,
         tasks=requested,
@@ -991,16 +881,10 @@ def main(argv: list[str] | None = None) -> int:
                 req_id: object = None
                 should_write = False
                 try:
-                    request = json.loads(line)
-                    if not isinstance(request, dict):
-                        raise ValueError("request must be a JSON object")
-                    req_id = request.get("id")
-                    method = request.get("method")
-                    params = request.get("params", {})
-                    if not isinstance(params, dict):
-                        raise ValueError("params must be a JSON object")
-                    if not isinstance(method, str):
-                        raise ValueError("method must be a string")
+                    request_envelope = QueryRequest.from_dict(json.loads(line))
+                    req_id = request_envelope.id
+                    method = request_envelope.method
+                    params = request_envelope.params
 
                     if method == "query":
                         payload = _handle_query(
@@ -1011,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
                             params=params,
                             state_path=state_path,
                         )
-                        query_chat_id = _parse_chat_id(params.get("chat_id"), "chat_id", required=False)
+                        query_chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=False)
                         if query_chat_id is not None:
                             query_nodes = payload.get("fired_nodes", [])
                             if not isinstance(query_nodes, list):
