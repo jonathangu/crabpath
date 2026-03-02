@@ -23,7 +23,7 @@ from .learn import apply_outcome, apply_outcome_pg
 from .local_embedder import DEFAULT_LOCAL_MODEL, LocalEmbedder
 from .maintain import run_maintenance
 from .inject import _apply_inhibitory_edges, inject_correction, inject_node
-from .policy import RoutingPolicy, make_runtime_route_fn
+from .policy import DecisionMetrics, RoutingPolicy, make_runtime_route_fn
 from .protocol import QueryParams, QueryRequest, QueryResponse
 from .protocol import (
     parse_bool,
@@ -170,6 +170,23 @@ def _append_query_event(
             "metadata": metadata,
         }
     )
+
+
+def _route_decision_summary(decisions: list[DecisionMetrics]) -> dict[str, object]:
+    count = len(decisions)
+    if count <= 0:
+        return {
+            "route_decision_count": 0,
+            "route_router_conf_mean": 0.0,
+            "route_relevance_conf_mean": 0.0,
+            "route_policy_disagreement_mean": 0.0,
+        }
+    return {
+        "route_decision_count": count,
+        "route_router_conf_mean": float(sum(item.router_conf for item in decisions) / count),
+        "route_relevance_conf_mean": float(sum(item.relevance_conf for item in decisions) / count),
+        "route_policy_disagreement_mean": float(sum(item.policy_disagreement for item in decisions) / count),
+    }
 
 
 def _append_learn_event(
@@ -390,12 +407,14 @@ def _handle_query(
         alpha_sim=query.route_alpha_sim,
         use_relevance=query.route_use_relevance,
     )
+    decision_log: list[DecisionMetrics] = []
     route_fn = make_runtime_route_fn(
         policy=policy,
         query_vector=query_vector,
         index=index,
         learned_model=learned_model,
         target_projections=target_projections,
+        decision_log=decision_log,
     )
     result = traverse(
         graph=graph,
@@ -406,6 +425,7 @@ def _handle_query(
     )
     traverse_stop = time.perf_counter()
     total_stop = time.perf_counter()
+    route_summary = _route_decision_summary(decision_log)
 
     fired_node_ids = [str(node_id) for node_id in result.fired]
     fired_node_scores = {str(node_id): float(score) for node_id, score in result.fired_scores.items()}
@@ -440,7 +460,7 @@ def _handle_query(
         query_text=query_text,
         fired_ids=result.fired,
         node_count=graph.node_count(),
-        metadata={"chat_id": query.chat_id, "max_fired_nodes": max_fired_nodes, **prompt_context_stats},
+        metadata={"chat_id": query.chat_id, "max_fired_nodes": max_fired_nodes, **prompt_context_stats, **route_summary},
     )
 
     return {
@@ -453,6 +473,7 @@ def _handle_query(
         "embed_query_ms": _ms(embed_start, embed_stop),
         "traverse_ms": _ms(traverse_start, traverse_stop),
         "total_ms": _ms(total_start, total_stop),
+        **route_summary,
     }
 
 

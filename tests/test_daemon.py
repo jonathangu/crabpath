@@ -8,7 +8,9 @@ import types
 from pathlib import Path
 import importlib
 
+import numpy as np
 from openclawbrain import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
+from openclawbrain.route_model import RouteModel
 from openclawbrain.traverse import TraversalResult
 import openclawbrain.daemon as daemon_module
 from openclawbrain.journal import read_journal
@@ -185,6 +187,10 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
         assert isinstance(result["embed_query_ms"], float)
         assert isinstance(result["traverse_ms"], float)
         assert isinstance(result["total_ms"], float)
+        assert "route_decision_count" in result
+        assert "route_router_conf_mean" in result
+        assert "route_relevance_conf_mean" in result
+        assert "route_policy_disagreement_mean" in result
     finally:
         _shutdown_daemon(proc)
 
@@ -196,6 +202,45 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
     assert metadata["prompt_context_max_chars"] == 30000
     assert metadata["max_fired_nodes"] == 30
     assert isinstance(metadata["prompt_context_trimmed"], bool)
+    assert "route_decision_count" in metadata
+    assert "route_router_conf_mean" in metadata
+    assert "route_relevance_conf_mean" in metadata
+    assert "route_policy_disagreement_mean" in metadata
+
+
+def test_handle_query_includes_nonzero_route_summary_with_learned_model(tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("seed", "seed", metadata={"file": "seed.md"}))
+    graph.add_node(Node("a", "alpha", metadata={"file": "a.md"}))
+    graph.add_node(Node("b", "beta", metadata={"file": "b.md"}))
+    graph.add_edge(Edge("seed", "a", weight=0.4, metadata={"relevance": 0.0}))
+    graph.add_edge(Edge("seed", "b", weight=0.4, metadata={"relevance": 0.0}))
+
+    index = VectorIndex()
+    index.upsert("seed", [1.0, 0.0])
+    index.upsert("a", [1.0, 0.0])
+    index.upsert("b", [0.0, 1.0])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+    model = RouteModel(
+        r=2,
+        A=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float),
+        B=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float),
+        w_feat=np.asarray([0.0], dtype=float),
+        b=0.0,
+        T=1.0,
+    )
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={"query": "learned route summary", "top_k": 1, "route_mode": "learned", "route_top_k": 1},
+        state_path=str(tmp_path / "state.json"),
+        learned_model=model,
+        target_projections=model.precompute_target_projections(index),
+    )
+    assert response["route_decision_count"] > 0
 
 
 def test_query_route_fn_scoring_is_deterministic_with_target_tiebreak() -> None:

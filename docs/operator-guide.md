@@ -32,8 +32,13 @@ Daemon embed-model auto behavior:
 
 Route-mode behavior:
 - Default is `learned`.
-- `openclawbrain init` writes `route_model.npz` beside `state.json` (identity-like starter model).
+- `openclawbrain init` writes `route_model.npz` beside `state.json` (QRsim-only identity starter model).
 - If `route_model.npz` is missing/unloadable, daemon gracefully falls back to `edge+sim`.
+- Runtime `learned` scoring is confidence-adaptive:
+  - Graph prior: `graph_prior_i = rel_conf*r_i + (1-rel_conf)*w_i`.
+  - Router term (`QRsim`): route model projected query-target score (plus bias), without direct edge weight/relevance features.
+  - Final mix: `final_i = router_conf*QRsim_i + (1-router_conf)*graph_prior_i`.
+  - `rel_conf` and `router_conf` come from normalized entropy over candidate softmax scores (margin fallback on very small candidate sets).
 
 ## 3) Confirm it's ON
 
@@ -442,6 +447,8 @@ openclawbrain train-route-model \
   --label-temp 0.5 \
   --json
 ```
+
+`train-route-model` learns the QRsim router from route traces plus labels (teacher/human/self RL-derived supervision), then writes `route_model.npz` for runtime learned routing.
 
 Enable at runtime:
 

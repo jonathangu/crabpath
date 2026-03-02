@@ -1155,7 +1155,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if not isinstance(resolved_embedder_dim, int):
         resolved_embedder_dim = embedder_dim
     if isinstance(resolved_embedder_dim, int) and resolved_embedder_dim > 0:
-        RouteModel.init_identity(d=resolved_embedder_dim, df=3).save_npz(route_model_path)
+        RouteModel.init_identity(d=resolved_embedder_dim, df=1).save_npz(route_model_path)
     else:
         raise SystemExit("could not determine embedder dimension for route_model initialization")
     index_path = output_dir / "index.json"
