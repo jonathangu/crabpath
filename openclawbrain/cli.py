@@ -243,7 +243,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("daemon")
     d.add_argument("--state")
-    d.add_argument("--embed-model", default="text-embedding-3-small")
+    d.add_argument("--embed-model", default="auto")
     d.add_argument("--auto-save-interval", type=int, default=10)
 
     serve = sub.add_parser("serve", help="Run the OpenClawBrain socket service in the foreground")

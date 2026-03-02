@@ -384,6 +384,11 @@ Start it with:
 openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
+Embedding mode defaults to `--embed-model auto`:
+- For `hash-v1` state metadata, daemon queries use hash embeddings (offline-safe).
+- For non-hash metadata, daemon queries use OpenAI embeddings (`text-embedding-3-small`).
+- Use `--embed-model hash` to force hash embeddings, or pass a model name to force OpenAI.
+
 Protocol:
 
 - Transport: `stdin`/`stdout` with newline-delimited JSON (NDJSON).

@@ -6,7 +6,6 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 from collections import deque
 import signal
 import sys
@@ -41,21 +40,37 @@ INJECTED_FEEDBACK_TAIL_SIZE = 10_000
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="openclawbrain daemon")
     parser.add_argument("--state", required=True)
-    parser.add_argument("--embed-model", default="text-embedding-3-small")
+    parser.add_argument("--embed-model", default="auto")
     parser.add_argument("--auto-save-interval", type=int, default=10)
     parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     return parser
 
 
 def _make_embed_fn(embed_model: str) -> Callable[[str], list[float]] | None:
-    """Create embedding callback when OPENAI_API_KEY is present."""
-    if not os.getenv("OPENAI_API_KEY"):
-        return None
-
+    """Create OpenAI embedding callback for a model name."""
     from openai import OpenAI
 
     client = OpenAI()
     return lambda text: [float(v) for v in client.embeddings.create(model=embed_model, input=[text]).data[0].embedding]
+
+
+def _resolve_embed_fn(embed_model: str, meta: dict[str, object]) -> Callable[[str], list[float]] | None:
+    """Resolve daemon query embedder from CLI flag and state metadata."""
+    model = str(embed_model or "").strip()
+    model_lower = model.lower()
+    embedder_name = meta.get("embedder_name")
+    embedder_name_str = embedder_name.strip().lower() if isinstance(embedder_name, str) else ""
+
+    if model_lower in {"auto", ""}:
+        if embedder_name_str == "hash-v1":
+            return None
+        resolved_model = "text-embedding-3-small"
+        if "text-embedding-3-small" in embedder_name_str:
+            resolved_model = "text-embedding-3-small"
+        return _make_embed_fn(resolved_model)
+    if model_lower == "hash":
+        return None
+    return _make_embed_fn(model)
 
 
 def _journal_path(state_path: str) -> str:
@@ -945,7 +960,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_entries=INJECTED_FEEDBACK_TAIL_SIZE,
             ),
         )
-        embed_fn = _make_embed_fn(args.embed_model)
+        embed_fn = _resolve_embed_fn(args.embed_model, meta)
         auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
 
         if hasattr(sys.stdout, "reconfigure"):
@@ -1056,6 +1071,7 @@ def main(argv: list[str] | None = None) -> int:
                         payload = {"saved": True}
                     elif method == "reload":
                         daemon_state.graph, daemon_state.index, daemon_state.meta = _load_new_state(state_path)
+                        embed_fn = _resolve_embed_fn(args.embed_model, daemon_state.meta)
                         daemon_state.write_count = 0
                         payload = {"reloaded": True}
                     elif method == "correction":

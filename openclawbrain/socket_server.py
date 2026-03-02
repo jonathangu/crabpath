@@ -20,7 +20,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="openclawbrain.socket_server")
     parser.add_argument("--state", required=True)
     parser.add_argument("--socket-path")
-    parser.add_argument("--embed-model", default="text-embedding-3-small")
+    parser.add_argument("--embed-model", default="auto")
     parser.add_argument("--auto-save-interval", type=int, default=10)
     parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
