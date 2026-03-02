@@ -4,6 +4,11 @@ Date: 2026-03-02
 
 This appendix formalizes how OpenClawBrain can translate supervision labels into a learned runtime routing policy over graph edges.
 
+## Status in code today
+
+- `async-route-pg` currently uses teacher `scores` as reward shaping fed into `apply_outcome_pg` (REINFORCE-style updates), not full distribution distillation/KL optimization yet.
+- The distillation objective below is a proposed/optional extension, not the default behavior in current v0 code.
+
 ## 1) Decision Point and Notation
 
 A single routing decision point is:
@@ -74,6 +79,8 @@ p_i = \pi_\theta(a=i\mid x,u,\{v_j\}) = \frac{\exp(z_i/T)}{\sum_{j=1}^{m}\exp(z_
 - \(T>0\): temperature
 - lower \(T\): sharper policy
 - higher \(T\): smoother policy
+
+**STOP note:** training includes STOP in the softmax action set; the STOP logit is fixed today. Learning a STOP logit is future work.
 
 ## 4) Teacher Labels to Target Distribution \(\mathbf{y}\)
 
@@ -168,6 +175,10 @@ Training can be stochastic (sampling, exploration, replay shuffling). Runtime ro
 3. Return top-\(k\) actions.
 
 So randomness is a training-time tool, not a serving-time behavior.
+
+Current mismatch to track: runtime `route_mode=edge+sim` ranks by
+\(w_i^{\text{edge}} + r_i^{\text{relevance}} + \alpha \cos(\mathbf{q},\mathbf{t}_i)\),
+but current PG updates do not backprop through the cosine term; that is future two-tower router-objective work.
 
 ## 9) Mapping to Current OCB Implementation (v0)
 
