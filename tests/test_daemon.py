@@ -868,3 +868,84 @@ def test_query_brain_compact_include_stats_uses_slim_subset(tmp_path: Path, caps
     assert "prompt_context_dropped_node_ids" not in output
     assert "context" not in output
     assert "seeds" not in output
+
+
+def test_query_brain_socket_passes_route_params(tmp_path: Path, capsys, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path)
+    query_module = _load_query_brain_module()
+
+    captured: dict[str, object] = {}
+
+    def _fake_socket(
+        socket_path: str | None,
+        query_text: str,
+        chat_id: str | None,
+        top: int,
+        route_mode: str,
+        route_top_k: int,
+        route_alpha_sim: float,
+        route_use_relevance: bool,
+        max_prompt_context_chars: int,
+        exclude_files: list[str],
+        exclude_file_prefixes: list[str],
+        prompt_context_include_node_ids: bool,
+    ) -> dict[str, object]:
+        captured.update(
+            {
+                "socket_path": socket_path,
+                "query_text": query_text,
+                "chat_id": chat_id,
+                "top": top,
+                "route_mode": route_mode,
+                "route_top_k": route_top_k,
+                "route_alpha_sim": route_alpha_sim,
+                "route_use_relevance": route_use_relevance,
+                "max_prompt_context_chars": max_prompt_context_chars,
+                "exclude_files": exclude_files,
+                "exclude_file_prefixes": exclude_file_prefixes,
+                "prompt_context_include_node_ids": prompt_context_include_node_ids,
+            }
+        )
+        return {
+            "fired_nodes": ["a"],
+            "context": "ctx",
+            "prompt_context": "[BRAIN_CONTEXT v1]\nalpha\n[/BRAIN_CONTEXT]",
+        }
+
+    monkeypatch.setattr(query_module, "_load_query_via_socket", _fake_socket)
+    socket_path = str(tmp_path / "daemon.sock")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "query_brain.py",
+            str(state_path),
+            "alpha",
+            "--chat-id",
+            "chat-123",
+            "--socket",
+            socket_path,
+            "--top",
+            "6",
+            "--route-mode",
+            "edge+sim",
+            "--route-top-k",
+            "7",
+            "--route-alpha-sim",
+            "0.25",
+            "--no-route-use-relevance",
+            "--json",
+        ],
+    )
+    query_module.main()
+    capsys.readouterr()
+
+    assert captured["socket_path"] == socket_path
+    assert captured["query_text"] == "alpha"
+    assert captured["chat_id"] == "chat-123"
+    assert captured["top"] == 6
+    assert captured["route_mode"] == "edge+sim"
+    assert captured["route_top_k"] == 7
+    assert captured["route_alpha_sim"] == 0.25
+    assert captured["route_use_relevance"] is False

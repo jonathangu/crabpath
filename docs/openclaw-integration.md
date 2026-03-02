@@ -175,6 +175,11 @@ python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/sta
 ```
 Always pass `--chat-id` so fired nodes are logged for later learning/corrections.
 Use `--exclude-recent-memory <today-note> <yesterday-note>` only when those files are already loaded by OpenClaw in the same prompt and you want to avoid duplication.
+To enable runtime route policy in daemon mode, use:
+```bash
+python3 -m openclawbrain.openclaw_adapter.query_brain ~/.openclawbrain/AGENT/state.json '<summary of user message>' --chat-id '<chat_id from inbound metadata>' --format prompt --route-mode edge+sim --route-top-k 5 --route-alpha-sim 0.5 --route-use-relevance
+```
+`--route-*` flags are daemon-query controls; local `state.json` fallback keeps existing traversal behavior.
 
 **Capture feedback** (canonical always-on path; same turn, no "log this" phrasing needed):
 ```bash
