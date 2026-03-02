@@ -67,6 +67,14 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return exp / denom
 
 
+def _constant_feature_vector(df: int) -> np.ndarray:
+    if df <= 0:
+        raise ValueError("feature dimension must be positive")
+    feat = np.zeros(df, dtype=float)
+    feat[-1] = 1.0
+    return feat
+
+
 def _labels_index(labels: list[LabelRecord]) -> dict[tuple[str, int], list[LabelRecord]]:
     indexed: dict[tuple[str, int], list[LabelRecord]] = {}
     for record in labels:
@@ -116,20 +124,20 @@ def _point_logits(
     model: RouteModel,
     query_vector: np.ndarray,
     targets: list[np.ndarray],
-    features: list[np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     q_proj = model.project_query(query_vector)
     target_projs = [model.project_target(t_vec) for t_vec in targets]
-    logits = np.asarray([model.score_projected(q_proj, t_proj, feat_vec) for t_proj, feat_vec in zip(target_projs, features)], dtype=float)
+    feat_vec = _constant_feature_vector(model.df)
+    logits = np.asarray([model.score_projected(q_proj, t_proj, feat_vec) for t_proj in target_projs], dtype=float)
     return logits, q_proj, target_projs
 
 
 def _collect_points(
     traces: list[RouteTrace],
     index_vectors: dict[str, list[float]],
-) -> tuple[int, list[tuple[RouteTrace, int, RouteDecisionPoint, np.ndarray, list[np.ndarray], list[np.ndarray], list[str]]]]:
+) -> tuple[int, list[tuple[RouteTrace, int, RouteDecisionPoint, np.ndarray, list[np.ndarray], list[str]]]]:
     points_total = sum(len(trace.decision_points) for trace in traces)
-    points: list[tuple[RouteTrace, int, RouteDecisionPoint, np.ndarray, list[np.ndarray], list[np.ndarray], list[str]]] = []
+    points: list[tuple[RouteTrace, int, RouteDecisionPoint, np.ndarray, list[np.ndarray], list[str]]] = []
     for trace in traces:
         if trace.query_vector is None:
             continue
@@ -137,7 +145,6 @@ def _collect_points(
         for point_idx, point in enumerate(trace.decision_points):
             candidate_ids: list[str] = []
             targets: list[np.ndarray] = []
-            features: list[np.ndarray] = []
             for candidate in point.sorted_candidates():
                 target_vector = index_vectors.get(candidate.target_id)
                 if target_vector is None:
@@ -147,15 +154,9 @@ def _collect_points(
                     continue
                 candidate_ids.append(candidate.target_id)
                 targets.append(target_arr)
-                features.append(
-                    np.asarray(
-                        [float(candidate.edge_weight), float(candidate.edge_relevance), 1.0],
-                        dtype=float,
-                    )
-                )
             if len(candidate_ids) < 2:
                 continue
-            points.append((trace, point_idx, point, query_vector, targets, features, candidate_ids))
+            points.append((trace, point_idx, point, query_vector, targets, candidate_ids))
     return points_total, points
 
 
@@ -171,8 +172,8 @@ def evaluate_ce_loss(
     points_total, points = _collect_points(traces, index_vectors)
     labels_by_key = _labels_index(labels)
     losses: list[float] = []
-    for trace, point_idx, point, query_vector, targets, features, candidate_ids in points:
-        logits, _q_proj, _target_projs = _point_logits(model, query_vector, targets, features)
+    for trace, point_idx, point, query_vector, targets, candidate_ids in points:
+        logits, _q_proj, _target_projs = _point_logits(model, query_vector, targets)
         probs = _softmax(logits)
         labels_dist = _teacher_distribution(
             trace,
@@ -213,7 +214,7 @@ def train_route_model(
 
     dq = int(points[0][3].shape[0])
     dt = int(points[0][4][0].shape[0])
-    model = RouteModel.init_random(dq=dq, dt=dt, df=3, rank=max(1, int(rank)))
+    model = RouteModel.init_random(dq=dq, dt=dt, df=1, rank=max(1, int(rank)))
 
     labels_by_key = _labels_index(labels)
     epoch_losses: list[float] = []
@@ -231,8 +232,9 @@ def train_route_model(
     inv_t = 1.0 / max(1e-6, float(model.T))
     for _ in range(max(1, int(epochs))):
         losses: list[float] = []
-        for trace, point_idx, point, query_vector, targets, features, candidate_ids in points:
-            logits, q_proj, target_projs = _point_logits(model, query_vector, targets, features)
+        feat_vec = _constant_feature_vector(model.df)
+        for trace, point_idx, point, query_vector, targets, candidate_ids in points:
+            logits, q_proj, target_projs = _point_logits(model, query_vector, targets)
             probs = _softmax(logits)
             labels_dist = _teacher_distribution(
                 trace,
@@ -254,7 +256,7 @@ def train_route_model(
                 g_scaled = float(g_i) * inv_t
                 grad_A += g_scaled * np.outer(query_vector, target_projs[idx])
                 grad_B += g_scaled * np.outer(targets[idx], q_proj)
-                grad_w += g_scaled * features[idx]
+                grad_w += g_scaled * feat_vec
                 grad_b += g_scaled
 
             model.A -= lr_value * grad_A

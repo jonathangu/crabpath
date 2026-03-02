@@ -55,6 +55,6 @@ def test_route_model_init_identity_matches_expected_defaults() -> None:
     assert model.r == 3
     assert np.allclose(model.A, np.eye(3))
     assert np.allclose(model.B, np.eye(3))
-    assert np.allclose(model.w_feat, np.asarray([1.0, 1.0, 0.0]))
+    assert np.allclose(model.w_feat, np.asarray([0.0, 0.0, 0.0]))
     assert model.b == 0.0
     assert model.T == 1.0

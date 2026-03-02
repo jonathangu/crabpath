@@ -94,8 +94,16 @@ New modules and boundaries:
 
 Runtime learned mode:
 - `route_mode=learned` uses `policy.make_learned_route_fn`.
-- Edge feature vector is `[edge_weight, edge_relevance, 1.0]`.
-- Route scoring is deterministic top-k via model logits with target-id tie-breaks.
+- `QRsim` is the route-model term: projected query/target similarity plus bias only.
+- Graph prior is explicit and separate: `graph_prior_i = rel_conf*r_i + (1-rel_conf)*w_i`.
+  - `w_i = edge.weight`
+  - `r_i = edge.metadata.relevance` (default `0`)
+  - `rel_conf = 1 - H_norm(softmax(r))`, with margin fallback for very small candidate sets.
+- Router confidence is similarly computed from `QRsim` logits:
+  - `router_conf = 1 - H_norm(softmax(QRsim))`, with margin fallback for very small candidate sets.
+- Final runtime score mixes both policies by confidence:
+  - `final_i = router_conf*QRsim_i + (1-router_conf)*graph_prior_i`
+- Runtime ranking remains deterministic top-k with target-id tie-breaks.
 
 Trace/schema updates:
 - `RouteTrace` now supports optional `query_vector`.
@@ -104,3 +112,4 @@ Trace/schema updates:
 Training CLI:
 - `openclawbrain train-route-model --state ... --traces-in ... --out ...`
 - Numpy-only SGD over cross-entropy against teacher/human/self label distributions.
+- `train-route-model` trains the `QRsim` router from traces + labels (distillation and RL-derived labels), with constant edge features so weight/relevance are not direct router inputs.

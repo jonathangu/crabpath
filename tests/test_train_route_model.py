@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openclawbrain import Edge, Graph, Node, VectorIndex, save_state
-from openclawbrain.reward import RewardSource
+from openclawbrain.route_model import RouteModel
+from openclawbrain import Edge, Graph, Node, VectorIndex, load_state, save_state
+from openclawbrain.reward import RewardSource, RewardWeights
 from openclawbrain.trace import RouteCandidate, RouteDecisionPoint, RouteTrace, route_trace_to_json
-from openclawbrain.train_route_model import train_route_model
+from openclawbrain.train_route_model import _read_traces, evaluate_ce_loss, train_route_model
 
 
 def _write_state(path: Path) -> None:
@@ -78,5 +79,29 @@ def test_train_route_model_ce_loss_decreases(tmp_path: Path) -> None:
         label_temp=0.5,
     )
     assert out_path.exists()
+    model = RouteModel.load_npz(out_path)
+    assert model.df == 1
     assert summary.points_used > 0
     assert summary.final_ce_loss < summary.initial_ce_loss
+
+
+def test_evaluate_ce_loss_supports_legacy_df3_features(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    traces_path = tmp_path / "traces.jsonl"
+    _write_state(state_path)
+    _write_traces(traces_path)
+    traces = _read_traces(str(traces_path))
+    model = RouteModel.init_identity(d=2, df=3)
+    _, index, _ = load_state(str(state_path))
+
+    loss, points_total, points_used = evaluate_ce_loss(
+        model=model,
+        traces=traces,
+        index_vectors=index._vectors,
+        labels=[],
+        label_temp=0.5,
+        reward_weights=RewardWeights(),
+    )
+    assert loss >= 0.0
+    assert points_total > 0
+    assert points_used > 0

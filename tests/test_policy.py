@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from openclawbrain import Edge, VectorIndex
-from openclawbrain.policy import RoutingPolicy, make_runtime_route_fn
+from openclawbrain.policy import RoutingPolicy, _confidence, make_runtime_route_fn
 from openclawbrain.route_model import RouteModel
 
 
@@ -87,3 +87,49 @@ def test_make_runtime_route_fn_learned_is_deterministic() -> None:
     second = route_fn("src", list(reversed(candidates)), "q")
     assert first == ["a"]
     assert second == ["a"]
+
+
+def test_confidence_outputs_bounds() -> None:
+    entropy, conf, margin = _confidence([0.2, 0.2, 0.2, 0.2])
+    assert 0.0 <= entropy <= 1.0
+    assert 0.0 <= conf <= 1.0
+    assert 0.0 <= margin <= 1.0
+
+
+def test_make_runtime_route_fn_learned_populates_decision_log() -> None:
+    index = VectorIndex()
+    index.upsert("a", [1.0, 0.0])
+    index.upsert("b", [0.0, 1.0])
+    model = RouteModel(
+        r=2,
+        A=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float),
+        B=np.asarray([[5.0, 0.0], [0.0, -5.0]], dtype=float),
+        w_feat=np.asarray([10.0, 10.0, 0.0], dtype=float),
+        b=0.0,
+        T=1.0,
+    )
+    decision_log = []
+    route_fn = make_runtime_route_fn(
+        policy=RoutingPolicy(route_mode="learned", top_k=1, alpha_sim=0.5, use_relevance=True),
+        query_vector=[1.0, 0.0],
+        index=index,
+        learned_model=model,
+        target_projections=model.precompute_target_projections(index),
+        decision_log=decision_log,
+    )
+    assert route_fn is not None
+    chosen = route_fn(
+        "src",
+        [
+            Edge("src", "b", weight=0.99, metadata={"relevance": 0.99}),
+            Edge("src", "a", weight=0.01, metadata={"relevance": 0.01}),
+        ],
+        "q",
+    )
+    assert chosen == ["a"]
+    assert len(decision_log) == 1
+    metrics = decision_log[0]
+    assert metrics.chosen_edge == ("src", "a")
+    assert metrics.candidate_count == 2
+    assert 0.0 <= metrics.router_conf <= 1.0
+    assert 0.0 <= metrics.relevance_conf <= 1.0
