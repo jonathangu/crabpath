@@ -66,6 +66,7 @@ from .maintain import run_maintenance
 from .state_lock import StateLockError, state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
 from .ops.async_route_pg import run_async_route_pg
+from .profile import BrainProfile, BrainProfileError
 from . import __version__
 
 DEFAULT_STATE_PROFILE = "main"
@@ -93,6 +94,51 @@ def _resolve_effective_state_path(
     """Resolve CLI state path, optionally allowing the default profile state."""
     use_default_state = allow_default_state and getattr(args, "graph", None) is None
     return _resolve_state_path(getattr(args, "state", None), allow_default=use_default_state)
+
+
+def _load_profile(profile_path: str | None) -> BrainProfile | None:
+    if profile_path is None:
+        return None
+    try:
+        return BrainProfile.load(profile_path)
+    except BrainProfileError as exc:
+        raise SystemExit(f"invalid brain profile: {exc}") from None
+
+
+def _coalesce(cli_value: str | None, profile_value: str | None, default: str) -> str:
+    if cli_value is not None:
+        return cli_value
+    if profile_value is not None:
+        return profile_value
+    return default
+
+
+def _coalesce_int(cli_value: int | None, profile_value: int | None, default: int) -> int:
+    if cli_value is not None:
+        return cli_value
+    if profile_value is not None:
+        return profile_value
+    return default
+
+
+def _coalesce_float(cli_value: float | None, profile_value: float | None, default: float) -> float:
+    if cli_value is not None:
+        return cli_value
+    if profile_value is not None:
+        return profile_value
+    return default
+
+
+def _coalesce_route_use_relevance(
+    cli_value: str | None,
+    profile_value: bool | None,
+    default: bool,
+) -> bool:
+    if cli_value is not None:
+        return cli_value.strip().lower() == "true"
+    if profile_value is not None:
+        return profile_value
+    return default
 
 
 @contextmanager
@@ -243,12 +289,27 @@ def _build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("daemon")
     d.add_argument("--state")
-    d.add_argument("--embed-model", default="auto")
+    d.add_argument("--profile")
+    d.add_argument("--embed-model", default=None)
+    d.add_argument("--max-prompt-context-chars", type=int, default=None)
+    d.add_argument("--max-fired-nodes", type=int, default=None)
+    d.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default=None)
+    d.add_argument("--route-top-k", type=int, default=None)
+    d.add_argument("--route-alpha-sim", type=float, default=None)
+    d.add_argument("--route-use-relevance", choices=["true", "false"], default=None)
     d.add_argument("--auto-save-interval", type=int, default=10)
 
     serve = sub.add_parser("serve", help="Run the OpenClawBrain socket service in the foreground")
-    serve.add_argument("--state", required=True, help="Path to state.json")
+    serve.add_argument("--state", help="Path to state.json")
+    serve.add_argument("--profile")
     serve.add_argument("--socket-path", help="Override Unix socket path (default: ~/.openclawbrain/<agent>/daemon.sock)")
+    serve.add_argument("--embed-model", default=None)
+    serve.add_argument("--max-prompt-context-chars", type=int, default=None)
+    serve.add_argument("--max-fired-nodes", type=int, default=None)
+    serve.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default=None)
+    serve.add_argument("--route-top-k", type=int, default=None)
+    serve.add_argument("--route-alpha-sim", type=float, default=None)
+    serve.add_argument("--route-use-relevance", choices=["true", "false"], default=None)
     serve.add_argument(
         "--foreground",
         action="store_true",
@@ -2267,9 +2328,39 @@ def cmd_maintain(args: argparse.Namespace) -> int:
 
 def cmd_daemon(args: argparse.Namespace) -> int:
     """cmd daemon."""
-    state_path = _resolve_state_path(args.state, allow_default=True)
+    profile = _load_profile(args.profile)
+    state_input = args.state if args.state is not None else (profile.paths.state_path if profile is not None else None)
+    state_path = _resolve_state_path(state_input, allow_default=True)
     if state_path is None:
         raise SystemExit("--state is required for daemon")
+
+    embed_model = _coalesce(args.embed_model, profile.embedder.embed_model if profile is not None else None, "auto")
+    max_prompt_context_chars = _coalesce_int(
+        args.max_prompt_context_chars,
+        profile.policy.max_prompt_context_chars if profile is not None else None,
+        30000,
+    )
+    max_fired_nodes = _coalesce_int(
+        args.max_fired_nodes,
+        profile.policy.max_fired_nodes if profile is not None else None,
+        30,
+    )
+    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "off")
+    route_top_k = _coalesce_int(
+        args.route_top_k,
+        profile.policy.route_top_k if profile is not None else None,
+        5,
+    )
+    route_alpha_sim = _coalesce_float(
+        args.route_alpha_sim,
+        profile.policy.route_alpha_sim if profile is not None else None,
+        0.5,
+    )
+    route_use_relevance = _coalesce_route_use_relevance(
+        args.route_use_relevance,
+        profile.policy.route_use_relevance if profile is not None else None,
+        True,
+    )
     from .daemon import main as daemon_main
 
     return daemon_main(
@@ -2277,7 +2368,19 @@ def cmd_daemon(args: argparse.Namespace) -> int:
             "--state",
             str(state_path),
             "--embed-model",
-            args.embed_model,
+            embed_model,
+            "--max-prompt-context-chars",
+            str(max_prompt_context_chars),
+            "--max-fired-nodes",
+            str(max_fired_nodes),
+            "--route-mode",
+            route_mode,
+            "--route-top-k",
+            str(route_top_k),
+            "--route-alpha-sim",
+            str(route_alpha_sim),
+            "--route-use-relevance",
+            "true" if route_use_relevance else "false",
             "--auto-save-interval",
             str(args.auto_save_interval),
         ]
@@ -2286,10 +2389,40 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     """cmd serve."""
-    state_path = _resolve_state_path(args.state, allow_default=False)
+    profile = _load_profile(args.profile)
+    state_input = args.state if args.state is not None else (profile.paths.state_path if profile is not None else None)
+    state_path = _resolve_state_path(state_input, allow_default=False)
     if state_path is None:
         raise SystemExit("--state is required for serve")
     state_path = str(Path(state_path).expanduser())
+
+    embed_model = _coalesce(args.embed_model, profile.embedder.embed_model if profile is not None else None, "auto")
+    max_prompt_context_chars = _coalesce_int(
+        args.max_prompt_context_chars,
+        profile.policy.max_prompt_context_chars if profile is not None else None,
+        30000,
+    )
+    max_fired_nodes = _coalesce_int(
+        args.max_fired_nodes,
+        profile.policy.max_fired_nodes if profile is not None else None,
+        30,
+    )
+    route_mode = _coalesce(args.route_mode, profile.policy.route_mode if profile is not None else None, "off")
+    route_top_k = _coalesce_int(
+        args.route_top_k,
+        profile.policy.route_top_k if profile is not None else None,
+        5,
+    )
+    route_alpha_sim = _coalesce_float(
+        args.route_alpha_sim,
+        profile.policy.route_alpha_sim if profile is not None else None,
+        0.5,
+    )
+    route_use_relevance = _coalesce_route_use_relevance(
+        args.route_use_relevance,
+        profile.policy.route_use_relevance if profile is not None else None,
+        True,
+    )
 
     from .socket_server import _default_socket_path as _server_default_socket_path
     from .socket_server import main as socket_server_main
@@ -2309,6 +2442,22 @@ def cmd_serve(args: argparse.Namespace) -> int:
     server_argv = ["--state", state_path]
     if args.socket_path:
         server_argv.extend(["--socket-path", socket_path])
+    server_argv.extend([
+        "--embed-model",
+        embed_model,
+        "--max-prompt-context-chars",
+        str(max_prompt_context_chars),
+        "--max-fired-nodes",
+        str(max_fired_nodes),
+        "--route-mode",
+        route_mode,
+        "--route-top-k",
+        str(route_top_k),
+        "--route-alpha-sim",
+        str(route_alpha_sim),
+        "--route-use-relevance",
+        "true" if route_use_relevance else "false",
+    ])
     return socket_server_main(server_argv)
 
 

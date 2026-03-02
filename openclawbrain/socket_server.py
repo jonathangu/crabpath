@@ -21,6 +21,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--state", required=True)
     parser.add_argument("--socket-path")
     parser.add_argument("--embed-model", default="auto")
+    parser.add_argument("--max-prompt-context-chars", type=int, default=30000)
+    parser.add_argument("--max-fired-nodes", type=int, default=30)
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default="off")
+    parser.add_argument("--route-top-k", type=int, default=5)
+    parser.add_argument("--route-alpha-sim", type=float, default=0.5)
+    parser.add_argument("--route-use-relevance", choices=["true", "false"], default="true")
     parser.add_argument("--auto-save-interval", type=int, default=10)
     parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
@@ -49,6 +55,12 @@ class SocketDaemonServer:
         state_path: str,
         socket_path: str | None,
         embed_model: str,
+        max_prompt_context_chars: int,
+        max_fired_nodes: int,
+        route_mode: str,
+        route_top_k: int,
+        route_alpha_sim: float,
+        route_use_relevance: str,
         auto_save_interval: int,
         force: bool,
         verbose: bool,
@@ -60,6 +72,12 @@ class SocketDaemonServer:
             else Path(_default_socket_path(str(self.state_path)))
         )
         self.embed_model = embed_model
+        self.max_prompt_context_chars = max_prompt_context_chars
+        self.max_fired_nodes = max_fired_nodes
+        self.route_mode = route_mode
+        self.route_top_k = route_top_k
+        self.route_alpha_sim = route_alpha_sim
+        self.route_use_relevance = route_use_relevance
         self.auto_save_interval = auto_save_interval
         self.force = force
         self.pid_path = Path(_default_pid_path(str(self.socket_path)))
@@ -118,6 +136,18 @@ class SocketDaemonServer:
             str(self.state_path),
             "--embed-model",
             self.embed_model,
+            "--max-prompt-context-chars",
+            str(self.max_prompt_context_chars),
+            "--max-fired-nodes",
+            str(self.max_fired_nodes),
+            "--route-mode",
+            self.route_mode,
+            "--route-top-k",
+            str(self.route_top_k),
+            "--route-alpha-sim",
+            str(self.route_alpha_sim),
+            "--route-use-relevance",
+            self.route_use_relevance,
             "--auto-save-interval",
             str(self.auto_save_interval),
         ]
@@ -333,6 +363,12 @@ def main(argv: list[str] | None = None) -> int:
         state_path=args.state,
         socket_path=args.socket_path,
         embed_model=args.embed_model,
+        max_prompt_context_chars=args.max_prompt_context_chars,
+        max_fired_nodes=args.max_fired_nodes,
+        route_mode=args.route_mode,
+        route_top_k=args.route_top_k,
+        route_alpha_sim=args.route_alpha_sim,
+        route_use_relevance=args.route_use_relevance,
         auto_save_interval=args.auto_save_interval,
         force=args.force,
         verbose=args.verbose,
