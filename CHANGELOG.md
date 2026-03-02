@@ -1,35 +1,40 @@
 ## Unreleased
 
-### Async teacher routing + policy-gradient updates (`async-route-pg`)
-- Added new CLI command: `openclawbrain async-route-pg` with dry-run/apply modes and JSON summary output.
-- Added background teacher-shadow routing loop over recent query journal events:
-  - replays local traversal with keyword seeding (no query-path LLM dependency)
-  - builds candidate sets from habitual edges, with reflex fallback
-  - batches teacher requests through OpenAI chat batch helper when available
-  - parses teacher JSON labels from `choose` and/or `scores`
-- Applies dense PG updates via `apply_outcome_pg([source, target], outcome=score_scale*score)` and optionally writes edge `metadata.relevance`.
-- Includes safety behavior for missing teacher credentials (`OPENAI_API_KEY`) and `--teacher none` (runs, reports unavailable, no updates).
-- Added tests for teacher-label parsing, relative weight improvement from positive labels, and dry-run no-write behavior.
-- Updated docs (`README.md`, `docs/architecture.md`, `docs/operator-guide.md`) for operator workflow and architecture placement.
+- No entries yet.
 
-### OpenClaw integration context dedupe + compact adapter output
-- Daemon `query` now accepts prompt-context-only exclusions:
-  - `exclude_files` (exact `metadata.file` matches)
-  - `exclude_file_prefixes` (prefix matches)
-- Added daemon query stats:
-  - `prompt_context_excluded_files_count`
-  - `prompt_context_excluded_node_ids_count`
-- `examples/openclaw_adapter/query_brain.py` now supports compact JSON output:
-  - `--compact` / `--no-compact`
-  - `--json` defaults to compact mode
-  - compact JSON omits non-deterministic `context` and keeps deterministic `prompt_context` + `prompt_context_*` stats
-- Adapter now prefers daemon-provided `prompt_context` in socket mode (no local recompute when available).
-- Added adapter controls for tighter prompt budgets and duplication avoidance:
-  - `--max-prompt-context-chars` (default `12000`)
-  - `--exclude-bootstrap` (default enabled)
-  - `--exclude-recent-memory <files...>` (optional exact file exclusions)
-- Added `examples/ops/audit_prompt_context_duplication.py` to report bootstrap-vs-other fired-node ratios and suggest compact/exclusion flags.
-- Added tests for daemon query exclusion behavior and adapter compact JSON output.
+## v12.2.6 (2026-03-02)
+
+### async-route-pg: shadow teacher routing + policy-gradient updates
+- Added `openclawbrain async-route-pg` to sample recent journaled queries, run teacher-shadow edge choices, and apply dense policy-gradient updates via `apply_outcome_pg`.
+- Supports safe default dry-run behavior (no writes), with `--apply` required for persistent updates.
+- Optional edge metadata relevance writes are supported for better runtime route scoring.
+
+### Runtime route_mode=`edge+sim` (LLM-free query path)
+- Added query-conditioned routing mode at daemon query time: `route_mode=edge+sim`.
+- Habitual-edge selection now combines learned edge weights, optional edge relevance metadata, and query-to-target cosine similarity with deterministic ranking.
+- Query serving remains local/LLM-free while benefiting from updated routing priors.
+
+### Docs: new core thesis (`Ultimate Policy Gradient`)
+- Added `docs/core-thesis-ultimate-policy-gradient.md` as the canonical thesis/reference doc.
+- Documents the shadow-routing-to-runtime loop and operational rollout guidance.
+
+### Why this release
+- Improves retrieval quality without adding LLM latency to the online query path.
+- Creates a practical offline/online loop: teacher supervision offline, deterministic routing online.
+- Gives operators explicit guidance to measure prompt-context efficiency and routing behavior.
+
+### How to run (minimal)
+```bash
+# 1) Inspect async-route-pg in default dry-run mode
+openclawbrain async-route-pg --state /tmp/brain/state.json --json
+
+# 2) Apply updates when ready
+openclawbrain async-route-pg --state /tmp/brain/state.json --apply --json
+
+# 3) Query daemon with runtime edge+sim routing
+echo '{"id":"q1","method":"query","params":{"query":"how to deploy","route_mode":"edge+sim","top_k":4}}' \
+  | openclawbrain daemon --state /tmp/brain/state.json
+```
 
 ## v12.2.5 (2026-03-01)
 

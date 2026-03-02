@@ -3,7 +3,7 @@
 
 > Your retrieval routes become the prompt — assembled by learned routing, not top-k similarity.
 
-**Repo version:** `v12.2.5` (see `pyproject.toml`; PyPI may lag)
+**Repo version:** `v12.2.6` (see `pyproject.toml`; PyPI may lag)
 **Website:** https://openclawbrain.ai
 
 **Setup:** [Setup Guide](docs/setup-guide.md)
@@ -696,6 +696,21 @@ The fast-learning and harvest pipeline is sidecar-only to the core files:
 ## Async teacher routing (offline)
 
 `query` and daemon query stay LLM-free and fast. `async-route-pg` is a separate background loop that samples recent journaled queries, replays local traversal, asks a teacher model which candidate edges it would choose, then applies dense policy-gradient updates with `apply_outcome_pg`.
+
+Dry-run is the default (no writes), machine-readable JSON:
+
+```bash
+openclawbrain async-route-pg \
+  --state /tmp/brain/state.json \
+  --since-hours 24 \
+  --max-queries 200 \
+  --sample-rate 0.1 \
+  --teacher openai \
+  --teacher-model gpt-5-mini \
+  --json
+```
+
+Apply mode (writes updates):
 
 ```bash
 openclawbrain async-route-pg \

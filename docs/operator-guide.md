@@ -129,6 +129,21 @@ Recommended production path: use `examples/ops/rebuild_then_cutover.sh` so rebui
 
 Run this off the hot path (cron/manual). Query serving remains LLM-free.
 
+Dry-run default (`--json`):
+
+```bash
+openclawbrain async-route-pg \
+  --state ~/.openclawbrain/main/state.json \
+  --since-hours 24 \
+  --max-queries 200 \
+  --sample-rate 0.1 \
+  --teacher openai \
+  --teacher-model gpt-5-mini \
+  --json
+```
+
+Apply updates (`--apply`):
+
 ```bash
 openclawbrain async-route-pg \
   --state ~/.openclawbrain/main/state.json \
@@ -139,6 +154,13 @@ openclawbrain async-route-pg \
   --teacher-model gpt-5-mini \
   --apply \
   --json
+```
+
+Daemon query with runtime route mode `edge+sim`:
+
+```bash
+echo '{"id":"op-q1","method":"query","params":{"query":"incident deploy rollback","top_k":4,"route_mode":"edge+sim","route_top_k":5,"route_alpha_sim":0.5,"route_use_relevance":true}}' \
+  | openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
 Operational notes:
@@ -157,7 +179,7 @@ Operational notes:
 | `LLM required for fast-learning` | no OpenAI client/key configured for fast-learning mining | set `OPENAI_API_KEY` or run `--edges-only` replay path |
 | CLI says invalid sessions path | wrong sessions directory/file path | `ls -la ~/.openclaw/agents/main/sessions` and pass existing dir/files to `--sessions` |
 
-## 10) Prompt-context trim eval (offline)
+## 10) Prompt-context and route-mode eval (offline)
 Use the lightweight harness to measure trim rate and dropped-authority distribution at common caps (`20k`/`30k`) directly from `state.json`:
 
 ```bash
@@ -167,6 +189,18 @@ python examples/eval/prompt_context_eval.py \
 ```
 
 If no `--queries-file` is provided, a small built-in sample query set is used.
+
+Compare `route_mode=off` vs `route_mode=edge+sim` on the same saved state:
+
+```bash
+python examples/eval/route_mode_compare.py \
+  --state ~/.openclawbrain/main/state.json \
+  --queries-file /path/to/queries.txt \
+  --top-k 4 \
+  --max-hops 15 \
+  --max-fired-nodes 30 \
+  --max-prompt-context-chars 30000
+```
 
 ## 11) Defaults that matter (v12.2.5+)
 - `max_prompt_context_chars` default: **30000** (daemon)
