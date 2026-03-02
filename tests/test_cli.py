@@ -784,7 +784,24 @@ def test_serve_command_prints_banner_and_calls_socket_server(monkeypatch, capsys
 
     code = main(["serve", "--state", "~/agent/state.json"])
     assert code == 0
-    assert called == [["--state", str(Path("~/agent/state.json").expanduser())]]
+    assert called == [[
+        "--state",
+        str(Path("~/agent/state.json").expanduser()),
+        "--embed-model",
+        "auto",
+        "--max-prompt-context-chars",
+        "30000",
+        "--max-fired-nodes",
+        "30",
+        "--route-mode",
+        "off",
+        "--route-top-k",
+        "5",
+        "--route-alpha-sim",
+        "0.5",
+        "--route-use-relevance",
+        "true",
+    ]]
 
     err = capsys.readouterr().err
     assert "OpenClawBrain socket service (foreground)" in err
@@ -808,7 +825,80 @@ def test_serve_command_passes_explicit_socket_path(monkeypatch) -> None:
 
     code = main(["serve", "--state", "/tmp/state.json", "--socket-path", "/tmp/d.sock"])
     assert code == 0
-    assert called == [["--state", "/tmp/state.json", "--socket-path", "/tmp/d.sock"]]
+    assert called == [[
+        "--state",
+        "/tmp/state.json",
+        "--socket-path",
+        "/tmp/d.sock",
+        "--embed-model",
+        "auto",
+        "--max-prompt-context-chars",
+        "30000",
+        "--max-fired-nodes",
+        "30",
+        "--route-mode",
+        "off",
+        "--route-top-k",
+        "5",
+        "--route-alpha-sim",
+        "0.5",
+        "--route-use-relevance",
+        "true",
+    ]]
+
+
+def test_daemon_profile_defaults_with_cli_override(monkeypatch, tmp_path) -> None:
+    """CLI daemon flags should override profile values."""
+    profile_path = tmp_path / "brainprofile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "policy": {
+                    "max_prompt_context_chars": 11111,
+                    "max_fired_nodes": 17,
+                    "route_mode": "edge",
+                    "route_top_k": 3,
+                    "route_alpha_sim": 0.25,
+                    "route_use_relevance": False,
+                },
+                "embedder": {"embed_model": "hash"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: list[list[str]] = []
+
+    def fake_daemon_main(argv: list[str] | None = None) -> int:
+        captured.append(list(argv or []))
+        return 0
+
+    import openclawbrain.daemon as daemon_module
+
+    monkeypatch.setattr(daemon_module, "main", fake_daemon_main)
+
+    code = main([
+        "daemon",
+        "--state",
+        "/tmp/state.json",
+        "--profile",
+        str(profile_path),
+        "--embed-model",
+        "auto",
+        "--route-mode",
+        "edge+sim",
+        "--max-fired-nodes",
+        "99",
+    ])
+    assert code == 0
+    assert captured
+    argv = captured[0]
+    assert "--embed-model" in argv and argv[argv.index("--embed-model") + 1] == "auto"
+    assert "--route-mode" in argv and argv[argv.index("--route-mode") + 1] == "edge+sim"
+    assert "--max-fired-nodes" in argv and argv[argv.index("--max-fired-nodes") + 1] == "99"
+    # Non-overridden fields still come from profile.
+    assert "--max-prompt-context-chars" in argv and argv[argv.index("--max-prompt-context-chars") + 1] == "11111"
+
+
 def test_inject_command_defaults_connect_min_sim_for_hash_embedder(tmp_path, capsys) -> None:
     """test inject uses a zero min similarity threshold by default for hash embeds."""
     state_path = tmp_path / "state.json"

@@ -51,6 +51,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="openclawbrain daemon")
     parser.add_argument("--state", required=True)
     parser.add_argument("--embed-model", default="auto")
+    parser.add_argument("--max-prompt-context-chars", type=int, default=30000)
+    parser.add_argument("--max-fired-nodes", type=int, default=30)
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim"], default="off")
+    parser.add_argument("--route-top-k", type=int, default=5)
+    parser.add_argument("--route-alpha-sim", type=float, default=0.5)
+    parser.add_argument("--route-use-relevance", choices=["true", "false"], default="true")
     parser.add_argument("--auto-save-interval", type=int, default=10)
     parser.add_argument("--force", action="store_true", help="Bypass state lock (expert use)")
     return parser
@@ -283,12 +289,15 @@ def _handle_query(
     embed_fn: Callable[[str], list[float]] | None,
     params: dict[str, object],
     state_path: str,
+    *,
+    query_defaults: "QueryDefaults | None" = None,
 ) -> dict[str, object]:
     """Handle query requests with embed + traversal timings.
 
     Includes a deterministic `prompt_context` block suitable for prompt caching.
     """
-    query = QueryParams.from_dict(params)
+    effective_defaults = query_defaults or QueryDefaults()
+    query = QueryParams.from_dict(_with_query_defaults(params, effective_defaults))
     query_text = query.query
     top_k = query.top_k
     max_prompt_chars = query.max_prompt_context_chars
@@ -833,6 +842,28 @@ class _DaemonState:
     write_count: int = 0
 
 
+@dataclass(frozen=True)
+class QueryDefaults:
+    max_prompt_context_chars: int = 30000
+    max_fired_nodes: int = 30
+    route_mode: str = "off"
+    route_top_k: int = 5
+    route_alpha_sim: float = 0.5
+    route_use_relevance: bool = True
+
+
+def _with_query_defaults(params: dict[str, object], defaults: QueryDefaults) -> dict[str, object]:
+    merged = dict(params)
+    merged.setdefault("max_prompt_context_chars", defaults.max_prompt_context_chars)
+    merged.setdefault("max_context_chars", defaults.max_prompt_context_chars)
+    merged.setdefault("max_fired_nodes", defaults.max_fired_nodes)
+    merged.setdefault("route_mode", defaults.route_mode)
+    merged.setdefault("route_top_k", defaults.route_top_k)
+    merged.setdefault("route_alpha_sim", defaults.route_alpha_sim)
+    merged.setdefault("route_use_relevance", defaults.route_use_relevance)
+    return merged
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run NDJSON worker loop."""
     args = _build_parser().parse_args(argv)
@@ -851,6 +882,30 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         embed_fn = _resolve_embed_fn(args.embed_model, meta)
+        query_defaults = QueryDefaults(
+            max_prompt_context_chars=parse_int(
+                args.max_prompt_context_chars,
+                "max_prompt_context_chars",
+                default=30000,
+            ),
+            max_fired_nodes=parse_int(
+                args.max_fired_nodes,
+                "max_fired_nodes",
+                default=30,
+            ),
+            route_mode=parse_route_mode(args.route_mode),
+            route_top_k=parse_int(
+                args.route_top_k,
+                "route_top_k",
+                default=5,
+            ),
+            route_alpha_sim=parse_float(
+                args.route_alpha_sim,
+                "route_alpha_sim",
+                default=0.5,
+            ),
+            route_use_relevance=str(args.route_use_relevance).strip().lower() == "true",
+        )
         auto_save_interval = max(1, args.auto_save_interval) if args.auto_save_interval > 0 else 0
 
         if hasattr(sys.stdout, "reconfigure"):
@@ -894,6 +949,7 @@ def main(argv: list[str] | None = None) -> int:
                             embed_fn=embed_fn,
                             params=params,
                             state_path=state_path,
+                            query_defaults=query_defaults,
                         )
                         query_chat_id = parse_chat_id(params.get("chat_id"), "chat_id", required=False)
                         if query_chat_id is not None:
