@@ -396,6 +396,12 @@ Example request/response:
 echo '{"id":"req-1","method":"query","params":{"query":"how to deploy","top_k":4,"chat_id":"telegram:123"}}' | openclawbrain daemon --state ~/.openclawbrain/main/state.json
 ```
 
+Enable deterministic query-conditioned habitual routing (no LLM calls on query path):
+
+```bash
+echo '{"id":"req-2","method":"query","params":{"query":"how to deploy","top_k":4,"route_mode":"edge+sim","route_top_k":5,"route_alpha_sim":0.5,"route_use_relevance":true}}' | openclawbrain daemon --state ~/.openclawbrain/main/state.json
+```
+
 ```json
 {"id":"req-1","result":{"fired_nodes":["a"],"context":"...","seeds":[["a",0.96]],"embed_query_ms":1.1,"traverse_ms":2.4,"total_ms":3.5}}
 ```

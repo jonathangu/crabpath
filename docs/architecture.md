@@ -140,6 +140,43 @@ Split and merge form a balancing pair: split raises topic granularity when nodes
 
 This preserves fast query behavior (LLM-free daemon query path) while feeding better edge priors into split/merge/prune/connect decisions over time.
 
+## 3-c) Runtime route policy
+
+Daemon `query` supports an optional deterministic local routing policy for habitual edges:
+
+- `route_mode`: `off` (default), `edge`, or `edge+sim`
+- `route_top_k`: max habitual targets kept per source (default `5`)
+- `route_alpha_sim`: weight on cosine similarity term (default `0.5`)
+- `route_use_relevance`: include `edge.metadata["relevance"]` when present (default `true`)
+
+When enabled (`route_mode != off`), daemon builds a local `route_fn` closure using:
+
+- query embedding vector (already computed in query handling)
+- in-memory `VectorIndex` target vectors
+- edge weight and optional relevance metadata
+
+Scoring rule:
+
+```text
+score = edge.weight + relevance + alpha_sim * cosine(query_vector, target_vector)
+```
+
+For `route_mode=edge`, the similarity term is disabled and only edge priors are used.
+For `route_mode=edge+sim`, similarity is included.
+
+Selection is deterministic:
+
+- rank habitual candidates by descending score
+- break ties by ascending `target_id`
+- keep top `route_top_k` per source
+
+`traverse()` behavior remains unchanged for tiers:
+
+- reflex edges are always auto-followed
+- route policy only filters habitual candidates
+
+This keeps the runtime path lightning-fast and local (no LLM calls), while letting async teacher routing (`async-route-pg`) shape runtime choices through updated weights and optional `relevance` metadata.
+
 ## Self-Regulation
 
 Maintenance now includes three biologically inspired mechanisms:
