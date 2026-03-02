@@ -3,7 +3,7 @@
 ## Prerequisites
 - Python 3.10+
 - `pip install openclawbrain`
-- `OPENAI_API_KEY` in environment when serving non-hash states from daemon auto mode (not required for `hash-v1` offline states)
+- `OPENAI_API_KEY` only if you explicitly use OpenAI embeddings/teacher labeling
 - A workspace directory with markdown files (your agent's knowledge base)
 
 ## Step 1: Build your first brain
@@ -14,13 +14,15 @@ openclawbrain doctor --state ./brain/state.json
 openclawbrain info --state ./brain/state.json
 ```
 
-By default, `init` tries OpenAI embeddings and LLM (`--embedder auto --llm auto`). If `OPENAI_API_KEY` is set, you get production-quality embeddings automatically. If not, it falls back to hash embeddings with no API calls. Use `--embedder hash --llm none` to force offline mode.
+By default, `init` uses local embeddings (`--embedder auto` resolves `local -> hash`) and does not require OpenAI. Use `--embedder hash --llm none` for strict zero-network mode, or `--embedder openai` if you explicitly want OpenAI embeddings.
 
 Daemon query embedder default is `--embed-model auto`:
-- `hash-v1` states use hash query embeddings (offline, no OpenAI call).
-- Non-hash states use OpenAI query embeddings with `text-embedding-3-small`.
-- Force offline hash mode with `--embed-model hash`.
-- Force an explicit model with `--embed-model text-embedding-3-small` (or another compatible model).
+- `local:*` states use local query embeddings.
+- `hash-v1` states use hash query embeddings.
+- OpenAI states do not auto-call OpenAI; set `--embed-model openai:<model>` to use OpenAI explicitly.
+- Force offline mode with `--embed-model hash` or `--embed-model local`.
+
+Runtime route-mode default is `learned`. `init` writes a default identity-like `route_model.npz` beside `state.json`; if missing/unloadable, daemon falls back to `edge+sim`.
 
 ## Initial learning: replay your sessions
 
@@ -269,7 +271,7 @@ Run the production service as a Unix socket wrapper around the NDJSON daemon:
 openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
-`serve` runs the daemon worker with `--embed-model auto` by default, so query embedding mode follows the loaded state metadata (`hash-v1` => hash offline, non-hash => OpenAI `text-embedding-3-small`).
+`serve` runs the daemon worker with `--embed-model auto` and `--route-mode learned` by default. Embedding mode follows state metadata (`local:*` => local, `hash-v1` => hash, OpenAI states require explicit `--embed-model openai:<model>`).
 
 Advanced/alternate module form (same service behavior):
 
@@ -382,8 +384,11 @@ Force mode examples:
 # Force offline hash query embeddings
 openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model hash
 
+# Force offline local query embeddings
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model local
+
 # Force explicit OpenAI query model
-openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model text-embedding-3-small
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model openai:text-embedding-3-small
 ```
 
 ### launchd (macOS)

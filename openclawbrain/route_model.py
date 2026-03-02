@@ -132,3 +132,18 @@ class RouteModel:
         B = rng.normal(0.0, scale, size=(dt, rank)).astype(float)
         w_feat = np.zeros(df, dtype=float)
         return cls(r=int(rank), A=A, B=B, w_feat=w_feat, b=0.0, T=1.0)
+
+    @classmethod
+    def init_identity(cls, d: int, df: int = 3) -> "RouteModel":
+        """Initialize an identity-like model that approximates edge+sim routing."""
+        if d <= 0 or df <= 0:
+            raise ValueError("d and df must be positive")
+        A = np.eye(d, dtype=float)
+        B = np.eye(d, dtype=float)
+        w_feat = np.zeros(df, dtype=float)
+        if df >= 2:
+            w_feat[0] = 1.0
+            w_feat[1] = 1.0
+        elif df == 1:
+            w_feat[0] = 1.0
+        return cls(r=int(d), A=A, B=B, w_feat=w_feat, b=0.0, T=1.0)

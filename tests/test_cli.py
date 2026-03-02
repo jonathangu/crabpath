@@ -794,7 +794,7 @@ def test_serve_command_prints_banner_and_calls_socket_server(monkeypatch, capsys
         "--max-fired-nodes",
         "30",
         "--route-mode",
-        "off",
+        "learned",
         "--route-top-k",
         "5",
         "--route-alpha-sim",
@@ -837,7 +837,7 @@ def test_serve_command_passes_explicit_socket_path(monkeypatch) -> None:
         "--max-fired-nodes",
         "30",
         "--route-mode",
-        "off",
+        "learned",
         "--route-top-k",
         "5",
         "--route-alpha-sim",
@@ -897,6 +897,24 @@ def test_daemon_profile_defaults_with_cli_override(monkeypatch, tmp_path) -> Non
     assert "--max-fired-nodes" in argv and argv[argv.index("--max-fired-nodes") + 1] == "99"
     # Non-overridden fields still come from profile.
     assert "--max-prompt-context-chars" in argv and argv[argv.index("--max-prompt-context-chars") + 1] == "11111"
+
+
+def test_daemon_command_defaults_route_mode_learned(monkeypatch) -> None:
+    captured: list[list[str]] = []
+
+    def fake_daemon_main(argv: list[str] | None = None) -> int:
+        captured.append(list(argv or []))
+        return 0
+
+    import openclawbrain.daemon as daemon_module
+
+    monkeypatch.setattr(daemon_module, "main", fake_daemon_main)
+
+    code = main(["daemon", "--state", "/tmp/state.json"])
+    assert code == 0
+    assert captured
+    argv = captured[0]
+    assert "--route-mode" in argv and argv[argv.index("--route-mode") + 1] == "learned"
 
 
 def test_inject_command_defaults_connect_min_sim_for_hash_embedder(tmp_path, capsys) -> None:
@@ -1564,9 +1582,21 @@ def test_cli_replay_parallel_mode_v0(tmp_path, capsys) -> None:
     assert payload["merge_batches"] >= 1
 
 
-def test_cli_init_auto_embedder_falls_back_to_hash(tmp_path, monkeypatch) -> None:
-    """init with auto embedder and no OPENAI_API_KEY uses hash embedder."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_cli_init_auto_embedder_prefers_local(tmp_path, monkeypatch) -> None:
+    """init with auto embedder uses local embedder metadata when available."""
+
+    class FakeLocalEmbedder:
+        name = "local:bge-small-en-v1.5"
+        dim = 3
+
+        def embed(self, _text: str) -> list[float]:
+            return [1.0, 0.0, 0.0]
+
+        def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:
+            return {node_id: [1.0, 0.0, 0.0] for node_id, _content in texts}
+
+    import openclawbrain.cli as cli_module
+    monkeypatch.setattr(cli_module, "LocalEmbedder", FakeLocalEmbedder)
 
     workspace = tmp_path / "ws"
     workspace.mkdir()
@@ -1578,4 +1608,6 @@ def test_cli_init_auto_embedder_falls_back_to_hash(tmp_path, monkeypatch) -> Non
     assert code == 0
 
     state_data = json.loads((output / "state.json").read_text(encoding="utf-8"))
-    assert state_data["meta"]["embedder_name"] == "hash-v1"
+    assert state_data["meta"]["embedder_name"] == "local:bge-small-en-v1.5"
+    assert state_data["meta"]["embedder_dim"] == 3
+    assert (output / "route_model.npz").exists()

@@ -23,7 +23,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embed-model", default="auto")
     parser.add_argument("--max-prompt-context-chars", type=int, default=30000)
     parser.add_argument("--max-fired-nodes", type=int, default=30)
-    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default="off")
+    parser.add_argument("--route-mode", choices=["off", "edge", "edge+sim", "learned"], default="learned")
     parser.add_argument("--route-top-k", type=int, default=5)
     parser.add_argument("--route-alpha-sim", type=float, default=0.5)
     parser.add_argument("--route-use-relevance", choices=["true", "false"], default="true")

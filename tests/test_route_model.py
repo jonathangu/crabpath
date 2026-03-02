@@ -48,3 +48,13 @@ def test_route_model_init_random_shapes_and_projection() -> None:
     projections = model.precompute_target_projections(index)
     assert "n1" in projections
     assert len(projections["n1"]) == 4
+
+
+def test_route_model_init_identity_matches_expected_defaults() -> None:
+    model = RouteModel.init_identity(d=3, df=3)
+    assert model.r == 3
+    assert np.allclose(model.A, np.eye(3))
+    assert np.allclose(model.B, np.eye(3))
+    assert np.allclose(model.w_feat, np.asarray([1.0, 1.0, 0.0]))
+    assert model.b == 0.0
+    assert model.T == 1.0

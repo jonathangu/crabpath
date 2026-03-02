@@ -286,6 +286,24 @@ def test_resolve_embedder_chooses_by_arg_and_meta(monkeypatch) -> None:
     assert auto_name == "openai-text-embedding-3-small"
     assert auto_fn("query") == [1.0] * 1536
 
+    class FakeLocalEmbedder:
+        name = "local:bge-small-en-v1.5"
+        dim = 3
+
+        def embed(self, _text: str) -> list[float]:
+            return [0.1, 0.2, 0.3]
+
+        def embed_batch(self, texts: list[tuple[str, str]]) -> dict[str, list[float]]:
+            return {node_id: [0.1, 0.2, 0.3] for node_id, _content in texts}
+
+    import openclawbrain.cli as cli_module
+    monkeypatch.setattr(cli_module, "LocalEmbedder", FakeLocalEmbedder)
+    local_fn, local_batch_fn, local_name, local_dim = _resolve_embedder(argparse.Namespace(embedder="auto"), {})
+    assert local_name == "local:bge-small-en-v1.5"
+    assert local_dim == 3
+    assert local_fn("query") == [0.1, 0.2, 0.3]
+    assert local_batch_fn([("n1", "query")]) == {"n1": [0.1, 0.2, 0.3]}
+
 
 def test_cmd_init_stores_openai_metadata(tmp_path, monkeypatch) -> None:
     """test cmd init stores openai metadata."""

@@ -24,7 +24,7 @@ class ProfilePaths:
 class ProfilePolicy:
     max_prompt_context_chars: int = 30000
     max_fired_nodes: int = 30
-    route_mode: str = "off"
+    route_mode: str = "learned"
     route_top_k: int = 5
     route_alpha_sim: float = 0.5
     route_use_relevance: bool = True
@@ -122,7 +122,7 @@ class BrainProfile:
                 "policy.max_fired_nodes",
                 default=30,
             )
-            route_mode = parse_route_mode(raw_policy.get("route_mode"))
+            route_mode = parse_route_mode(raw_policy.get("route_mode", "learned"))
             route_top_k = parse_int(
                 raw_policy.get("route_top_k"),
                 "policy.route_top_k",
