@@ -547,6 +547,10 @@ from openclawbrain import (
 - **Embedder changes:** OpenClawBrain stores the embedder name + dimension in state metadata and hard-fails on mismatch — no silent corruption
 - **Maintenance:** use `openclawbrain maintain` (`decay` + `scale` + `split` + `merge` + `prune` + `connect`) to rebalance structure as the graph evolves
 
+## Core thesis (recommended reading)
+
+- **Shadow routing + Ultimate Policy Gradient:** `docs/core-thesis-ultimate-policy-gradient.md`
+
 ## Cost control
 
 - **Recommended:** OpenAI `text-embedding-3-small` (~$0.02/MB) + `gpt-5-mini` for optional offline teacher routing/scoring. Embeddings are generated at init and cached in `state.json`; normal query serving stays LLM-free.
