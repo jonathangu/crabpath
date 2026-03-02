@@ -3,7 +3,7 @@
 ## Prerequisites
 - Python 3.10+
 - `pip install openclawbrain`
-- `OPENAI_API_KEY` in environment (required for the recommended OpenAI setup; optional only for hash offline/testing mode)
+- `OPENAI_API_KEY` in environment when serving non-hash states from daemon auto mode (not required for `hash-v1` offline states)
 - A workspace directory with markdown files (your agent's knowledge base)
 
 ## Step 1: Build your first brain
@@ -15,6 +15,12 @@ openclawbrain info --state ./brain/state.json
 ```
 
 By default, `init` tries OpenAI embeddings and LLM (`--embedder auto --llm auto`). If `OPENAI_API_KEY` is set, you get production-quality embeddings automatically. If not, it falls back to hash embeddings with no API calls. Use `--embedder hash --llm none` to force offline mode.
+
+Daemon query embedder default is `--embed-model auto`:
+- `hash-v1` states use hash query embeddings (offline, no OpenAI call).
+- Non-hash states use OpenAI query embeddings with `text-embedding-3-small`.
+- Force offline hash mode with `--embed-model hash`.
+- Force an explicit model with `--embed-model text-embedding-3-small` (or another compatible model).
 
 ## Initial learning: replay your sessions
 
@@ -263,6 +269,8 @@ Run the production service as a Unix socket wrapper around the NDJSON daemon:
 openclawbrain serve --state ~/.openclawbrain/main/state.json
 ```
 
+`serve` runs the daemon worker with `--embed-model auto` by default, so query embedding mode follows the loaded state metadata (`hash-v1` => hash offline, non-hash => OpenAI `text-embedding-3-small`).
+
 Advanced/alternate module form (same service behavior):
 
 ```bash
@@ -365,7 +373,17 @@ Keep the process warm and reuse loaded state when testing transport internals di
 Run the daemon directly for smoke tests:
 
 ```bash
-openclawbrain daemon --state ~/.openclawbrain/main/state.json
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model auto
+```
+
+Force mode examples:
+
+```bash
+# Force offline hash query embeddings
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model hash
+
+# Force explicit OpenAI query model
+openclawbrain daemon --state ~/.openclawbrain/main/state.json --embed-model text-embedding-3-small
 ```
 
 ### launchd (macOS)
