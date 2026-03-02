@@ -9,7 +9,7 @@ import importlib
 
 from openclawbrain import Edge, Graph, HashEmbedder, Node, VectorIndex, save_state
 from openclawbrain.traverse import TraversalResult
-from openclawbrain import daemon as daemon_module
+import openclawbrain.daemon as daemon_module
 from openclawbrain.journal import read_journal
 from openclawbrain.store import load_state
 
@@ -155,6 +155,70 @@ def test_daemon_query_returns_fired_nodes(tmp_path: Path) -> None:
     assert metadata["prompt_context_max_chars"] == 30000
     assert metadata["max_fired_nodes"] == 30
     assert isinstance(metadata["prompt_context_trimmed"], bool)
+
+
+def test_query_route_fn_scoring_is_deterministic_with_target_tiebreak() -> None:
+    index = VectorIndex()
+    index.upsert("a", [1.0, 0.0])
+    index.upsert("b", [1.0, 0.0])
+    index.upsert("c", [0.0, 1.0])
+
+    route_fn = daemon_module._build_query_route_fn(
+        route_mode="edge+sim",
+        route_top_k=2,
+        route_alpha_sim=0.5,
+        route_use_relevance=True,
+        query_vector=[1.0, 0.0],
+        index=index,
+    )
+    assert route_fn is not None
+
+    candidates = [
+        Edge("src", "b", weight=0.4, metadata={"relevance": 0.0}),
+        Edge("src", "a", weight=0.4, metadata={"relevance": 0.0}),
+        Edge("src", "c", weight=0.4, metadata={"relevance": 0.0}),
+    ]
+    chosen_first = route_fn("src", candidates, "q")
+    chosen_second = route_fn("src", list(reversed(candidates)), "q")
+
+    # a/b tie on score; target_id breaks tie deterministically.
+    assert chosen_first == ["a", "b"]
+    assert chosen_second == ["a", "b"]
+
+
+def test_daemon_query_route_mode_edge_sim_selects_expected_habitual_target(tmp_path: Path) -> None:
+    graph = Graph()
+    graph.add_node(Node("seed", "seed content", metadata={"file": "seed.md"}))
+    graph.add_node(Node("good", "good answer", metadata={"file": "good.md"}))
+    graph.add_node(Node("bad", "bad answer", metadata={"file": "bad.md"}))
+    graph.add_edge(Edge("seed", "good", weight=0.4, metadata={"relevance": 0.0}))
+    graph.add_edge(Edge("seed", "bad", weight=0.4, metadata={"relevance": 0.0}))
+
+    index = VectorIndex()
+    index.upsert("seed", [1.0, 0.0])
+    index.upsert("good", [1.0, 0.0])
+    index.upsert("bad", [0.0, 1.0])
+    meta = {"embedder_name": "hash-v1", "embedder_dim": 2}
+
+    response = daemon_module._handle_query(
+        graph=graph,
+        index=index,
+        meta=meta,
+        embed_fn=lambda _q: [1.0, 0.0],
+        params={
+            "query": "route with similarity",
+            "top_k": 1,
+            "route_mode": "edge+sim",
+            "route_top_k": 1,
+            "route_alpha_sim": 0.5,
+            "route_use_relevance": True,
+        },
+        state_path=str(tmp_path / "state.json"),
+    )
+
+    assert "seed" in response["fired_nodes"]
+    assert "good" in response["fired_nodes"]
+    assert "bad" not in response["fired_nodes"]
 
 
 def test_daemon_query_ranked_prompt_context_uses_authority_and_scores(monkeypatch, tmp_path: Path) -> None:
