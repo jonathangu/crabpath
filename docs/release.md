@@ -30,6 +30,14 @@ ls -lh dist/
 
 ## 4) Publish to PyPI
 
+Preferred: **GitHub Actions trusted publishing** (tag triggers `publish.yml`).
+
+```bash
+git push origin v12.2.6
+```
+
+Optional manual publish (only if you have Twine creds configured):
+
 ```bash
 python3 -m pip install --upgrade twine
 python3 -m twine upload dist/*
