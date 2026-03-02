@@ -163,3 +163,6 @@ If we do this right, OpenClawBrain becomes a system where:
 - Humans steer direction; teachers provide volume.
 
 That is the core thesis.
+
+## Math appendix
+- [Ultimate Policy Gradient Routing Math](ultimate-policy-gradient-routing-math.md)

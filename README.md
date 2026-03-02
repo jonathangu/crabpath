@@ -561,6 +561,7 @@ from openclawbrain import (
 ## Core thesis (recommended reading)
 
 - **Shadow routing + Ultimate Policy Gradient:** `docs/core-thesis-ultimate-policy-gradient.md`
+- **UPG routing math appendix:** `docs/ultimate-policy-gradient-routing-math.md`
 
 ## Cost control
 
