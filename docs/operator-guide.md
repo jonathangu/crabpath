@@ -71,6 +71,12 @@ openclawbrain replay \
 
 Then keep serving from the daemon state.
 
+Replay mode quick guidance:
+- `--mode edges-only` (default when omitted): cheapest/fastest, no LLM mining, no harvest.
+- `--mode fast-learning`: LLM transcript mining + injection only; usually the slowest and most expensive stage.
+- `--mode full`: fast-learning + edge replay + harvest; highest end-to-end runtime/cost.
+- Legacy flags still work and map to mode: `--edges-only`, `--fast-learning` (`--extract-learning-events`), `--full-learning` (`--full-pipeline`).
+
 ### no-drama rebuild_then_cutover
 Use when you need single-writer safety during rebuild and minimal cutover downtime.
 
@@ -114,9 +120,11 @@ jq . ~/.openclawbrain/main/replay_checkpoint.json
 ```
 
 Flag meanings:
+- `--mode {edges-only,fast-learning,full}`: explicit replay mode. If omitted, replay defaults to `edges-only` and prints a startup note.
 - `--checkpoint <path>`: checkpoint file location.
 - `--resume`: continue from saved per-session line offsets.
-- `--ignore-checkpoint`: start from scratch even if checkpoint exists.
+- `--fresh` / `--no-checkpoint`: start from scratch even if checkpoint exists.
+- `--ignore-checkpoint`: legacy alias for `--fresh`.
 - `--checkpoint-every-seconds N`: periodic time-based checkpointing.
 - `--checkpoint-every N`: checkpoint every N replay windows/merge batches.
 - `--stop-after-fast-learning`: end after fast-learning phase (for quick cutover).
@@ -126,6 +134,7 @@ Flag meanings:
 - Replay emits a progress heartbeat every 30 seconds by default; add `--progress-every N` for per-item cadence.
 - Use `--quiet` to suppress replay banners/progress when scripting.
 - Replay phase: stderr shows `Loaded <N> interactions from session files`; with `--progress-every`, shows `[replay] <done>/<total> (<pct>%)`.
+- Startup banner includes selected `mode` and `checkpoint` path.
 - Replay completion: `Replayed <n>/<total> queries, <m> cross-file edges created`
 - Full-learning completion (`--full-learning`): final line includes harvest summary, e.g. `harvest: tasks=<k>, damped_edges=<x>`.
 

@@ -9,6 +9,24 @@
 - Added one-page operator lifecycle guide: `docs/operator-quickstart.md` (linked from README).
 - Clarified docs/CLI wording that `serve` is the canonical operator entrypoint and `daemon` is low-level NDJSON worker plumbing.
 
+### Replay mode UX + checkpoint semantics (Issue #60 part 2)
+- Added explicit replay mode selection: `openclawbrain replay --mode {edges-only,fast-learning,full}`.
+- Legacy replay flags remain supported and map to mode for backward compatibility:
+  - `--edges-only` -> `--mode edges-only`
+  - `--fast-learning` / `--extract-learning-events` -> `--mode fast-learning`
+  - `--full-learning` / `--full-pipeline` -> `--mode full`
+- Changed replay default mode behavior:
+  - Omitting mode now defaults to `edges-only` (never silently defaults to full).
+  - Replay prints an explicit note when this default is applied.
+- Added replay checkpoint/resume flag semantics:
+  - `--checkpoint <path>`
+  - `--resume`
+  - `--fresh` / `--no-checkpoint` (with `--ignore-checkpoint` kept as a legacy alias)
+- Replay startup output now includes selected mode and checkpoint path.
+- Added replay help epilog with mode-level cost/time expectations.
+- Updated operator docs for explicit mode and fresh/resume checkpoint semantics.
+- Added CLI tests for legacy-flag-to-mode mapping and default mode behavior.
+
 ## v12.2.6 (2026-03-02)
 
 ### async-route-pg: shadow teacher routing + policy-gradient updates

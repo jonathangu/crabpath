@@ -77,6 +77,17 @@ from .train_route_model import train_route_model, write_summary_json
 from . import __version__
 
 DEFAULT_STATE_PROFILE = "main"
+REPLAY_MODES = ("edges-only", "fast-learning", "full")
+REPLAY_HELP_EPILOG = (
+    "Replay modes and rough cost profile:\n"
+    "  edges-only    Fastest/cheapest. No LLM calls, no harvest. Good default for frequent warm-up.\n"
+    "  fast-learning LLM-bound transcript mining + injection only. Usually the slowest and highest-cost phase.\n"
+    "  full          Fast-learning + edge replay + harvest. Highest end-to-end time and API spend.\n\n"
+    "Checkpoint semantics:\n"
+    "  --resume uses saved per-session offsets.\n"
+    "  --fresh / --no-checkpoint starts from scratch even if a checkpoint exists.\n"
+    "  --checkpoint chooses the checkpoint file path."
+)
 
 
 def _resolve_state_path(
@@ -101,6 +112,36 @@ def _resolve_effective_state_path(
     """Resolve CLI state path, optionally allowing the default profile state."""
     use_default_state = allow_default_state and getattr(args, "graph", None) is None
     return _resolve_state_path(getattr(args, "state", None), allow_default=use_default_state)
+
+
+def _resolve_replay_mode(args: argparse.Namespace) -> tuple[str, bool]:
+    """Resolve replay mode from explicit mode and legacy booleans.
+
+    Returns `(mode, defaulted)` where `defaulted=True` means no mode/legacy flag
+    was provided and we selected the explicit default.
+    """
+    explicit_mode = str(args.mode) if getattr(args, "mode", None) else None
+    legacy_selected = [
+        mode
+        for mode, enabled in (
+            ("edges-only", bool(getattr(args, "edges_only", False))),
+            ("fast-learning", bool(getattr(args, "fast_learning", False))),
+            ("full", bool(getattr(args, "full_learning", False))),
+        )
+        if enabled
+    ]
+    if len(legacy_selected) > 1:
+        raise SystemExit("conflicting replay flags: choose one of --edges-only, --fast-learning, or --full-learning")
+    legacy_mode = legacy_selected[0] if legacy_selected else None
+    if explicit_mode is not None and legacy_mode is not None and explicit_mode != legacy_mode:
+        raise SystemExit(
+            f"conflicting replay flags: --mode {explicit_mode} does not match legacy flag selecting {legacy_mode}"
+        )
+    if explicit_mode is not None:
+        return explicit_mode, False
+    if legacy_mode is not None:
+        return legacy_mode, False
+    return "edges-only", True
 
 
 def _load_profile(profile_path: str | None) -> BrainProfile | None:
@@ -378,10 +419,23 @@ def _build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--type", choices=["CORRECTION", "TEACHING"], default="CORRECTION", dest="node_type")
     sc.add_argument("--json", dest="json_output", action="store_true")
 
-    r = sub.add_parser("replay")
+    r = sub.add_parser(
+        "replay",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=REPLAY_HELP_EPILOG,
+    )
     r.add_argument("--state")
     r.add_argument("--graph")
     r.add_argument("--sessions", nargs="+")
+    r.add_argument(
+        "--mode",
+        choices=REPLAY_MODES,
+        default=None,
+        help=(
+            "Replay mode: edges-only (cheap/default), fast-learning (LLM mining only), "
+            "or full (fast-learning + replay + harvest)."
+        ),
+    )
     r.add_argument(
         "--fast-learning",
         "--extract-learning-events",
@@ -416,7 +470,14 @@ def _build_parser() -> argparse.ArgumentParser:
     r.add_argument("--backup", action=argparse.BooleanOptionalAction, default=True)
     r.add_argument("--resume", action="store_true")
     r.add_argument("--checkpoint", default=None)
-    r.add_argument("--ignore-checkpoint", action="store_true")
+    r.add_argument(
+        "--fresh",
+        "--no-checkpoint",
+        dest="fresh",
+        action="store_true",
+        help="Ignore saved checkpoint offsets and start replay from the beginning.",
+    )
+    r.add_argument("--ignore-checkpoint", action="store_true", help=argparse.SUPPRESS)
     r.add_argument("--include-tool-results", action=argparse.BooleanOptionalAction, default=True)
     r.add_argument(
         "--tool-result-allowlist",
@@ -1737,13 +1798,10 @@ def _build_checkpoint_status_payload(
 def cmd_replay(args: argparse.Namespace) -> int:
     """cmd replay."""
     state_path = _resolve_state_path(args.state, allow_default=True)
-    run_fast = bool(args.fast_learning)
-    run_full = bool(args.full_learning)
-    edges_only = bool(args.edges_only)
-
-    # Default: full-learning unless --edges-only or --fast-learning explicitly set
-    if not run_fast and not run_full and not edges_only:
-        run_full = True
+    mode, mode_defaulted = _resolve_replay_mode(args)
+    run_fast = mode in {"fast-learning", "full"}
+    run_full = mode == "full"
+    ignore_checkpoint = bool(args.fresh or args.ignore_checkpoint)
 
     checkpoint_path = args.checkpoint or (str(default_checkpoint_path(str(state_path))) if state_path is not None else None)
     phase_plan = _replay_phase_plan(
@@ -1763,7 +1821,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             run_full=run_full,
             stop_after_fast_learning=bool(args.stop_after_fast_learning),
             resume_requested=bool(args.resume),
-            ignore_checkpoint=bool(args.ignore_checkpoint),
+            ignore_checkpoint=ignore_checkpoint,
         )
         if args.json:
             print(json.dumps(status_payload, indent=2))
@@ -1790,6 +1848,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             f"{bool(resume_status.get('would_take_effect', False))} "
             f"(resume={bool(resume_status.get('requested', False))}, ignore_checkpoint={bool(resume_status.get('ignore_checkpoint', False))})"
         )
+        print(f"Mode: {mode}")
         print(f"Phases: {', '.join(phase_plan) if phase_plan else 'none'}")
         return 0
 
@@ -1805,9 +1864,10 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
     if not args.json:
         print("Replay startup:", file=sys.stderr)
+        print(f"  mode: {mode}", file=sys.stderr)
         print(f"  checkpoint: {checkpoint_path if checkpoint_path is not None else 'none'}", file=sys.stderr)
         print(f"  resume: {bool(args.resume)}", file=sys.stderr)
-        print(f"  ignore_checkpoint: {bool(args.ignore_checkpoint)}", file=sys.stderr)
+        print(f"  fresh: {ignore_checkpoint}", file=sys.stderr)
         print(f"  phases: {', '.join(phase_plan) if phase_plan else 'none'}", file=sys.stderr)
 
     checkpoint_every_windows = max(0, int(args.checkpoint_every))
@@ -1817,6 +1877,11 @@ def cmd_replay(args: argparse.Namespace) -> int:
     replay_workers = max(1, int(args.replay_workers))
     quiet = bool(args.quiet)
     timed_progress_interval_seconds = 30
+    if mode_defaulted and not quiet:
+        print(
+            "Replay mode note: no mode specified; defaulting to --mode edges-only (never defaults to full).",
+            file=sys.stderr,
+        )
 
     def _emit_progress(payload: dict[str, object]) -> None:
         if quiet:
@@ -1852,7 +1917,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             hard_max_turns=max(1, args.hard_max_turns),
             checkpoint_path=checkpoint_path,
             resume=bool(args.resume),
-            ignore_checkpoint=bool(args.ignore_checkpoint),
+            ignore_checkpoint=ignore_checkpoint,
             backup=bool(args.backup),
             include_tool_results=include_tool_results,
             tool_result_allowlist=tool_result_allowlist,
@@ -1875,19 +1940,19 @@ def cmd_replay(args: argparse.Namespace) -> int:
                 print("Completed fast-learning; stopped before replay/harvest.")
             return 0
 
-    checkpoint_data = _load_checkpoint(checkpoint_path) if (checkpoint_path and args.resume and not args.ignore_checkpoint) else {"version": 1}
+    checkpoint_data = _load_checkpoint(checkpoint_path) if (checkpoint_path and args.resume and not ignore_checkpoint) else {"version": 1}
     replay_since_lines, replay_legacy_fallback = _checkpoint_phase_offsets(checkpoint_data, phase="replay")
     if replay_legacy_fallback and replay_since_lines:
         warnings.warn(
             "replay checkpoint missing phase-scoped sessions; falling back to legacy top-level 'sessions' offsets",
             stacklevel=2,
         )
-    if args.ignore_checkpoint or not args.resume:
+    if ignore_checkpoint or not args.resume:
         replay_since_lines = {}
 
     interactions, replay_offsets = load_interactions_for_replay(
         args.sessions,
-        since_lines=replay_since_lines if args.resume and not args.ignore_checkpoint else {},
+        since_lines=replay_since_lines if args.resume and not ignore_checkpoint else {},
         include_tool_results=include_tool_results,
         tool_result_allowlist=tool_result_allowlist,
         tool_result_max_chars=tool_result_max_chars,

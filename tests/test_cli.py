@@ -1064,8 +1064,8 @@ def test_inject_command_defaults_connect_min_sim_for_hash_embedder(tmp_path, cap
     assert out["inhibitory_edges_created"] > 0
 
 
-def test_cli_replay_default_runs_full_learning(tmp_path, capsys, monkeypatch) -> None:
-    """replay without flags defaults to full-learning (fast-learning + harvest)."""
+def test_cli_replay_default_mode_is_edges_only_and_not_full(tmp_path, capsys) -> None:
+    """replay without mode/legacy flags defaults to edges-only and prints a note."""
     state_path = tmp_path / "state.json"
     _write_state(state_path)
 
@@ -1080,25 +1080,6 @@ def test_cli_replay_default_runs_full_learning(tmp_path, capsys, monkeypatch) ->
         encoding="utf-8",
     )
 
-    from openclawbrain import full_learning as learning_module
-
-    def fake_llm(_: str, __: str) -> str:
-        return json.dumps(
-            {
-                "corrections": [
-                    {
-                        "content": "Default full-learning correction.",
-                        "context": "test",
-                        "severity": "high",
-                    }
-                ],
-                "teachings": [],
-                "reinforcements": [],
-            }
-        )
-
-    monkeypatch.setattr(learning_module, "openai_llm_fn", fake_llm)
-
     code = main(
         [
             "replay",
@@ -1106,17 +1087,16 @@ def test_cli_replay_default_runs_full_learning(tmp_path, capsys, monkeypatch) ->
             str(state_path),
             "--sessions",
             str(sessions),
-            "--ignore-checkpoint",
             "--json",
         ]
     )
     assert code == 0
-    result = json.loads(capsys.readouterr().out.strip())
-
-    # Default should trigger fast_learning and harvest
-    assert "fast_learning" in result
-    assert result["fast_learning"]["events_appended"] >= 1
-    assert "harvest" in result
+    captured = capsys.readouterr()
+    result = json.loads(captured.out.strip())
+    assert result["queries_replayed"] == 2
+    assert "fast_learning" not in result
+    assert "harvest" not in result
+    assert "defaulting to --mode edges-only" in captured.err
 
 
 def test_cli_replay_edges_only_skips_learning(tmp_path, capsys) -> None:
@@ -1391,8 +1371,9 @@ def test_cli_replay_startup_banner_printed_for_text_mode(tmp_path, capsys) -> No
     assert code == 0
     err = capsys.readouterr().err
     assert "Replay startup:" in err
+    assert "mode: edges-only" in err
     assert "resume: False" in err
-    assert "ignore_checkpoint: False" in err
+    assert "fresh: False" in err
     assert "phases: replay" in err
 
 
@@ -1452,6 +1433,38 @@ def test_cli_replay_alias_full_pipeline(tmp_path, capsys, monkeypatch) -> None:
         "--full-pipeline",
     ])
     assert args.full_learning is True
+
+
+def test_cli_replay_mode_resolution_maps_legacy_flags() -> None:
+    """legacy replay flags map cleanly to replay --mode values."""
+    from openclawbrain.cli import _build_parser, _resolve_replay_mode
+
+    parser = _build_parser()
+    default_args = parser.parse_args(["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s"])
+    assert _resolve_replay_mode(default_args) == ("edges-only", True)
+
+    edges_args = parser.parse_args(["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s", "--edges-only"])
+    assert _resolve_replay_mode(edges_args) == ("edges-only", False)
+
+    fast_args = parser.parse_args(["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s", "--fast-learning"])
+    assert _resolve_replay_mode(fast_args) == ("fast-learning", False)
+
+    full_args = parser.parse_args(["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s", "--full-learning"])
+    assert _resolve_replay_mode(full_args) == ("full", False)
+
+
+def test_cli_replay_fresh_aliases_parse() -> None:
+    """--fresh/--no-checkpoint set fresh-start semantics."""
+    from openclawbrain.cli import _build_parser
+
+    parser = _build_parser()
+    args_fresh = parser.parse_args(["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s", "--fresh"])
+    assert args_fresh.fresh is True
+
+    args_no_checkpoint = parser.parse_args(
+        ["replay", "--state", "/tmp/x.json", "--sessions", "/tmp/s", "--no-checkpoint"]
+    )
+    assert args_no_checkpoint.fresh is True
 
 
 
