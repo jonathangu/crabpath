@@ -313,6 +313,26 @@ Host-level global registry (recommended for multi-workspace operators):
 python3 -m openclawbrain.ops.sync_registry
 ```
 
+One-shot host bootstrap (safe by default, dry-run unless `--apply`):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --repo-root ~/.openclaw/workspace \
+  --repo-env-file ~/.openclaw/workspace/.env \
+  --workspace ~/.openclaw/workspace
+```
+
+Apply changes (migrate env file, relink `.env`, refresh registry + symlinks, run strict audit):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --apply \
+  --repo-root ~/.openclaw/workspace \
+  --repo-env-file ~/.openclaw/workspace/.env \
+  --workspace ~/.openclaw/workspace \
+  --json
+```
+
 Why this avoids drift:
 
 - `sync_registry` writes one canonical registry under `~/.openclaw/credentials/registry`.

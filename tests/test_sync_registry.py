@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from openclawbrain.ops import sync_registry
@@ -66,3 +67,45 @@ def test_sync_registry_creates_global_registry_and_workspace_symlinks(tmp_path: 
     assert "sk-dummy-should-not-appear" not in capabilities_report
     assert "top-secret-value" not in secret_report
     assert "top-secret-value" not in capabilities_report
+
+
+def test_sync_registry_discovers_workspaces_from_openclaw_config(tmp_path: Path) -> None:
+    workspace_a = tmp_path / "workspace-a"
+    workspace_b = tmp_path / "workspace-b"
+    workspace_a.mkdir()
+    workspace_b.mkdir()
+
+    openclaw_config = tmp_path / "openclaw.json"
+    openclaw_config.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "list": [
+                        {"id": "a", "workspace": str(workspace_a)},
+                        {"id": "b", "workspace": str(workspace_b)},
+                        {"id": "dup", "workspace": str(workspace_a)},
+                        {"id": "invalid"},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    workspaces = sync_registry._resolve_workspaces([], openclaw_config=openclaw_config)
+    assert [str(path) for path in workspaces] == [str(workspace_a), str(workspace_b)]
+
+
+def test_sync_registry_fallbacks_to_workspace_glob(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    openclaw_root = home / ".openclaw"
+    openclaw_root.mkdir(parents=True)
+    workspace_b = openclaw_root / "workspace-b"
+    workspace_a = openclaw_root / "workspace-a"
+    workspace_b.mkdir()
+    workspace_a.mkdir()
+
+    monkeypatch.setenv("HOME", str(home))
+    workspaces = sync_registry._resolve_workspaces([], openclaw_config=openclaw_root / "missing-openclaw.json")
+
+    assert [str(path) for path in workspaces] == [str(workspace_a), str(workspace_b)]

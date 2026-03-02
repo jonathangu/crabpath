@@ -171,6 +171,26 @@ python3 -m openclawbrain.ops.sync_registry
 
 This keeps one host-level registry in `~/.openclaw/credentials/registry` and wires each workspace docs file as a symlink, so capability/secret-pointer docs stay in sync across agents.
 
+One-shot bootstrap for new hosts (dry-run by default):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --repo-root "$workspaceDir" \
+  --repo-env-file "$workspaceDir/.env" \
+  --workspace "$workspaceDir"
+```
+
+Apply mode (performs migration + symlink replacement + sync + strict audit):
+
+```bash
+python3 -m openclawbrain.ops.bootstrap_host \
+  --apply \
+  --repo-root "$workspaceDir" \
+  --repo-env-file "$workspaceDir/.env" \
+  --workspace "$workspaceDir" \
+  --json
+```
+
 Optional strict leak audit:
 
 ```bash
