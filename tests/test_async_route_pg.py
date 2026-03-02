@@ -105,3 +105,40 @@ def test_run_async_route_pg_dry_run_does_not_modify_state_json(tmp_path: Path) -
     after = state_path.read_bytes()
     assert summary.updates_applied >= 1
     assert before == after
+
+
+def test_run_async_route_pg_dry_run_traces_out_emits_expected_fields(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    journal_path = tmp_path / "journal.jsonl"
+    traces_path = tmp_path / "route_traces.jsonl"
+    _write_state(state_path)
+    _write_journal(journal_path)
+
+    summary = run_async_route_pg(
+        state_path=str(state_path),
+        journal_path=str(journal_path),
+        since_hours=24.0,
+        max_queries=10,
+        sample_rate=1.0,
+        max_candidates_per_node=12,
+        max_decision_points=500,
+        teacher="none",
+        apply=False,
+        traces_out=str(traces_path),
+    )
+
+    assert summary.updates_applied == 0
+    lines = [line for line in traces_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert lines
+    trace = json.loads(lines[0])
+    assert "query_id" in trace
+    assert "query_text" in trace
+    assert "decision_points" in trace
+    assert "traversal_config" in trace
+    assert "route_policy" in trace
+    assert isinstance(trace["decision_points"], list)
+    if trace["decision_points"]:
+        point = trace["decision_points"][0]
+        assert "source_id" in point
+        assert "candidates" in point
+        assert "reward_source" in point

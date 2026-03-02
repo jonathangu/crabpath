@@ -63,6 +63,7 @@ from .full_learning import (
 )
 from ._util import _tokenize
 from .maintain import run_maintenance
+from .reward import RewardSource, RewardWeights
 from .state_lock import StateLockError, state_write_lock
 from .store import load_state, save_state, resolve_default_state_path
 from .ops.async_route_pg import run_async_route_pg
@@ -388,6 +389,19 @@ def _build_parser() -> argparse.ArgumentParser:
     ar.add_argument("--write-relevance-metadata", action=argparse.BooleanOptionalAction, default=True)
     ar.add_argument("--score-scale", type=float, default=0.3)
     ar.add_argument("--max-decision-points", type=int, default=500)
+    ar.add_argument("--traces-out", default=None)
+    ar.add_argument("--traces-in", default=None)
+    ar.add_argument(
+        "--reward-source",
+        choices=[
+            RewardSource.HUMAN.value,
+            RewardSource.SELF.value,
+            RewardSource.HARVESTER.value,
+            RewardSource.TEACHER.value,
+        ],
+        default=RewardSource.TEACHER.value,
+    )
+    ar.add_argument("--reward-weights", default=None, help="Comma-separated weights: human=1.0,self=0.6,harvester=0.3,teacher=0.1")
 
     j = sub.add_parser("journal")
     j.add_argument("--state")
@@ -2345,6 +2359,10 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
     if journal_path is None:
         raise SystemExit("unable to resolve journal path")
 
+    try:
+        parsed_weights = RewardWeights.from_string(args.reward_weights) if args.reward_weights else RewardWeights.from_env()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     summary = run_async_route_pg(
         state_path=state_path,
         journal_path=journal_path,
@@ -2358,6 +2376,10 @@ def cmd_async_route_pg(args: argparse.Namespace) -> int:
         apply=bool(args.apply),
         write_relevance_metadata=bool(args.write_relevance_metadata),
         score_scale=float(args.score_scale),
+        traces_out=str(args.traces_out) if args.traces_out else None,
+        traces_in=str(args.traces_in) if args.traces_in else None,
+        reward_source=RewardSource.parse(args.reward_source),
+        reward_weights=parsed_weights,
     )
     payload = summary.to_dict()
     if args.json:
